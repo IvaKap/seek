@@ -118,10 +118,22 @@ export function useCatalog(client: SidecarClient | null): CatalogSession {
     });
 
     const offFailed = client.on('discover.browseFailed', (data) => {
-      const d = data as { requestId: string; reason: string; needs: string };
+      const d = data as {
+        requestId: string; reason: string; needs: string; unreachable: boolean;
+      };
       if (d.requestId !== active.current) return;
       setCatalog((prev) => (prev ? {
-        ...prev, loading: false, error: d.reason, needs: d.needs ?? '',
+        ...prev,
+        loading: false,
+        /* `reason` is developer-facing by contract and this view puts `error`
+         * straight on screen, so an unreachable provider used to render a raw
+         * `<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] ...>` at the reader.
+         * Replaced here rather than in the view: the store is what promised a
+         * displayable string. */
+        error: d.unreachable
+          ? 'Could not reach the provider. Check your connection and try again.'
+          : d.reason,
+        needs: d.needs ?? '',
       } : prev));
     });
 

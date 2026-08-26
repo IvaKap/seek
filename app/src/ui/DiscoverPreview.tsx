@@ -51,6 +51,13 @@ function provenance(preview: Preview): string {
   if (preview.error === 'needs-setting') {
     return `${PROVIDER_LABEL[preview.provider ?? 'discogs']} lookups need a token`;
   }
+  /* Names the provider when we know it. "Could not reach Bandcamp" says where
+   * the problem is; for a custom domain we never identified, "that site" is the
+   * honest wording rather than a guess. */
+  if (preview.error === 'unreachable') {
+    const who = preview.provider ? PROVIDER_LABEL[preview.provider] : 'that site';
+    return `Could not reach ${who}`;
+  }
   if (preview.error) return 'Not a link Seek recognises';
 
   const source = preview.provider ? PROVIDER_LABEL[preview.provider] : 'the link';
@@ -177,7 +184,13 @@ export function DiscoverPreviewCard({
               <p className="dig__hint">
                 {shown.needs === 'discogsToken'
                   ? 'Add a Discogs personal access token in Settings and paste this again.'
-                  : 'Press Return to search Soulseek for this text instead.'}
+                  /* Searching Soulseek for the URL text is the right fallback for a
+                     link nothing recognises, and the wrong one for a link that is
+                     probably fine — it buries a network problem under a search for
+                     a string of slashes. */
+                  : shown.error === 'unreachable'
+                    ? 'The link may be fine. Check your connection and paste it again.'
+                    : 'Press Return to search Soulseek for this text instead.'}
               </p>
             </div>
           ) : (
@@ -288,6 +301,10 @@ export function DiscoverPreviewCard({
                         Open Settings
                       </button>
                     )}
+                  </span>
+                ) : playlist.error === 'unreachable' ? (
+                  <span className="dig__hint">
+                    Could not reach YouTube. Check your connection.
                   </span>
                 ) : playlist.error ? (
                   <span className="dig__hint">That playlist could not be read.</span>

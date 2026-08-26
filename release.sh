@@ -73,6 +73,17 @@ newest_src=$(find sidecar/seek_sidecar -name '*.py' -exec stat -f %m {} \; | sor
 count=$(ls sidecar/seek_sidecar/*.py | grep -vc __init__ || true)
 printf '  all %s modules present, binary newer than every source file\n' "$count"
 
+# The trust store is a DATA file, so none of the checks above would notice it
+# missing: every module is present, the binary is fresh, and the app then fails
+# every HTTPS lookup on the user's machine while working perfectly here. That
+# shipped as 0.2.0. One `find` is cheaper than another release.
+say "Checking the CA bundle was frozen"
+CACERT="$(find sidecar/dist/seek-sidecar -name cacert.pem | head -1)"
+[ -n "$CACERT" ] || die "no cacert.pem in the freeze — every Bandcamp, Discogs and
+YouTube lookup will fail with CERTIFICATE_VERIFY_FAILED on any machine but this
+one. Check that certifi is installed and that the spec collects its data files."
+printf '  trust store at %s\n' "${CACERT#sidecar/dist/seek-sidecar/}"
+
 say "Building the app"
 ( cd app && npm run tauri build ) || die "tauri build failed"
 

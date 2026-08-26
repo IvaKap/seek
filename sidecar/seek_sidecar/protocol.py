@@ -1062,6 +1062,14 @@ class DiscoverFailed(TypedDict):
     # Machine-readable ('discogsToken') so the UI can offer the right Settings
     # link without reading English out of `reason`.
     needs: str
+    # True when the provider was never reached at all - DNS, TLS, a refused
+    # connection, a timeout. False when it answered and the answer was no.
+    # Same distinction `needs` exists for, and the same reason it is a flag: a
+    # 404 means this link names nothing and searching the text instead is
+    # right, while an unreachable provider means the link may be perfect and
+    # the network is not. Telling the user the former when it is the latter is
+    # what shipped in 0.2.0.
+    unreachable: bool
 
 
 class WantEntry(TypedDict):
@@ -2389,6 +2397,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("url", "str", False, False),
         ("reason", "str", False, False),
         ("needs", "str", False, False),
+        ("unreachable", "bool", False, False),
     ),
     "WantEntry": (
         ("id", "str", False, False),

@@ -823,3 +823,76 @@ def test_a_thumbnail_on_a_private_address_is_dropped_silently():
     assert discover._image_data_uri("https://127.0.0.1/cover.jpg") is None
     assert discover._image_data_uri("http://example.com/cover.jpg") is None  # not https
     assert discover._image_data_uri(None) is None
+
+
+# ------------------------------------------------- reachable vs. answered "no"
+#
+# Added after 0.2.0 shipped with no CA bundle: every lookup failed on TLS, and
+# because a transport failure and a 404 were the same event to the frontend, the
+# card said "Not a link Seek recognises" about links that were perfectly good.
+# The distinction has to survive in the error itself, so these pin it there.
+
+
+class _Boom:
+    """A urlopen that fails the way a network does, before any HTTP happens."""
+
+    def __init__(self, error):
+        self.error = error
+
+    def __call__(self, *_args, **_kwargs):
+        raise self.error
+
+
+def test_a_transport_failure_is_marked_unreachable(monkeypatch):
+    import ssl
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.URLError(ssl.SSLError("CERTIFICATE_VERIFY_FAILED"))),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://example.invalid/thing")
+    assert caught.value.unreachable is True
+
+
+def test_dns_failure_is_unreachable(monkeypatch):
+    import socket
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.URLError(socket.gaierror("nodename nor servname"))),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://example.invalid/thing")
+    assert caught.value.unreachable is True
+
+
+def test_a_404_is_not_unreachable(monkeypatch):
+    """The server answered. The link names nothing, and searching the text
+    instead is the right fallback — which is the opposite advice."""
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.HTTPError(
+            "https://example.com/x", 404, "Not Found", {}, None)),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://example.com/x")
+    assert caught.value.unreachable is False
+
+
+def test_an_auth_failure_is_not_unreachable(monkeypatch):
+    """401 reaches the provider fine; the token is the problem, and `needs`
+    already carries that."""
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.HTTPError(
+            "https://api.discogs.com/x", 401, "Unauthorized", {}, None)),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://api.discogs.com/x")
+    assert caught.value.unreachable is False
+
+
+def test_unreachable_defaults_off():
+    """Every DiscoverError raised for an ordinary parse outcome must not claim
+    the network is down."""
+    assert discover.DiscoverError("no title").unreachable is False
+    assert discover.DiscoverError("needs a token", needs="discogsToken").unreachable is False

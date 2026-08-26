@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { previewFromWire, previewQuery } from './discoverStore.ts';
+import { classifyFailure, previewFromWire, previewQuery } from './discoverStore.ts';
 import type { WireParsed } from './discoverStore.ts';
 
 function wire(over: Partial<WireParsed> = {}): WireParsed {
@@ -148,5 +148,44 @@ describe('previewQuery', () => {
   it('an unparseable title still yields something searchable', () => {
     const p = previewFromWire(wire({ rawTitle: 'TRAUMPRINZ All The Things' }));
     expect(previewQuery(p)).toBe('TRAUMPRINZ All The Things');
+  });
+});
+
+describe('classifyFailure — the message a person actually gets', () => {
+  /* 0.2.0 shipped with no CA bundle in the frozen app, so every lookup failed
+   * on TLS and every card read "Not a link Seek recognises". These pin the
+   * distinction that was missing. */
+
+  it('calls a transport failure unreachable, not unrecognised', () => {
+    expect(classifyFailure({ unreachable: true }, 'not-recognised')).toBe('unreachable');
+  });
+
+  it('still calls a link nobody recognises unrecognised', () => {
+    expect(classifyFailure({ unreachable: false }, 'not-recognised')).toBe('not-recognised');
+  });
+
+  it('lets a missing token win over an unreachable provider', () => {
+    /* Both can be true at once — an expired token on a flaky connection. The
+     * token is the one the user can do something about. */
+    expect(classifyFailure({ needs: 'discogsToken', unreachable: true }, 'not-recognised'))
+      .toBe('needs-setting');
+  });
+
+  it('honours the surface-specific fallback', () => {
+    /* A playlist that would not load cannot be "searched as text" the way a
+     * URL can, so its fallback says less. */
+    expect(classifyFailure({}, 'failed')).toBe('failed');
+    expect(classifyFailure({}, 'not-recognised')).toBe('not-recognised');
+  });
+
+  it('treats an absent flag as reachable rather than assuming the worst', () => {
+    /* An older sidecar sends no `unreachable` at all. Defaulting it to true
+     * would report every ordinary 404 as a network problem. */
+    expect(classifyFailure({}, 'not-recognised')).toBe('not-recognised');
+  });
+
+  it('does not treat an empty needs string as a setting problem', () => {
+    expect(classifyFailure({ needs: '', unreachable: true }, 'not-recognised'))
+      .toBe('unreachable');
   });
 });

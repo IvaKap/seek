@@ -66,11 +66,21 @@ _discogs_gate = Gate(1.05)
 
 
 class DiscoverError(Exception):
-    """A lookup failed. Carries the setting that would fix it, when one would."""
+    """A lookup failed. Carries the setting that would fix it, when one would.
 
-    def __init__(self, message, needs=""):
+    `unreachable` separates "we never got an answer" from "we got an answer and
+    it was no". They are the same event to the code and opposite events to the
+    person: a 404 means this link names nothing and searching the text instead
+    is the right move, while a DNS or TLS failure means the link may be perfect
+    and the network is down. Reported as a flag rather than left for the UI to
+    infer from `reason`, for the reason `needs` is a flag — English in an error
+    string is not an interface.
+    """
+
+    def __init__(self, message, needs="", unreachable=False):
         super().__init__(message)
         self.needs = needs
+        self.unreachable = unreachable
 
 
 # ----------------------------------------------------------------- transport
@@ -134,7 +144,9 @@ def _fetch(url, headers=None, gate=None, accept="application/json", data=None,
             raise DiscoverError("not found") from error
         raise DiscoverError(f"HTTP {error.code}") from error
     except Exception as error:                          # noqa: BLE001 - network
-        raise DiscoverError(str(error)) from error
+        # HTTPError is handled above, so nothing that got an answer reaches
+        # here: this is DNS, TLS, a refused connection or a timeout.
+        raise DiscoverError(str(error), unreachable=True) from error
 
 
 def _fetch_json(url, headers=None, gate=None):

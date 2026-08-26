@@ -1305,6 +1305,17 @@ export interface DiscoverFailed {
    * link without reading English out of `reason`.
    */
   needs: string;
+
+  /**
+   * True when the provider was never reached at all - DNS, TLS, a refused
+   * connection, a timeout. False when it answered and the answer was no. Same
+   * distinction `needs` exists for, and the same reason it is a flag: a 404
+   * means this link names nothing and searching the text instead is right,
+   * while an unreachable provider means the link may be perfect and the
+   * network is not. Telling the user the former when it is the latter is what
+   * shipped in 0.2.0.
+   */
+  unreachable: boolean;
 }
 
 /**

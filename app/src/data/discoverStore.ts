@@ -186,6 +186,37 @@ function skeleton(url: string, provider: UrlProvider | null): DiscoverPreview {
  * be inventing doubt about a database record; reporting a parsed YouTube title
  * as certain would be inventing certainty. Neither is acceptable.
  */
+/**
+ * Which kind of failure a `discover.parseFailed` describes.
+ *
+ * Three outcomes the code sees identically and a person does not:
+ *
+ *   needs-setting    the provider works; you have not given it a token
+ *   unreachable      we never got an answer — DNS, TLS, a timeout
+ *   <fallback>       the provider answered, and the answer was no
+ *
+ * The order is the priority. A missing token is checked first, being the most
+ * specific and the most fixable; `unreachable` beats the fallback because a
+ * link that could not be looked up is not a link known to be bad.
+ *
+ * The fallback differs by surface: a URL nobody recognises can still be searched
+ * for as text ('not-recognised'), while a playlist that would not load has no
+ * such consolation ('failed').
+ *
+ * `reason` stays developer-facing, per its contract — this reads the machine
+ * fields only. It lived inline in three branches and shipped in 0.2.0
+ * collapsing everything to 'not-recognised', so a TLS error told people their
+ * link was unrecognised. One function now, so the three cannot drift apart.
+ */
+export function classifyFailure(
+  d: { needs?: string; unreachable?: boolean },
+  fallback: 'not-recognised' | 'failed',
+): string {
+  if (d.needs) return 'needs-setting';
+  if (d.unreachable) return 'unreachable';
+  return fallback;
+}
+
 export function previewFromWire(d: WireParsed): DiscoverPreview {
   const stated = Boolean(d.artist || d.title);
   const enforced = hostOf(d.url) === 'music.youtube.com';
@@ -261,7 +292,10 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
     });
 
     const offFailed = client.on('discover.parseFailed', (data) => {
-      const d = data as { requestId: string; url: string; reason: string; needs: string };
+      const d = data as {
+        requestId: string; url: string; reason: string; needs: string;
+        unreachable: boolean;
+      };
       /* A failed wantlist read arrives here too, and it is matched on
        * `requestId` rather than `url` because the wantlist command HAS no url
        * — the username comes from the token. The playlist branch below keys on
@@ -272,7 +306,7 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
           ...prev,
           loading: false,
           done: true,
-          error: d.needs ? 'needs-setting' : 'failed',
+          error: classifyFailure(d, 'failed'),
           needs: d.needs ?? '',
         } : prev));
         return;
@@ -286,7 +320,7 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
           ...prev,
           loading: false,
           done: true,
-          error: d.needs ? 'needs-setting' : 'failed',
+          error: classifyFailure(d, 'failed'),
           needs: d.needs ?? '',
         } : prev));
         return;
@@ -295,8 +329,7 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
       setPreview((prev) => (prev ? {
         ...prev,
         loading: false,
-        // `reason` is developer-facing by contract. The card says its own thing.
-        error: d.needs ? 'needs-setting' : 'not-recognised',
+        error: classifyFailure(d, 'not-recognised'),
         needs: d.needs ?? '',
       } : prev));
     });
