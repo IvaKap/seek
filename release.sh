@@ -120,6 +120,45 @@ if codesign -dv "$APP" 2>&1 | grep -q "linker-signed"; then
 fi
 printf '  signature verifies, resources sealed\n'
 
+# --- the updater's own signature ------------------------------------------
+#
+# A DIFFERENT signature from the codesigning one above, and it fails
+# differently: a mismatch here does not stop the app opening, it stops every
+# EXISTING install from ever updating — silently, on other people's machines,
+# with no symptom this build could show. The only cheap moment to catch it is
+# now.
+#
+# Comparing minisign key ids proves the artifact was signed by the key whose
+# public half is baked into the app. It does not verify the signature body;
+# that is the client's job, and the client has the whole file.
+say "Checking the update will be accepted by installed copies"
+UPD_DIR="app/src-tauri/target/release/bundle/macos"
+UPD_TAR="$(find "$UPD_DIR" -name '*.app.tar.gz' | head -1)"
+UPD_SIG="$(find "$UPD_DIR" -name '*.app.tar.gz.sig' | head -1)"
+[ -n "$UPD_TAR" ] || die "no .app.tar.gz was produced.
+Set bundle.createUpdaterArtifacts to true in app/src-tauri/tauri.conf.json."
+[ -n "$UPD_SIG" ] || die "no updater signature was produced.
+Set TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD) before building. Without it the
+release installs fine by hand and can never self-update."
+
+python3 - "$UPD_SIG" <<'KEYCHECK' || die "the updater signature does not match the
+public key in tauri.conf.json. Every installed copy would refuse this update.
+You are almost certainly building with a different signing key than the one
+this app was published with."
+import base64, json, sys
+
+def unwrap(b64_of_file):
+    text = base64.b64decode(b64_of_file).decode()
+    body = [l for l in text.splitlines() if l and not l.startswith("untrusted comment:")]
+    return base64.b64decode(body[0])
+
+conf = json.load(open("app/src-tauri/tauri.conf.json"))
+pub = unwrap(conf["plugins"]["updater"]["pubkey"])[2:10]
+sig = unwrap(open(sys.argv[1]).read().strip())[2:10]
+sys.exit(0 if pub == sig else 1)
+KEYCHECK
+printf '  update signed by the key installed copies trust\n'
+
 # Say plainly what this build is and is not, so nobody assumes otherwise.
 if codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
   cat <<'NOTE'

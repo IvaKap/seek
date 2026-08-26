@@ -202,6 +202,20 @@ pub fn run() {
         // — it has to, because the browser recipe in CLAUDE.md runs the same
         // frontend with no Tauri shell under it at all.
         .plugin(tauri_plugin_dialog::init())
+        // Self-update. The reason this earns its place: the Open Anyway
+        // approval macOS records lives in the quarantine attribute of one
+        // specific bundle, so a hand-installed update repeats the whole dance
+        // every time. A download the app makes itself is never quarantined —
+        // verified — so after the first install, updates are silent.
+        //
+        // Nothing is installed without being asked. The plugin only fetches and
+        // verifies; the frontend decides when to say so and the user decides
+        // whether to restart.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        // Only for relaunching into the version just installed. An update
+        // that needs the user to quit and reopen by hand is most of the
+        // friction the updater exists to remove.
+        .plugin(tauri_plugin_process::init())
         .manage(endpoint.clone())
         .manage(error)
         .manage(Sidecar(Mutex::new(child)))

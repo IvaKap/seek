@@ -51,6 +51,14 @@ jobs:
       # freeze is stale or the four version declarations disagree, builds, and
       # fails if the bundle's signature does not verify.
       - name: Build
+        # The updater artifacts are signed during the BUNDLE step, so the key
+        # has to be in the environment here rather than at packaging time.
+        # Without it the build still succeeds and simply emits no .sig, which
+        # every client then rejects — so the manifest step fails loudly on an
+        # empty signature rather than shipping a release nobody can install.
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: ./release.sh
 
       - name: Package
@@ -65,6 +73,25 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$STAGE" "Seek-${VERSION}-macOS.zip"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "zip=Seek-${VERSION}-macOS.zip" >> "$GITHUB_OUTPUT"
+
+          # --- what the in-app updater downloads --------------------------
+          BUNDLE_DIR="app/src-tauri/target/release/bundle/macos"
+          TARBALL="$(find "$BUNDLE_DIR" -name '*.app.tar.gz' | head -1)"
+          SIGFILE="$(find "$BUNDLE_DIR" -name '*.app.tar.gz.sig' | head -1)"
+          [ -n "$TARBALL" ] || { echo "::error::no .app.tar.gz — is bundle.createUpdaterArtifacts true?"; exit 1; }
+          [ -n "$SIGFILE" ] || { echo "::error::no .sig — is TAURI_SIGNING_PRIVATE_KEY set as a repo secret?"; exit 1; }
+
+          # A fixed asset name. The manifest carries a versioned download URL,
+          # but the MANIFEST url is hard-coded in the app and resolved through
+          # /releases/latest/download/, which needs a filename that never moves.
+          cp "$TARBALL" "Seek.app.tar.gz"
+
+          python3 .github/updater-manifest.py \
+            --version "$VERSION" \
+            --signature-file "$SIGFILE" \
+            --repo "${{ github.repository }}" \
+            --pub-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --out latest.json
 
       # Prove the artifact survived zipping before anyone downloads it. A
       # signature that verifies here is the difference between "unidentified
@@ -82,7 +109,10 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.package.outputs.zip }}
+          files: |
+            ${{ steps.package.outputs.zip }}
+            Seek.app.tar.gz
+            latest.json
           draft: true          # review it, then publish
           generate_release_notes: true
           body: |

@@ -5,4 +5,4 @@
 # Not the version anything reads: the one that goes on the wire, and the one
 # release.sh checks against package.json, is SIDECAR_VERSION in core_host.py.
 # Kept in step with it so this cannot be mistaken for the answer.
-__version__ = "0.2.1"
+__version__ = "0.2.2"

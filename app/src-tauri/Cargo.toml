@@ -1,6 +1,6 @@
 [package]
 name = "seek"
-version = "0.2.1"
+version = "0.2.2"
 description = "Seek — an Apple-native frontend for Nicotine+"
 edition = "2021"
 rust-version = "1.77"
@@ -21,6 +21,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-notification = "2.0.0-rc.5"
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 [profile.dev]
 incremental = true

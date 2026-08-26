@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sidebar } from './ui/Sidebar.tsx';
+import { UpdateBanner } from './ui/UpdateBanner.tsx';
 import type { ConnectionStatus, Section } from './ui/Sidebar.tsx';
 import type { SearchSession } from './data/searchStore.ts';
 import type { SidecarClient } from './data/sidecarClient.ts';
@@ -14,6 +15,7 @@ import type { Density } from './ui/ViewMenu.tsx';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
+import { useUpdates } from './data/updateStore.ts';
 import { useAnalysis } from './data/analysisStore.ts';
 import { useBrowse } from './data/browseStore.ts';
 import { useArtwork } from './data/artworkStore.ts';
@@ -149,6 +151,7 @@ export default function App() {
   const privateUnread = chat.conversations
     .reduce((n, c) => n + (c.scope === 'private' ? c.unread : 0), 0);
   const transfers = useTransfers(session.client);
+  const updates = useUpdates();
   const analysis = useAnalysis(session.client);
   const artwork = useArtwork(session.client);
   const library = useLibrary(session.client);
@@ -639,6 +642,11 @@ export default function App() {
 
   return (
     <div className="app">
+      <UpdateBanner
+        state={updates}
+        onInstall={updates.install}
+        onDismiss={updates.dismiss}
+      />
       <ContextMenu request={menu} onClose={() => setMenu(null)} />
       <CommandPalette
         open={paletteOpen}

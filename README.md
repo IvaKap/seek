@@ -162,6 +162,23 @@ Download a current release. `release.sh` now refuses to produce a build that way
 **What you need:** a Soulseek account. Seek doesn't create one — sign in under
 **Settings → Account**, or import an existing setup from Nicotine+.
 
+### Updates are automatic
+
+**You only do the above once.** Seek checks for a new version on launch and
+offers to install it — one click, no Terminal, no System Settings, no dragging
+anything anywhere.
+
+The reason that works: the approval you just gave is recorded against *that
+specific copy* of the app, so replacing it by hand would mean repeating all
+three steps every time. A download the app makes itself is never quarantined,
+so an in-app update skips Gatekeeper entirely.
+
+Each update is signed with a key that never leaves the release pipeline, and
+Seek verifies that signature before writing a single byte — so a compromised
+download server still cannot push you a build. Nothing installs without you
+choosing to; if you're mid-download, "Not now" is a real answer and the offer
+comes back next launch.
+
 ---
 
 ## Setting up the API keys
@@ -305,7 +322,8 @@ cd sidecar && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../upstream:. \
 ```
 
 `./release.sh` does a full release build, and refuses to continue if the frozen
-engine would ship stale code or a bundle without its CA certificates.
+engine would ship stale code, a bundle without its CA certificates, or an update
+signed with a key that installed copies would reject.
 
 `RECON.md` documents what the Soulseek protocol actually provides — several
 things the obvious assumption gets wrong — and `docs/PRODUCT.md` is the product

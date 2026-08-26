@@ -2796,3 +2796,61 @@
   flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .copy__filesize { flex: none; color: var(--text-tertiary); }
+
+/* ---------------------------------------------------------------- updates
+ *
+ * A strip along the BOTTOM, above nothing and over nothing. An update is never
+ * urgent enough to interrupt a running queue, and the moment someone is most
+ * likely to be mid-download is the moment they just launched the app.
+ *
+ * `position: sticky` inside .app rather than fixed: fixed would sit over the
+ * sidebar, and the sidebar is how you leave whatever screen you are on.
+ */
+.updbar {
+  position: sticky; bottom: 0; z-index: 40;
+  grid-column: 1 / -1;
+  border-top: 0.5px solid var(--border-control);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.updbar__body {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-primary);
+}
+
+/* Pushes the buttons to the trailing edge without a spacer element. */
+.updbar__text { flex: 1 1 auto; min-width: 0; }
+
+.updbar__actions { display: flex; gap: var(--sp-2); flex: none; }
+
+.updbar__track {
+  height: 2px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+
+.updbar__fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+
+/* No stated content length means no honest percentage, so the bar travels
+   instead of filling — it reports "working", which is all that is known. */
+.updbar__fill[data-indeterminate='true'] {
+  width: 30%;
+  animation: updbar-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes updbar-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(430%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .updbar__fill[data-indeterminate='true'] { animation: none; width: 100%; opacity: 0.4; }
+  .updbar__fill { transition: none; }
+}
