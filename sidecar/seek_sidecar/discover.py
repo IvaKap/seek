@@ -45,6 +45,8 @@ import subprocess
 import urllib.error
 import urllib.parse
 import urllib.request
+
+from . import certs
 from html import unescape
 
 from .enrich import USER_AGENT, Gate
@@ -112,7 +114,8 @@ def _fetch(url, headers=None, gate=None, accept="application/json", data=None,
         **(headers or {}),
     })
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT,
+                                    context=certs.ssl_context()) as response:
             return response.read(), response.headers.get("Content-Type", "")
     except urllib.error.HTTPError as error:
         # AcoustID answers a rejected key with HTTP 400 and puts the REASON in

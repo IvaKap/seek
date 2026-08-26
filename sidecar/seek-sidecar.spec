@@ -45,6 +45,11 @@ binaries = collect_dynamic_libs("soundfile")
 # and then dies: a crash that only ever appears in a distributable build.
 datas = collect_data_files("pynicotine", include_py_files=False)
 datas += collect_data_files("soundfile")
+# certifi ships one data file, `cacert.pem`, and it is the entire trust store
+# for outbound HTTPS. PyInstaller has a hook that collects it, but it is named
+# here too: the symptom of its absence is every Bandcamp/Discogs/YouTube lookup
+# failing on the shipped app ONLY, which is a day to diagnose. See certs.py.
+datas += collect_data_files("certifi")
 
 a = Analysis(
     ["freeze_entry.py"],

@@ -20,3 +20,9 @@ soundfile>=0.12
 # Upstream pynicotine has NO runtime dependencies for the core — its declared
 # PyGObject requirement is for the GTK UI, which we never import. Verified by
 # importing all 52 non-gtkgui modules in a venv with no PyGObject present.
+
+# certifi — the CA bundle outbound HTTPS is verified against. Not a convenience:
+# a frozen build has no trust store of its own and asks OpenSSL for a path baked
+# in at build time, so without this every lookup on the shipped app dies with
+# CERTIFICATE_VERIFY_FAILED while working perfectly from the venv. See certs.py.
+certifi>=2024.2.2

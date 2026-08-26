@@ -34,6 +34,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import certs
+
 log = logging.getLogger("seek.enrich")
 
 # MusicBrainz asks that applications identify themselves with contact details.
@@ -93,7 +95,8 @@ def _get(url, accept="application/json", gate=None):
         "Accept": accept,
     })
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT,
+                                    context=certs.ssl_context()) as response:
             return response.read(), response.headers.get("Content-Type", "")
     except urllib.error.HTTPError as error:
         if error.code == 404:
