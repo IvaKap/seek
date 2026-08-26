@@ -8,6 +8,7 @@
 import pytest
 
 from seek_sidecar import protocol, translate
+from seek_sidecar.registries import TransferRegistry
 
 
 class FakeAttrs:
@@ -204,8 +205,79 @@ def test_upstream_status_set_is_covered_completely():
     assert not unmapped, f"unmapped upstream TransferStatus values: {unmapped}"
 
 
-def test_unknown_status_degrades_rather_than_crashing():
-    assert translate.transfer_state("Doing A Backflip") == "unknown"
+# ------------------------------------------------- refusals, not "unknown"
+#
+# Upstream writes a peer's refusal STRAIGHT INTO transfer.status
+# (downloads.py: `_abort_transfer(download, status=reason)`), and those strings
+# are TransferRejectReason values rather than TransferStatus ones. Mapping only
+# the closed set turned every refusal into "unknown" and threw away what the
+# peer said — which is the single most useful fact about a download that is
+# not moving.
+
+
+@pytest.mark.parametrize("reason", sorted(translate.REJECT_REASONS))
+def test_a_peer_refusal_is_rejected_not_unknown(reason):
+    assert translate.transfer_state(reason) == "rejected"
+
+
+def test_free_text_from_a_peer_is_also_a_refusal():
+    """`reason.startswith("User limit of")` upstream proves the set is open:
+    peers send text nobody enumerated. It is still a refusal, not a mystery."""
+    assert translate.transfer_state("User limit of 250 files reached") == "rejected"
+    assert translate.transfer_state("Doing A Backflip") == "rejected"
+
+
+def test_only_an_absent_status_is_unknown():
+    """The saved transfer list leaves status unset for rows written before
+    upstream had the field (transfers.py, `status = None`). That is the only
+    thing genuinely not known."""
+    assert translate.transfer_state(None) == "unknown"
+    assert translate.transfer_state("") == "unknown"
+
+
+class _Upstream:
+    """The handful of pynicotine Transfer attributes translate.transfer reads."""
+
+    def __init__(self, status):
+        self.username = "peer-alpha"
+        self.virtual_path = "@@x\\a.flac"
+        self.folder_path = "/music"
+        self.size = 1000
+        self.current_byte_offset = 0
+        self.status = status
+        self.speed = 0
+        self.avg_speed = 0
+        self.queue_position = 0
+        self.time_left = 0
+        self.time_elapsed = 0
+
+
+def _payload(status):
+    record = TransferRegistry().record_for("download", "peer-alpha", "@@x\\a.flac")
+    return translate.transfer(record, _Upstream(status))
+
+
+def test_the_refusal_text_survives_onto_the_wire():
+    """The whole point. `error` is the only copy of what the peer said, so a
+    transfer that drops it is back to showing nothing useful."""
+    out = _payload("File not shared.")
+    assert out["state"] == "rejected"
+    assert out["error"] == "File not shared."
+    # Through the validator: the server DROPS invalid events rather than
+    # raising, so a bad shape here would make refusals vanish entirely.
+    protocol.validate_struct("Transfer", out)
+
+
+def test_free_text_refusals_reach_the_wire_intact():
+    out = _payload("User limit of 250 files reached")
+    assert out["state"] == "rejected"
+    assert out["error"] == "User limit of 250 files reached"
+
+
+def test_a_healthy_transfer_carries_no_error():
+    out = _payload("Transferring")
+    assert out["state"] == "transferring"
+    assert out["error"] is None
 
 
 @pytest.mark.parametrize("code,expected", [

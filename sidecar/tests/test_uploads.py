@@ -268,3 +268,73 @@ def test_the_translated_payload_carries_a_direction():
     # event rather than raising — a missing direction would silently make
     # every upload disappear from the UI.
     protocol.validate_struct("Transfer", payload)
+
+
+# ------------------------------------------------ pressing Get must do something
+#
+# THE BUG: `enqueue_download` has two paths that return without calling
+# `_update_transfer`, so no `update-download` event fires and the Downloads
+# screen stays empty. The common one is a duplicate — upstream returns at once
+# with "Duplicate download found, stop here" — which is exactly what pressing
+# Get a second time on a slow peer does. From the outside the button is dead.
+
+
+class _Downloads:
+    """Enough of core.downloads for the enqueue command."""
+
+    def __init__(self, existing=None):
+        self.transfers = dict(existing or {})
+        self.enqueued = []
+
+    def enqueue_download(self, username, path, folder_path=None, size=0, paused=False):
+        self.enqueued.append((username, path))
+        # Whether it was already there or not, upstream leaves the object in
+        # `transfers` and emits nothing on the duplicate path.
+        self.transfers.setdefault(username + path, _Upstream(status="Queued"))
+
+
+class _Core:
+    def __init__(self, downloads):
+        self.downloads = downloads
+
+
+def _enqueue_host(existing=None):
+    host = _Host()
+    host.core = _Core(_Downloads(existing))
+    host._require_online = lambda: None
+    return host
+
+
+def _press_get(host):
+    return CoreHost._cmd_transfer_enqueue(host, {
+        "username": "peer-alpha", "path": "@@x\\a.flac",
+        "size": 1000, "file": None, "destination": None, "paused": False,
+    })
+
+
+def test_enqueue_puts_a_row_on_screen_for_a_new_download():
+    host = _enqueue_host()
+    _press_get(host)
+    assert [n for n, _ in host.events] == ["transfer.added"]
+
+
+def test_enqueue_puts_a_row_on_screen_even_when_already_queued():
+    """Upstream's duplicate path emits nothing, so without our own emit the
+    user presses Get and watches nothing happen at all."""
+    existing = {"peer-alpha@@x\\a.flac": _Upstream(status="Queued")}
+    host = _enqueue_host(existing)
+    result = _press_get(host)
+    assert result["alreadyQueued"] is True
+    # `added` rather than `changed` only because this registry is fresh;
+    # what matters is that SOMETHING reaches the screen, where upstream
+    # sent nothing at all.
+    assert [n for n, _ in host.events] == ["transfer.added"], (
+        "a duplicate must still put the row on screen"
+    )
+
+
+def test_the_row_carries_the_queued_state_so_it_can_say_so():
+    host = _enqueue_host()
+    _press_get(host)
+    _name, payload = host.events[0]
+    assert payload["state"] == "queued"

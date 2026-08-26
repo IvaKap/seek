@@ -62,6 +62,7 @@ exotic, since a folder you downloaded into is often a folder you share.
 
 TransferState = Literal[
     "queued",
+    "rejected",
     "getting_status",
     "transferring",
     "paused",
@@ -76,9 +77,22 @@ TransferState = Literal[
     "unknown",
 ]
 """
-Verbatim pass-through of pynicotine.transfers.TransferStatus, lowercased and
-underscored. The set is closed upstream; if a new value appears it is
-forwarded as 'unknown' and logged.
+pynicotine.transfers.TransferStatus, lowercased and underscored, plus one
+state upstream has no name for.
+
+'rejected' is the peer refusing, and it exists because upstream writes the
+refusal STRAIGHT INTO `transfer.status` (downloads.py,
+`_abort_transfer(download, status=reason)`). Those strings are
+TransferRejectReason values - 'File not shared.', 'Banned', 'Pending
+shutdown.' - and peers also send free text, e.g. anything starting 'User
+limit of'. None of them are TransferStatus values, so mapping only the
+closed set turned every refusal into 'unknown' AND discarded what the peer
+actually said. That is what a download reading 'unknown' in 0.2.1 meant:
+someone told you why and Seek threw it away.
+
+For 'rejected' the reason is carried verbatim in `Transfer.error`. 'unknown'
+now means only what it says - upstream had no status at all, which happens
+for a restored transfer whose saved row predates the field.
 """
 
 ErrorCode = Literal[
@@ -153,7 +167,7 @@ ENUM_VALUES: Dict[str, Tuple[str, ...]] = {
     "SearchMode": ("global", "rooms", "buddies", "user", "wishlist",),
     "SearchCloseReason": ("timeout", "result_cap", "stopped", "disconnected",),
     "TransferDirection": ("download", "upload",),
-    "TransferState": ("queued", "getting_status", "transferring", "paused", "cancelled", "filtered", "finished", "user_logged_off", "connection_closed", "connection_timeout", "download_folder_error", "local_file_error", "unknown",),
+    "TransferState": ("queued", "rejected", "getting_status", "transferring", "paused", "cancelled", "filtered", "finished", "user_logged_off", "connection_closed", "connection_timeout", "download_folder_error", "local_file_error", "unknown",),
     "ErrorCode": ("bad_request", "unknown_command", "not_connected", "already_queued", "not_found", "unsupported", "internal",),
     "SpectralAssessment": ("likely_lossless", "possible_transcode", "strong_signs_of_lossy_source", "inconclusive",),
     "ShareConsent": ("unset", "granted", "declined",),
@@ -1647,7 +1661,11 @@ class Transfer(TypedDict):
     # The originating FileRef when the client supplied one on enqueue, so
     # quality info survives into the transfers view.
     file: Optional["FileRef"]
-    # Upstream failure text, when the state is a failure.
+    # What went wrong, verbatim from upstream or from the peer. Set for every
+    # failure state, and for 'rejected' it is the refusal the peer sent - the
+    # ONLY place that text survives, so a client that ignores it is back to
+    # showing 'unknown'. Never formatted for display: the wording is the
+    # frontend's job.
     error: Optional[str]
 
 

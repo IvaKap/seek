@@ -21,11 +21,29 @@
 import { releaseKey } from '../data/libraryStore.ts';
 import { parsePath } from './parsePath.ts';
 
+/** One release both of you have, with the peer's path to it. */
+export interface SharedRelease {
+  /** "Artist — Release", or just the release when no artist was parsed. */
+  title: string;
+  /** The peer's folder for it, so the browse list can be jumped to. */
+  folder: string;
+  /** How many files of it they are sharing. */
+  files: number;
+}
+
 export interface Overlap {
   /** Distinct releases the peer shares that are already on your disk. */
   count: number;
   /** A few of them, for saying WHICH — a number alone invites disbelief. */
   examples: string[];
+  /**
+   * All of them, in the order they appear in the peer's share.
+   *
+   * `examples` is what the summary line can fit; this is what the list behind
+   * it shows. Kept as one pass rather than recomputed on click, because the
+   * parse is the expensive part and a browse of 40,000 files is not unusual.
+   */
+  releases: SharedRelease[];
 }
 
 const EXAMPLES = 3;
@@ -39,10 +57,11 @@ const EXAMPLES = 3;
  * user.
  */
 export function overlapWith(paths: string[], owned: Set<string>): Overlap {
-  if (owned.size === 0 || paths.length === 0) return { count: 0, examples: [] };
+  if (owned.size === 0 || paths.length === 0) {
+    return { count: 0, examples: [], releases: [] };
+  }
 
-  const seen = new Set<string>();
-  const examples: string[] = [];
+  const byKey = new Map<string, SharedRelease>();
 
   for (const path of paths) {
     const parsed = parsePath(path);
@@ -51,16 +70,29 @@ export function overlapWith(paths: string[], owned: Set<string>): Overlap {
     if (!release) continue;
 
     const key = releaseKey(artist, release);
+    if (!owned.has(key)) continue;
+
     // Distinct RELEASES, not files: a 12-track album you own is one thing in
-    // common, not twelve.
-    if (seen.has(key) || !owned.has(key)) continue;
-    seen.add(key);
-    if (examples.length < EXAMPLES) {
-      examples.push(artist ? `${artist} — ${release}` : release);
+    // common, not twelve. The file count is kept because it is the difference
+    // between "they have the album" and "they have one track off it".
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.files += 1;
+      continue;
     }
+    byKey.set(key, {
+      title: artist ? `${artist} — ${release}` : release,
+      folder: parsed.folderPath,
+      files: 1,
+    });
   }
 
-  return { count: seen.size, examples };
+  const releases = [...byKey.values()];
+  return {
+    count: releases.length,
+    examples: releases.slice(0, EXAMPLES).map((r) => r.title),
+    releases,
+  };
 }
 
 /**

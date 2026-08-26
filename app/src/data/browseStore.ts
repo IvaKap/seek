@@ -162,7 +162,9 @@ export function useBrowse(
   /* Computed once per browse rather than per render: a 9,000-file share is a
    * lot of path parsing, and it does not change while you look at it. */
   const overlap = useMemo(() => {
-    if (!current || !owned || owned.size === 0) return { count: 0, examples: [] };
+    if (!current || !owned || owned.size === 0) {
+      return { count: 0, examples: [], releases: [] };
+    }
     return overlapWith(
       current.folders.flatMap((f) => f.files.map((file) => file.path)),
       owned,

@@ -77,3 +77,53 @@ describe('overlapWith', () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 });
+
+describe('the list behind the count', () => {
+  /* The count used to be all there was, with three examples in a `title`
+   * attribute. WHICH records overlap is the actual information. */
+
+  it('returns every shared release, not just the examples', () => {
+    const owned = new Set([
+      releaseKey('Aphex Twin', 'Syro'),
+      releaseKey('Burial', 'Untrue'),
+      releaseKey('Boards of Canada', 'Geogaddi'),
+      releaseKey('Autechre', 'Amber'),
+    ]);
+    const paths = [
+      'Music\\Aphex Twin - Syro\\01 minipops.flac',
+      'Music\\Burial - Untrue\\01 Archangel.flac',
+      'Music\\Boards of Canada - Geogaddi\\01 Ready Lets Go.flac',
+      'Music\\Autechre - Amber\\01 Foil.flac',
+    ];
+    const o = overlapWith(paths, owned);
+    expect(o.count).toBe(4);
+    expect(o.examples).toHaveLength(3);
+    expect(o.releases).toHaveLength(4);
+  });
+
+  it('counts files per release, because one track is not the album', () => {
+    const owned = new Set([releaseKey('Aphex Twin', 'Syro')]);
+    const o = overlapWith([
+      'Music\\Aphex Twin - Syro\\01 minipops.flac',
+      'Music\\Aphex Twin - Syro\\02 XMAS_EVET10.flac',
+      'Music\\Aphex Twin - Syro\\03 produk 29.flac',
+    ], owned);
+    // Still ONE thing in common...
+    expect(o.count).toBe(1);
+    // ...but knowing they have three of its tracks is the difference between
+    // "they have the album" and "they have a single off it".
+    expect(o.releases[0].files).toBe(3);
+  });
+
+  it('carries the peer folder, so the list can jump to it', () => {
+    const owned = new Set([releaseKey('Burial', 'Untrue')]);
+    const o = overlapWith(['Music\\Burial - Untrue\\01 Archangel.flac'], owned);
+    expect(o.releases[0].folder).toContain('Untrue');
+  });
+
+  it('is empty rather than undefined when nothing overlaps', () => {
+    /* The sheet maps over this unconditionally. */
+    expect(overlapWith([], new Set(['x'])).releases).toEqual([]);
+    expect(overlapWith(['a\\b.flac'], new Set()).releases).toEqual([]);
+  });
+});

@@ -44,9 +44,39 @@ def user_status(value):
     return _USER_STATUS.get(value, "offline")
 
 
+# Reject reasons a PEER sends, which upstream assigns straight to
+# `transfer.status` (downloads.py: `_abort_transfer(download, status=reason)`).
+# They are not TransferStatus values, so they used to fall through to "unknown"
+# and the text was dropped on the floor — see TransferState in the schema.
+#
+# Two of them, "Queued" and "Cancelled", collide with real TransferStatus values
+# and were therefore the only refusals that ever displayed correctly. That is a
+# coincidence of spelling, not a design, and it is why the bug looked
+# intermittent rather than total.
+#
+# Not an exhaustive list, deliberately: `reason.startswith("User limit of")`
+# upstream proves peers send free text, so anything unrecognised is 'rejected'
+# too, carrying whatever they said.
+REJECT_REASONS = frozenset({
+    "Complete", "File read error.", "File not shared.", "Banned",
+    "Pending shutdown.", "Too many files", "Too many megabytes",
+    "Disallowed extension",
+})
+
+
 def transfer_state(value):
-    """Upstream TransferStatus string -> enum string."""
-    return _TRANSFER_STATE.get(value, "unknown")
+    """Upstream TransferStatus string -> enum string.
+
+    `None` is the only thing that is genuinely unknown: upstream's saved
+    transfer list leaves the status unset for rows written before it had the
+    field (transfers.py, `status = None` when `num_attributes < 4`). Everything
+    else is a statement by somebody, even when we have no name for it.
+    """
+    if value in _TRANSFER_STATE:
+        return _TRANSFER_STATE[value]
+    if value is None or value == "":
+        return "unknown"
+    return "rejected"
 
 
 def _attr(attributes, name):
@@ -252,5 +282,7 @@ def transfer(record, upstream_transfer):
         "secondsElapsed": int(t.time_elapsed or 0),
         "stalled": bool(record.stalled),
         "file": record.file,
-        "error": t.status if state in FAILED_STATES else None,
+        # For 'rejected' this is the only surviving copy of what the peer
+        # said. Dropping it is what made every refusal read "unknown".
+        "error": t.status if (state in FAILED_STATES or state == "rejected") else None,
     }

@@ -349,11 +349,43 @@
 .want[data-status='not_found'] { border-left: 2px solid var(--text-quaternary); }
 .want[data-status='searching'] { border-left: 2px solid var(--accent); }
 
+/* Now a <button>, so the browser's own button styling has to be undone before
+   the pill reads as a pill again. It has always LOOKED clickable; until it was
+   one, that was a lie. */
 .browse__overlap {
   color: var(--accent);
   padding: 0 var(--sp-2); border-radius: var(--radius-pill);
   background: var(--accent-soft);
+  border: 0; font: inherit; cursor: default;
+  display: inline-flex; align-items: center;
+  height: 1.35rem;
 }
+/* No invented token: the pill is already accent-on-accent-soft, so hover
+   lifts the text rather than the ground under it. */
+.browse__overlap:hover { text-decoration: underline; }
+.browse__overlap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---- the list behind it ---- */
+.ovl__list {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto;
+}
+
+.ovl__row + .ovl__row { border-top: 0.5px solid var(--border-control); }
+
+.ovl__pick {
+  display: flex; align-items: baseline; gap: var(--sp-3);
+  width: 100%; padding: var(--sp-2) var(--sp-3);
+  border: 0; background: none; font: inherit; text-align: left;
+  color: var(--text-primary); cursor: default;
+}
+.ovl__pick:hover { background: var(--bg-hover); }
+.ovl__pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* The title takes the room; the file count is the qualifier, so it stays put
+   at the trailing edge where the eye can compare rows down the column. */
+.ovl__title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ovl__files { flex: none; color: var(--text-tertiary); font-size: var(--fs-caption); }
 
 /* ========================================================== related ====== */
 /* Two shelves, one question each: what else this artist made, and what else is
@@ -1490,6 +1522,9 @@
 
 .dls { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
 .dls__error { margin: 0; font-size: var(--fs-caption); color: var(--danger); }
+/* Not an error: "already in your downloads" is the app answering a question,
+   not reporting a fault, and red would say the opposite. */
+.dls__note { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
 .dls__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
 .dls__heading { min-width: 0; }
 
@@ -1709,13 +1744,19 @@
 }
 .dl__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl__meta { text-align: right; }
+/* Coloured by TONE rather than by state, so the palette follows the meaning
+   and cannot drift from the wording — both come from domain/transferStatus.ts.
+   Notably `user_logged_off` was red here, which overstated it: a peer being
+   offline is a wait, not a fault, and nothing is broken when they come back. */
 .dl__state { text-align: right; color: var(--text-tertiary); }
-.dl__file[data-state='finished'] .dl__state { color: var(--success); }
-.dl__file[data-state='local_file_error'] .dl__state,
-.dl__file[data-state='connection_closed'] .dl__state,
-.dl__file[data-state='connection_timeout'] .dl__state,
-.dl__file[data-state='download_folder_error'] .dl__state,
-.dl__file[data-state='user_logged_off'] .dl__state { color: var(--danger); }
+.dl__state[data-tone='done']     { color: var(--success); }
+.dl__state[data-tone='active']   { color: var(--text-secondary); }
+.dl__state[data-tone='waiting']  { color: var(--text-tertiary); }
+/* Refused is amber, not red: someone answered, and the answer was no. That is
+   a different thing from a connection falling over, and the two want different
+   reactions from the reader. */
+.dl__state[data-tone='refused']  { color: var(--warn); }
+.dl__state[data-tone='broken']   { color: var(--danger); }
 
 /* --- post-download verdict ------------------------------------------------
    The FINDING, not the search-time prediction (PRODUCT §6). Deliberately worded

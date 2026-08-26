@@ -13,6 +13,7 @@
  */
 
 import { useState } from 'react';
+import { OverlapSheet } from './OverlapSheet.tsx';
 import type { BrowseSession, Shelf } from '../data/browseStore.ts';
 import type { TransferSession } from '../data/transferStore.ts';
 import { fileSize } from '../domain/format.ts';
@@ -109,6 +110,7 @@ export function BrowseView({
 }) {
   const [who, setWho] = useState('');
   const [mode, setMode] = useState<BrowseMode>('list');
+  const [overlapOpen, setOverlapOpen] = useState(false);
   const cur = browse.current;
 
   return (
@@ -179,13 +181,20 @@ export function BrowseView({
                   their taste overlaps yours where it has been tested. A count,
                   not a percentage — see domain/overlap.ts. */}
               {browse.overlap.count > 0 && (
-                <span
-                  className="browse__overlap tnum"
-                  title={`Already in your library: ${browse.overlap.examples.join(', ')}${
-                    browse.overlap.count > browse.overlap.examples.length ? ', …' : ''}`}
+                /* A button, not a span carrying a `title`. The three examples
+                   used to live in a tooltip: invisible on a trackpad,
+                   unreachable on touch, unscannable anywhere. WHICH records
+                   overlap is the actual information — forty because you share a
+                   taste in labels is a different fact from forty because you
+                   both own the same chart compilations. */
+                <button
+                  type="button"
+                  className="browse__overlap tnum pressable"
+                  onPointerDown={() => setOverlapOpen(true)}
+                  aria-haspopup="dialog"
                 >
                   {browse.overlap.count} in common with your library
-                </span>
+                </button>
               )}
               <input
                 className="settings__input browse__filter"
@@ -228,6 +237,18 @@ export function BrowseView({
           </div>
         )}
       </div>
+      {/* Outside the scrolling column, so the scrim covers the whole view
+          rather than scrolling away with the list underneath it. */}
+      {overlapOpen && cur && (
+        <OverlapSheet
+          username={cur.username}
+          releases={browse.overlap.releases}
+          onClose={() => setOverlapOpen(false)}
+          // The question after "what do we share" is "what else is in there",
+          // so picking a row drops you into that folder in the browse list.
+          onPick={(folder) => browse.setFilter(folder)}
+        />
+      )}
     </>
   );
 }

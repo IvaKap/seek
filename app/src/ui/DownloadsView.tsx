@@ -19,6 +19,7 @@ import { fileName, isActive, isFailed } from '../data/transferStore.ts';
    what deliberately did NOT move there. */
 import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
 import { fileSize, integer, speed as fmtSpeed } from '../domain/format.ts';
+import { transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
 import type { Density } from './ViewMenu.tsx';
 import type { AnalysisSession } from '../data/analysisStore.ts';
@@ -112,6 +113,7 @@ function FileRow({
 }) {
   const meta = useMetadata(client, t.id);
   const spectrum = analysis.byTransfer.get(t.id)?.result;
+  const status = transferStatus(t);
 
   return (
     <>
@@ -142,7 +144,13 @@ function FileRow({
         <span className="dl__meta tnum">
           {t.queuePosition !== null ? `#${t.queuePosition} in queue` : ''}
         </span>
-        <span className="dl__state">{t.error ?? t.state.replace(/_/g, ' ')}</span>
+        {/* `t.state.replace(/_/g, ' ')` used to be here, which is how a queue of
+            stalled downloads came to read "unknown" and "user logged off" at
+            people. All the wording lives in domain/transferStatus.ts now; the
+            raw text stays on the title so the original is still recoverable. */}
+        <span className="dl__state" data-tone={status.tone} title={t.error ?? undefined}>
+          {status.text}
+        </span>
         <span className="dl__verify">
           {t.state === 'finished' && <PreviewButton id={t.id} preview={preview} />}
         </span>
@@ -562,6 +570,9 @@ export function DownloadsView({
       {header}
       <div className="pane__scroll">
         <div className="dls" data-density={density} data-filter={filter}>
+          {session.note && !session.error && (
+            <p className="dls__note" role="status">{session.note}</p>
+          )}
           {session.error && (
             <p className="dls__error" role="alert">{session.error}</p>
           )}

@@ -2597,6 +2597,23 @@ class CoreHost:
         # `transfer.enqueue` only ever queues a DOWNLOAD — an upload is
         # something a peer asks you for, never something you start.
         record = self.transfers.record_for("download", username, path, params.get("file"))
+
+        # Emit the row ourselves rather than waiting for upstream to.
+        #
+        # `enqueue_download` has two paths that return WITHOUT calling
+        # `_update_transfer`, so no `update-download` fires and nothing appears:
+        #   * a duplicate — it returns at once (downloads.py, "Duplicate
+        #     download found, stop here"), which is the common case of pressing
+        #     Get twice on a peer with a long queue;
+        #   * `_enqueue_transfer` returning False on a file I/O error in the
+        #     incomplete folder.
+        # Both look identical from the outside: the button does nothing at all.
+        # Pressing Get must always put a row on the Downloads screen, even when
+        # the row's news is "you already asked for this".
+        upstream_transfer = self.core.downloads.transfers.get(key)
+        if upstream_transfer is not None:
+            self._emit_transfer(upstream_transfer, "download", params.get("file"))
+
         return {"transferId": record.id, "alreadyQueued": already}
 
     def _cmd_transfer_enqueueFolder(self, params):
