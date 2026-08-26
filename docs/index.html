@@ -1,0 +1,397 @@
+<title>Seek for Soulseek</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+/* Dark-first on purpose: this is a night-time tool that lives next to a music
+   library, and the app it documents is a dark macOS window. Light is a full
+   re-definition of the same tokens, not an inversion. */
+:root {
+  --ground:  #0A0E13;
+  --surface: #121821;
+  --sunken:  #0E141C;
+  --line:    #1E2732;
+  --line-strong: #2C3948;
+  --text:    #DDE4EC;
+  --muted:   #7C8A9C;
+  --faint:   #55616F;
+  --accent:  #5BD1DE;
+  --accent-ink: #06232A;
+  --good:    #6ECF97;
+  --warn:    #E0A55B;
+  --warn-bg: rgba(224, 165, 91, 0.09);
+
+  --measure: 66ch;
+  --step: clamp(1rem, 0.6rem + 1.4vw, 1.5rem);
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground:  #F2F5F8;
+    --surface: #FFFFFF;
+    --sunken:  #EBEFF4;
+    --line:    #DCE3EB;
+    --line-strong: #C2CDD9;
+    --text:    #10161E;
+    --muted:   #58687A;
+    --faint:   #8A99A9;
+    --accent:  #0B7C88;
+    --accent-ink: #FFFFFF;
+    --good:    #1C7F4B;
+    --warn:    #8A5A16;
+    --warn-bg: rgba(138, 90, 22, 0.07);
+  }
+}
+:root[data-theme="light"] {
+  --ground:  #F2F5F8;
+  --surface: #FFFFFF;
+  --sunken:  #EBEFF4;
+  --line:    #DCE3EB;
+  --line-strong: #C2CDD9;
+  --text:    #10161E;
+  --muted:   #58687A;
+  --faint:   #8A99A9;
+  --accent:  #0B7C88;
+  --accent-ink: #FFFFFF;
+  --good:    #1C7F4B;
+  --warn:    #8A5A16;
+  --warn-bg: rgba(138, 90, 22, 0.07);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--text);
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 60rem; margin: 0 auto; padding: 0 var(--step); }
+.prose { max-width: var(--measure); }
+
+h1, h2, h3 {
+  font-family: "Bricolage Grotesque", "IBM Plex Sans", sans-serif;
+  font-weight: 800;
+  text-wrap: balance;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+h1 { font-size: clamp(2.6rem, 1.6rem + 4.4vw, 4.6rem); line-height: 1.02; }
+h2 { font-size: clamp(1.5rem, 1.2rem + 1.2vw, 2rem); line-height: 1.15; }
+h3 { font-size: 1.0625rem; font-weight: 600; letter-spacing: -0.01em; }
+p { margin: 0; }
+
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent);
+}
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px;
+}
+
+/* ---------------------------------------------------------------- hero -- */
+header.hero { padding: clamp(4rem, 8vw, 7.5rem) 0 clamp(2.5rem, 5vw, 4rem); }
+.hero-stack { display: flex; flex-direction: column; gap: 1.5rem; }
+.lede { font-size: clamp(1.125rem, 1rem + 0.5vw, 1.3125rem); color: var(--muted); max-width: 52ch; }
+.lede strong { color: var(--text); font-weight: 500; }
+
+.cta-row { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 0.5rem; }
+.btn {
+  display: inline-flex; align-items: center; gap: 0.55rem;
+  background: var(--accent); color: var(--accent-ink);
+  font-weight: 600; font-size: 0.9375rem;
+  padding: 0.7rem 1.15rem; border-radius: 7px;
+  text-decoration: none; border: 0;
+  transition: transform 120ms var(--ease), filter 120ms var(--ease);
+}
+.btn:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.btn-note { font-size: 0.875rem; color: var(--faint); }
+
+/* --------------------------------------------------- the argument panel -- */
+/* The thesis is the comparison itself, so the page leads with one rather than
+   a screenshot: same record, six people, six different answers. */
+.panel {
+  margin-top: clamp(2rem, 4vw, 3rem);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.panel-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunken);
+}
+.panel-title { font-weight: 600; font-size: 0.9375rem; }
+.panel-sub { font-family: "IBM Plex Mono", monospace; font-size: 0.8125rem; color: var(--muted); }
+.panel-scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; min-width: 44rem; }
+caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+th {
+  text-align: left; font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6875rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--faint); font-weight: 400;
+  padding: 0.6rem 1.1rem; border-bottom: 1px solid var(--line);
+}
+td {
+  padding: 0.7rem 1.1rem; border-bottom: 1px solid var(--line);
+  font-family: "IBM Plex Mono", monospace; font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap;
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.who { color: var(--text); font-family: "IBM Plex Sans", sans-serif; font-size: 0.9375rem; }
+td.tracks { color: var(--text); }
+.tag {
+  display: inline-block; padding: 0.1rem 0.42rem; border-radius: 4px;
+  background: var(--sunken); border: 1px solid var(--line-strong);
+  font-size: 0.6875rem; letter-spacing: 0.03em; color: var(--text);
+}
+.free { color: var(--good); }
+.mine {
+  display: inline-block; margin-left: 0.5rem; padding: 0.05rem 0.4rem;
+  border-radius: 4px; background: var(--accent); color: var(--accent-ink);
+  font-family: "IBM Plex Mono", monospace; font-size: 0.625rem;
+  letter-spacing: 0.06em; text-transform: uppercase; vertical-align: 1px;
+}
+.panel-foot {
+  padding: 0.8rem 1.1rem; border-top: 1px solid var(--line);
+  background: var(--sunken); color: var(--faint); font-size: 0.8125rem;
+}
+
+/* The one animation on the page is the app's own row entrance, easing curve
+   and stagger included. */
+@media (prefers-reduced-motion: no-preference) {
+  tbody tr { animation: rowEnter 420ms var(--ease) both; }
+  tbody tr:nth-child(1) { animation-delay: 60ms; }
+  tbody tr:nth-child(2) { animation-delay: 86ms; }
+  tbody tr:nth-child(3) { animation-delay: 112ms; }
+  tbody tr:nth-child(4) { animation-delay: 138ms; }
+  tbody tr:nth-child(5) { animation-delay: 164ms; }
+  tbody tr:nth-child(6) { animation-delay: 190ms; }
+}
+@keyframes rowEnter { from { opacity: 0; } to { opacity: 1; } }
+
+/* ------------------------------------------------------------ sections -- */
+section { padding: clamp(3rem, 6vw, 5rem) 0; border-top: 1px solid var(--line); }
+.section-head { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 2rem; }
+
+.points { display: grid; gap: 2rem; grid-template-columns: 1fr; }
+@media (min-width: 46rem) { .points { grid-template-columns: repeat(3, 1fr); gap: 2.5rem; } }
+.point { display: flex; flex-direction: column; gap: 0.55rem; }
+.point p { color: var(--muted); font-size: 0.9375rem; }
+
+/* Numbered because installing genuinely is a sequence — nothing else here is. */
+ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: s; display: grid; gap: 1.1rem; }
+ol.steps li {
+  counter-increment: s; display: grid; grid-template-columns: 1.6rem 1fr; gap: 0.9rem;
+  align-items: start; color: var(--muted); font-size: 0.9375rem;
+}
+ol.steps li::before {
+  content: counter(s);
+  font-family: "IBM Plex Mono", monospace; font-size: 0.8125rem;
+  color: var(--warn); border: 1px solid currentColor; border-radius: 50%;
+  width: 1.6rem; height: 1.6rem; display: grid; place-items: center;
+}
+ol.steps b { color: var(--text); font-weight: 600; }
+
+.notice {
+  background: var(--warn-bg);
+  border: 1px solid color-mix(in srgb, var(--warn) 34%, transparent);
+  border-radius: 10px; padding: 1.2rem 1.3rem;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+.notice-title { color: var(--warn); font-weight: 600; font-size: 0.9375rem; }
+.quote {
+  font-family: "IBM Plex Mono", monospace; font-size: 0.8125rem;
+  color: var(--text); background: var(--sunken);
+  border-left: 2px solid var(--line-strong);
+  padding: 0.6rem 0.85rem; border-radius: 0 6px 6px 0;
+}
+
+.keys { width: 100%; min-width: 0; }
+.keys td, .keys th { white-space: normal; }
+.keys td:first-child { color: var(--text); font-family: "IBM Plex Sans", sans-serif; font-size: 0.9375rem; }
+
+pre {
+  margin: 0; overflow-x: auto; background: var(--sunken);
+  border: 1px solid var(--line); border-radius: 8px; padding: 0.9rem 1rem;
+  font-family: "IBM Plex Mono", monospace; font-size: 0.8125rem; color: var(--text);
+}
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 2.5rem 0 4rem; color: var(--faint); font-size: 0.875rem;
+}
+footer .wrap { display: flex; flex-direction: column; gap: 0.6rem; }
+</style>
+
+<header class="hero">
+  <div class="wrap hero-stack">
+    <!-- Delete this line once the app is public. -->
+    <p class="eyebrow">Pre-release · testing with friends</p>
+    <h1>You pick the copy.</h1>
+    <p class="lede">
+      Seek is an unofficial Soulseek client for macOS. When several people have
+      the same record, it lays them side by side — how many tracks, what format,
+      who has a slot free, how they've treated you before — and then
+      <strong>gets out of the way</strong>.
+    </p>
+
+    <div class="cta-row">
+      <!-- Point this at your GitHub Releases page. -->
+      <a class="btn" href="#get">Download for macOS</a>
+      <span class="btn-note">Apple silicon &amp; Intel · 44 MB · unsigned, see below</span>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">Burial — Untrue</span>
+        <span class="panel-sub">15 copies in these results</span>
+      </div>
+      <div class="panel-scroll">
+        <table>
+          <caption>Six of fifteen people sharing the same album, and how they differ</caption>
+          <thead>
+            <tr>
+              <th scope="col">From</th><th scope="col">Tracks</th><th scope="col">Format</th>
+              <th scope="col">Size</th><th scope="col">Slot</th><th scope="col">With you</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="who">nightbus</td><td class="tracks">13</td><td><span class="tag">FLAC</span></td><td>278 MB</td><td class="free">free</td><td>4 of 4</td></tr>
+            <tr><td class="who">rye_lane</td><td class="tracks">13</td><td><span class="tag">FLAC</span></td><td>279 MB</td><td class="free">free</td><td>—</td></tr>
+            <tr><td class="who">dubplate_cut</td><td class="tracks">13</td><td><span class="tag">320</span></td><td>116 MB</td><td class="free">free</td><td>1 of 1</td></tr>
+            <tr><td class="who">tape_hiss</td><td class="tracks">13</td><td><span class="tag">WAV</span></td><td>1.02 GB</td><td>18 queued</td><td>—</td></tr>
+            <tr><td class="who">cassette_era</td><td class="tracks">12</td><td><span class="tag">FLAC</span></td><td>259 MB</td><td class="free">free</td><td>0 of 3</td></tr>
+            <tr><td class="who">south_circular<span class="mine">you clicked</span></td><td class="tracks">9</td><td><span class="tag">FLAC</span></td><td>322 MB</td><td class="free">free</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="panel-foot">
+        Ordered by completeness, then quality, slots, queue and your own history
+        with each peer. Press Get on any row and that is the copy you get.
+      </p>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="section-head prose">
+      <p class="eyebrow">Why another client</p>
+      <h2>It shows you the data instead of deciding for you.</h2>
+    </div>
+    <div class="points">
+      <div class="point">
+        <h3>No silent substitutions</h3>
+        <p>
+          Click Get on a nine-track copy and you get that nine-track copy. If a
+          fuller one exists elsewhere, Seek shows you — it never quietly swaps
+          your choice for one it prefers.
+        </p>
+      </div>
+      <div class="point">
+        <h3>It admits what it can't know</h3>
+        <p>
+          Where nobody has the whole album, Seek says so and lists what each
+          person actually has, file by file. It won't claim one person's
+          "track 4" is the same recording as another's, because that guess was
+          measured against real rips and was wrong more often than right.
+        </p>
+      </div>
+      <div class="point">
+        <h3>Reliability means your history</h3>
+        <p>
+          "9 of 19 with you" comes from your own transfer log. Soulseek exposes
+          nothing about how a stranger treats anyone else, so nothing here
+          pretends to a reputation score it cannot see.
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="get">
+  <div class="wrap">
+    <div class="section-head prose">
+      <p class="eyebrow">Getting it running</p>
+      <h2>macOS will stop you the first time. Here's the way past.</h2>
+      <p class="lede">
+        Seek isn't signed with a paid Apple certificate, so macOS treats it as
+        unverified. Nothing is wrong with the download — this is what every
+        unsigned app gets.
+      </p>
+    </div>
+
+    <div class="notice prose">
+      <p class="notice-title">What you'll see</p>
+      <p class="quote">"Apple could not verify &ldquo;Seek&rdquo; is free of malware."</p>
+      <ol class="steps">
+        <li><span><b>Move Seek to Applications</b>, then try to open it. Dismiss the warning.</span></li>
+        <li><span>Open <b>System&nbsp;Settings → Privacy&nbsp;&amp;&nbsp;Security</b>.</span></li>
+        <li><span>Scroll down. There's a line saying Seek was blocked — click <b>Open Anyway</b>.</span></li>
+        <li><span>Confirm. macOS remembers, and won't ask again.</span></li>
+      </ol>
+      <p style="color: var(--muted); font-size: 0.875rem;">
+        Prefer one command instead? <code style="font-family:'IBM Plex Mono',monospace">xattr -dr com.apple.quarantine /Applications/Seek.app</code>
+      </p>
+    </div>
+
+    <div class="prose" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 0.9rem;">
+      <h3>Or build it yourself</h3>
+      <p style="color: var(--muted); font-size: 0.9375rem;">
+        An app you build on your own Mac isn't quarantined and opens normally.
+        You'll need Rust, Node 20+ and Python 3.11+.
+      </p>
+      <pre>git clone --recurse-submodules &lt;repo&gt;
+cd seek &amp;&amp; ./release.sh</pre>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="section-head prose">
+      <p class="eyebrow">Optional</p>
+      <h2>Bring your own keys.</h2>
+      <p class="lede">
+        Searching and downloading need nothing. These extras stay switched off
+        until you add a free key in <b>Settings → External lookups</b>, and the
+        keys never leave your Mac except to reach the service they belong to.
+      </p>
+    </div>
+    <div class="panel">
+      <div class="panel-scroll">
+        <table class="keys">
+          <caption>Optional features and what each one needs</caption>
+          <thead><tr><th scope="col">Feature</th><th scope="col">Needs</th></tr></thead>
+          <tbody>
+            <tr><td>Artwork and release details</td><td>Nothing — MusicBrainz is open</td></tr>
+            <tr><td>Label and artist catalogues</td><td>A free Discogs token</td></tr>
+            <tr><td>Identify a file by its sound</td><td>A free AcoustID key, plus <code>brew install chromaprint</code></td></tr>
+            <tr><td>Import a YouTube playlist</td><td>A free YouTube Data API key</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p>
+      Unofficial. Not affiliated with or endorsed by Soulseek or Nicotine+ —
+      it uses <a href="https://nicotine-plus.org/">Nicotine+</a> as its engine
+      and is grateful for it.
+    </p>
+    <p>GPL-3.0-or-later. Source on GitHub.</p>
+    <p>Seek is a client. What you search for, share and download is your call, and so is the law where you live.</p>
+  </div>
+</footer>

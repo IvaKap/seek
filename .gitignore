@@ -1,0 +1,69 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# PyInstaller output. This was tracked, and the copy in git was three days
+# stale and missing seek_sidecar.discover entirely — i.e. it did not contain
+# the discovery layer at all, while looking exactly like a working sidecar.
+sidecar/build/
+sidecar/dist/
+
+# A built .app at the repo root. Build output, and 44 MB of it — release.sh
+# writes the real one to app/src-tauri/target/, which is already ignored.
+Seek.app/
+
+# Node
+node_modules/
+dist/
+
+# TypeScript build caches. NEVER commit these. `tsc -b` decides a project is
+# "up to date" from its OUTPUTS, so a buildinfo plus stray emitted .js is how a
+# build silently stops type checking — measured, see docs/HANDOFF.md §4.
+*.tsbuildinfo
+
+# Guard against a stray emit landing beside the sources. Nothing under app/src
+# is hand-written JavaScript; anything that appears there is compiler output.
+app/src/**/*.js
+app/vite.config.js
+
+# Rust / Tauri
+target/
+
+# Seek local state
+*.local.json
+
+# Raw screenshots kept for reference. The named copies the guide uses are
+# committed; these originals are not worth the repo weight.
+docs/guide-shots/originals/
+
+# A loose screenshot that twice got swept into a commit by a broad
+# `git add docs`. It may or may not be the guide's missing 04-compare.png and
+# nobody has checked; guide shots also carry real Soulseek handles, so they get
+# added deliberately, under their proper name, or not at all.
+docs/guide-shots/Screenshot*.png
+
+# ---------------------------------------------------------------- private
+# Working documents that stay out of the public repo. They are still here on
+# disk and still the source of truth for anyone with the full checkout — they
+# are simply not what a stranger arriving at this project needs, and some of
+# them carry local paths and session detail.
+CLAUDE.md
+AGENTS.md
+DISCOVERY.md
+BRIEF_SEEK.md
+DESIGN_BRIEF.md
+NOTES_TO_APP.md
+NOTES_TO_MAIN.md
+plans/
+docs/HANDOFF.md
+docs/BACKLOG.md
+docs/STATUS.md
+app/STATUS.md
+.claude/

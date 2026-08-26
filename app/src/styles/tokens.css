@@ -1,0 +1,224 @@
+/*
+ * Seek — design tokens.
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * Three rules this file exists to enforce:
+ *
+ * 1. Light and dark are designed INDEPENDENTLY. Dark is not an inversion — its
+ *    greys are warmer, its separators are lighter-on-dark rather than
+ *    darker-on-light, and its accent is the brighter of Apple's two system
+ *    blues because a mid-blue goes muddy on a dark ground.
+ *
+ * 2. Tracking is SIZE-SPECIFIC. A single global letter-spacing is a bug: large
+ *    text reads too loose as it grows and wants negative tracking, small text
+ *    wants a touch positive. Every step below carries its own tracking and its
+ *    own leading, tight at the top and looser through the body.
+ *
+ * 3. Everything is in rem so the whole UI scales with the user's text size.
+ *    Tested at 200%.
+ */
+
+:root {
+  /* ---------------------------------------------------------- typography */
+  /* System stack only. SF Pro arrives free on macOS and must not be bundled —
+   * it is licensed for Apple platforms, and this is a webview. */
+  --font-ui: -apple-system, system-ui, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  font-optical-sizing: auto;
+
+  /* size / line-height / tracking, as matched triples */
+  --fs-title: 1.625rem;      /* 26px — macOS large title, not iOS 34 */
+  --lh-title: 1.15;
+  --tr-title: -0.021em;
+
+  --fs-section: 1.1875rem;   /* 19px */
+  --lh-section: 1.26;
+  --tr-section: -0.014em;
+
+  --fs-body-lg: 1.0625rem;   /* 17px — prose, settings rows, empty states */
+  --lh-body-lg: 1.45;
+  --tr-body-lg: -0.006em;
+
+  --fs-body: 0.9375rem;      /* 15px — the dense list body */
+  --lh-body: 1.4;
+  --tr-body: -0.002em;
+
+  --fs-secondary: 0.8125rem; /* 13px — the metadata line */
+  --lh-secondary: 1.35;
+  --tr-secondary: 0em;
+
+  --fs-caption: 0.75rem;     /* 12px */
+  --lh-caption: 1.33;
+  --tr-caption: 0.004em;
+
+  --fs-micro: 0.6875rem;     /* 11px — badges, counters */
+  --lh-micro: 1.27;
+  --tr-micro: 0.008em;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 590;  /* SF's semibold sits between 600 and 590 optically */
+  --fw-bold: 680;
+
+  /* -------------------------------------------------------------- spacing */
+  --sp-1: 0.25rem;   /* 4  */
+  --sp-2: 0.5rem;    /* 8  */
+  --sp-3: 0.75rem;   /* 12 */
+  --sp-4: 1rem;      /* 16 */
+  --sp-5: 1.25rem;   /* 20 */
+  --sp-6: 1.5rem;    /* 24 */
+  --sp-8: 2rem;      /* 32 */
+  --sp-10: 2.5rem;   /* 40 */
+  --sp-12: 3rem;     /* 48 */
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
+  --radius-pill: 999px;
+
+  --sidebar-w: 13.75rem;
+  --row-h: 3.25rem;
+
+  /* --------------------------------------------------------------- motion */
+  /* Durations for CSS-driven motion. Springs live in motion/spring.ts. */
+  --dur-press: 100ms;
+  --dur-fast: 160ms;
+  --dur-base: 220ms;
+  --dur-slow: 280ms;
+
+  /* Built-in easings are too weak to read as intentional. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ---------------------------------------------------------- light ramp */
+  color-scheme: light;
+
+  --bg-window: #e9e9ee;
+  --bg-content: #fbfbfd;
+  --bg-raised: #ffffff;
+  --bg-sunken: #f1f1f5;
+  --bg-hover: rgba(0, 0, 0, 0.035);
+  --bg-active: rgba(0, 0, 0, 0.06);
+  --bg-selected: rgba(0, 122, 255, 0.10);
+
+  --material-sidebar: rgba(243, 243, 247, 0.72);
+  --material-header: rgba(251, 251, 253, 0.72);
+  --material-popover: rgba(255, 255, 255, 0.82);
+  --blur-chrome: 30px;
+  --blur-popover: 24px;
+
+  --text-primary: #1c1c1e;
+  --text-secondary: #66666b;
+  --text-tertiary: #93939a;
+  --text-quaternary: #b4b4bb;
+  --text-on-accent: #ffffff;
+
+  --accent: #007aff;
+  --accent-hover: #0069e0;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+
+  /* Amber is the transcode warning and nothing else. Darkened from the system
+   * orange so it clears 4.5:1 against a white row. */
+  --warn: #a2560a;
+  --warn-soft: rgba(180, 100, 10, 0.13);
+  --danger: #c9252d;
+  --success: #1a7f37;
+
+  --separator: rgba(0, 0, 0, 0.075);
+  --separator-strong: rgba(0, 0, 0, 0.14);
+  --border-control: rgba(0, 0, 0, 0.12);
+
+  --shadow-popover: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 8px 28px rgba(0, 0, 0, 0.16);
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* ------------------------------------------------------------- dark ramp */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg-window: #202024;
+    --bg-content: #17171a;
+    --bg-raised: #212126;
+    --bg-sunken: #121214;
+    --bg-hover: rgba(255, 255, 255, 0.045);
+    --bg-active: rgba(255, 255, 255, 0.075);
+    --bg-selected: rgba(10, 132, 255, 0.20);
+
+    --material-sidebar: rgba(38, 38, 44, 0.66);
+    --material-header: rgba(23, 23, 26, 0.70);
+    --material-popover: rgba(44, 44, 50, 0.80);
+
+    --text-primary: #f4f4f7;
+    --text-secondary: rgba(235, 235, 245, 0.60);
+    --text-tertiary: rgba(235, 235, 245, 0.38);
+    --text-quaternary: rgba(235, 235, 245, 0.26);
+    --text-on-accent: #ffffff;
+
+    --accent: #0a84ff;
+    --accent-hover: #3d9bff;
+    --accent-soft: rgba(10, 132, 255, 0.18);
+
+    --warn: #ffb340;
+    --warn-soft: rgba(255, 179, 64, 0.16);
+    --danger: #ff6961;
+    --success: #30d158;
+
+    --separator: rgba(255, 255, 255, 0.085);
+    --separator-strong: rgba(255, 255, 255, 0.16);
+    --border-control: rgba(255, 255, 255, 0.16);
+
+    --shadow-popover: 0 0 0 0.5px rgba(0, 0, 0, 0.5), 0 10px 34px rgba(0, 0, 0, 0.5);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Explicit override, so the app can force a theme independently of the OS. */
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
+/* ------------------------------------------------------ accessibility ---- */
+
+/*
+ * Reduced transparency: solid surfaces, no blur. The material IS the hierarchy
+ * here, so removing it means the surfaces must carry their own opaque colour
+ * rather than simply becoming invisible.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --material-sidebar: #f3f3f7;
+    --material-header: #fbfbfd;
+    --material-popover: #ffffff;
+    --blur-chrome: 0px;
+    --blur-popover: 0px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --material-sidebar: #26262c;
+      --material-header: #17171a;
+      --material-popover: #2c2c32;
+    }
+  }
+}
+
+/* Defined borders, stronger separators, and text that stops being subtle. */
+@media (prefers-contrast: more) {
+  :root {
+    --text-secondary: #3a3a3e;
+    --text-tertiary: #55555b;
+    --separator: rgba(0, 0, 0, 0.24);
+    --separator-strong: rgba(0, 0, 0, 0.42);
+    --border-control: rgba(0, 0, 0, 0.55);
+    --warn: #7a3d00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --text-secondary: rgba(235, 235, 245, 0.86);
+      --text-tertiary: rgba(235, 235, 245, 0.70);
+      --separator: rgba(255, 255, 255, 0.30);
+      --separator-strong: rgba(255, 255, 255, 0.48);
+      --border-control: rgba(255, 255, 255, 0.62);
+      --warn: #ffc973;
+    }
+  }
+}

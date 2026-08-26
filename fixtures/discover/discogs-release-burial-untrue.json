@@ -1,0 +1,546 @@
+{
+  "id": 1125103,
+  "status": "Accepted",
+  "year": 2007,
+  "resource_url": "https://api.discogs.com/releases/1125103",
+  "uri": "https://www.discogs.com/release/1125103-Burial-Untrue",
+  "artists": [
+    {
+      "name": "Burial",
+      "anv": "",
+      "join": "",
+      "role": "",
+      "tracks": "",
+      "id": 306157,
+      "resource_url": "https://api.discogs.com/artists/306157",
+      "thumbnail_url": "https://i.discogs.com/oZMboFmbMvJplmrm285Xcao25eeuyf4YwdwmjDtunQ8/rs:fit/g:sm/q:90/h:600/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9BLTMwNjE1/Ny0xNzA3MjE3OTAw/LTkxMzkuanBlZw.jpeg"
+    }
+  ],
+  "artists_sort": "Burial",
+  "labels": [
+    {
+      "name": "Hyperdub",
+      "catno": "HDBCD002",
+      "entity_type": "1",
+      "entity_type_name": "Label",
+      "id": 25386,
+      "resource_url": "https://api.discogs.com/labels/25386",
+      "thumbnail_url": "https://i.discogs.com/warxVQjL6ej1A2V8DtEvmaIh-QgYgAOGGTdSz84BzR0/rs:fit/g:sm/q:90/h:600/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI1Mzg2/LTE2NDI1MzYyODgt/MTUwMy5qcGVn.jpeg"
+    }
+  ],
+  "series": [],
+  "companies": [
+    {
+      "name": "Hyperdub Records",
+      "catno": "",
+      "entity_type": "4",
+      "entity_type_name": "Record Company",
+      "id": 642200,
+      "resource_url": "https://api.discogs.com/labels/642200",
+      "thumbnail_url": "https://i.discogs.com/W0BDpMMnv9NmjgNHu7Pzom3B1ALE9npEr65xrjLofC0/rs:fit/g:sm/q:90/h:140/w:188/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTY0MjIw/MC0xNDUxMzI1NjYz/LTk1MTkuanBlZw.jpeg"
+    },
+    {
+      "name": "Domino Publishing Ltd.",
+      "catno": "",
+      "entity_type": "21",
+      "entity_type_name": "Published By",
+      "id": 298579,
+      "resource_url": "https://api.discogs.com/labels/298579"
+    },
+    {
+      "name": "Cargo Records",
+      "catno": "",
+      "entity_type": "10",
+      "entity_type_name": "Manufactured By",
+      "id": 13012,
+      "resource_url": "https://api.discogs.com/labels/13012",
+      "thumbnail_url": "https://i.discogs.com/6DCIevKmh8qdZ9QWHkpiQvKFRDgoBu1xW4r6kFi8vIA/rs:fit/g:sm/q:90/h:368/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTEzMDEy/LTEzNzI0NzY0MDEt/OTUwNy5wbmc.jpeg"
+    },
+    {
+      "name": "Cargo Records",
+      "catno": "",
+      "entity_type": "9",
+      "entity_type_name": "Distributed By",
+      "id": 13012,
+      "resource_url": "https://api.discogs.com/labels/13012",
+      "thumbnail_url": "https://i.discogs.com/6DCIevKmh8qdZ9QWHkpiQvKFRDgoBu1xW4r6kFi8vIA/rs:fit/g:sm/q:90/h:368/w:599/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTEzMDEy/LTEzNzI0NzY0MDEt/OTUwNy5wbmc.jpeg"
+    },
+    {
+      "name": "Sony DADC, Southwater",
+      "catno": "",
+      "entity_type": "31",
+      "entity_type_name": "Glass Mastered At",
+      "id": 1869790,
+      "resource_url": "https://api.discogs.com/labels/1869790",
+      "thumbnail_url": "https://i.discogs.com/xjCNiELhMifIwU6O2IIpeSbXxjXFESIK0Gq0DhWSUNU/rs:fit/g:sm/q:90/h:450/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTE4Njk3/OTAtMTU5NTQ5Nzgz/My05OTU0LmpwZWc.jpeg"
+    },
+    {
+      "name": "Transition Mastering Studios",
+      "catno": "",
+      "entity_type": "29",
+      "entity_type_name": "Mastered At",
+      "id": 275155,
+      "resource_url": "https://api.discogs.com/labels/275155",
+      "thumbnail_url": "https://i.discogs.com/EmH1GoFxHFyUS_qF1bII46AifGbEApytgzTxyh_ILb8/rs:fit/g:sm/q:90/h:148/w:420/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9MLTI3NTE1/NS0xNTE1MjcxOTA5/LTc1ODMucG5n.jpeg"
+    }
+  ],
+  "formats": [
+    {
+      "name": "CD",
+      "qty": "1",
+      "descriptions": [
+        "Album"
+      ]
+    }
+  ],
+  "data_quality": "Correct",
+  "format_quantity": 1,
+  "date_added": "2007-11-07T07:36:15-08:00",
+  "date_changed": "2025-02-12T13:12:54-08:00",
+  "master_id": 11772,
+  "master_url": "https://api.discogs.com/masters/11772",
+  "title": "Untrue",
+  "country": "UK",
+  "released": "2007-11-05",
+  "notes": "Written and produced in 2006-7.\nHyperdub Records 2007\nMastered @ transition-studios.co.uk\nManufactured and distributed by Cargo Records \n\nIncidental info:\nIssued as a standard 4-panel Digipak.\n\nTrack \"Archangel\" samples \"One Wish\" by [a=Ray J].\n\nPressing made at the Southwater Sony DADC plant in the UK. A different pressing, made at the Sony DADC plant in Austria instead, is to be found here: [r=12675713].",
+  "released_formatted": "05 Nov 2007",
+  "identifiers": [
+    {
+      "type": "Barcode",
+      "value": "5 024545 486520",
+      "description": "Text"
+    },
+    {
+      "type": "Barcode",
+      "value": "5024545486520",
+      "description": "Reader"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "Sony DADC HDBCD002 01",
+      "description": "Variant 1 to 6, 8, 9, 10, 11, 12"
+    },
+    {
+      "type": "Matrix / Runout",
+      "value": "Sony DADC HDBCD002 02",
+      "description": "Variant 7"
+    },
+    {
+      "type": "Mastering SID Code",
+      "value": "IFPI LY34",
+      "description": "Variant 1 to 6, 8, 9, 10, 11, 12"
+    },
+    {
+      "type": "Mastering SID Code",
+      "value": "IFPI LY33",
+      "description": "Variant 7"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW18",
+      "description": "Variant 1"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW16",
+      "description": "Variant 2"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW26",
+      "description": "Variant 3"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW04",
+      "description": "Variant 4"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW22",
+      "description": "Variant 5"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW36",
+      "description": "Variant 6"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW51",
+      "description": "Variant 7"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW24",
+      "description": "Variant 8"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW14",
+      "description": "Variant 9"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW34",
+      "description": "Variant 10"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW39",
+      "description": "Variant 11"
+    },
+    {
+      "type": "Mould SID Code",
+      "value": "IFPI AEW11",
+      "description": "Variant 12"
+    }
+  ],
+  "videos": [
+    {
+      "uri": "https://www.youtube.com/watch?v=RLuep5Iwf0U",
+      "title": "Untitled",
+      "description": "Provided to YouTube by Hyperdub\n\nUntitled · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 49,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=PzYrr7K1dvU",
+      "title": "Archangel",
+      "description": "Provided to YouTube by Hyperdub\n\nArchangel · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 241,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=VVa_aCSA9Jc",
+      "title": "Near Dark",
+      "description": "Provided to YouTube by Hyperdub\n\nNear Dark · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 237,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=y8NoplRfb-w",
+      "title": "Ghost Hardware",
+      "description": "Provided to YouTube by Hyperdub\n\nGhost Hardware · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 296,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=HkoV3hZbF24",
+      "title": "Endorphin",
+      "description": "Provided to YouTube by Hyperdub\n\nEndorphin · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 180,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=quMLGB_K7K8",
+      "title": "Etched Headplate",
+      "description": "Provided to YouTube by Hyperdub\n\nEtched Headplate · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 362,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=cqXtNXf8zh4",
+      "title": "In McDonalds",
+      "description": "Provided to YouTube by Hyperdub\n\nIn McDonalds · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nProducer: Will Bevan\nMusic Publisher: Hyperdub Publishing\nComposer: Will Bevan\n\nAuto-generated by YouTube.",
+      "duration": 127,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=mHIZbGhxJ9k",
+      "title": "Untrue",
+      "description": "Provided to YouTube by Hyperdub\n\nUntrue · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 379,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=JcQODLPJGfk",
+      "title": "Shell of Light",
+      "description": "Provided to YouTube by Hyperdub\n\nShell of Light · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 283,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=v-qZgZGd3DQ",
+      "title": "Dog Shelter",
+      "description": "Provided to YouTube by Hyperdub\n\nDog Shelter · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 182,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=IfpjdHuO62I",
+      "title": "Homeless",
+      "description": "Provided to YouTube by Hyperdub\n\nHomeless · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 323,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=h5VTS0s9PCk",
+      "title": "UK",
+      "description": "Provided to YouTube by Hyperdub\n\nUK · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 103,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=m98aIEbdWII",
+      "title": "Raver",
+      "description": "Provided to YouTube by Hyperdub\n\nRaver · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 300,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=RLuep5Iwf0U",
+      "title": "Untitled",
+      "description": "Provided to YouTube by Hyperdub\n\nUntitled · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 49,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=PzYrr7K1dvU",
+      "title": "Archangel",
+      "description": "Provided to YouTube by Hyperdub\n\nArchangel · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 241,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=VVa_aCSA9Jc",
+      "title": "Near Dark",
+      "description": "Provided to YouTube by Hyperdub\n\nNear Dark · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 237,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=y8NoplRfb-w",
+      "title": "Ghost Hardware",
+      "description": "Provided to YouTube by Hyperdub\n\nGhost Hardware · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 296,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=HkoV3hZbF24",
+      "title": "Endorphin",
+      "description": "Provided to YouTube by Hyperdub\n\nEndorphin · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 180,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=quMLGB_K7K8",
+      "title": "Etched Headplate",
+      "description": "Provided to YouTube by Hyperdub\n\nEtched Headplate · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 362,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=cqXtNXf8zh4",
+      "title": "In McDonalds",
+      "description": "Provided to YouTube by Hyperdub\n\nIn McDonalds · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nProducer: Will Bevan\nMusic Publisher: Hyperdub Publishing\nComposer: Will Bevan\n\nAuto-generated by YouTube.",
+      "duration": 127,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=mHIZbGhxJ9k",
+      "title": "Untrue",
+      "description": "Provided to YouTube by Hyperdub\n\nUntrue · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 379,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=JcQODLPJGfk",
+      "title": "Shell of Light",
+      "description": "Provided to YouTube by Hyperdub\n\nShell of Light · Burial\n\nUntrue\n\n℗ 2019 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 283,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=v-qZgZGd3DQ",
+      "title": "Dog Shelter",
+      "description": "Provided to YouTube by Hyperdub\n\nDog Shelter · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 182,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=IfpjdHuO62I",
+      "title": "Homeless",
+      "description": "Provided to YouTube by Hyperdub\n\nHomeless · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 323,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=h5VTS0s9PCk",
+      "title": "UK",
+      "description": "Provided to YouTube by Hyperdub\n\nUK · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 103,
+      "embed": true
+    },
+    {
+      "uri": "https://www.youtube.com/watch?v=m98aIEbdWII",
+      "title": "Raver",
+      "description": "Provided to YouTube by Hyperdub\n\nRaver · Burial\n\nUntrue\n\n℗ 2007 Hyperdub\n\nReleased on: 2007-11-05\n\nMain Artist: Burial\nMusic Publisher: Hyperdub Publishing\nComposer: W. Bevan\n\nAuto-generated by YouTube.",
+      "duration": 300,
+      "embed": true
+    }
+  ],
+  "genres": [
+    "Electronic"
+  ],
+  "styles": [
+    "Abstract",
+    "Dubstep",
+    "UK Garage",
+    "Ambient",
+    "Bass Music"
+  ],
+  "tracklist": [
+    {
+      "position": "1",
+      "type_": "track",
+      "title": "Untitled",
+      "duration": "0:45"
+    },
+    {
+      "position": "2",
+      "type_": "track",
+      "title": "Archangel",
+      "duration": "3:59"
+    },
+    {
+      "position": "3",
+      "type_": "track",
+      "title": "Near Dark",
+      "duration": "3:53"
+    },
+    {
+      "position": "4",
+      "type_": "track",
+      "title": "Ghost Hardware",
+      "duration": "4:54"
+    },
+    {
+      "position": "5",
+      "type_": "track",
+      "title": "Endorphin",
+      "duration": "2:57"
+    },
+    {
+      "position": "6",
+      "type_": "track",
+      "title": "Etched Headplate",
+      "duration": "6:00"
+    },
+    {
+      "position": "7",
+      "type_": "track",
+      "title": "In McDonalds",
+      "duration": "2:09"
+    },
+    {
+      "position": "8",
+      "type_": "track",
+      "title": "Untrue",
+      "duration": "6:16"
+    },
+    {
+      "position": "9",
+      "type_": "track",
+      "title": "Shell Of Light",
+      "duration": "4:41"
+    },
+    {
+      "position": "10",
+      "type_": "track",
+      "title": "Dog Shelter",
+      "duration": "2:58"
+    },
+    {
+      "position": "11",
+      "type_": "track",
+      "title": "Homeless",
+      "duration": "5:26"
+    },
+    {
+      "position": "12",
+      "type_": "track",
+      "title": "UK",
+      "duration": "1:42"
+    },
+    {
+      "position": "13",
+      "type_": "track",
+      "title": "Raver",
+      "duration": "4:58"
+    }
+  ],
+  "extraartists": [
+    {
+      "name": "Georgina Cook",
+      "anv": "",
+      "join": "",
+      "role": "Photography By",
+      "tracks": "",
+      "id": 2265415,
+      "resource_url": "https://api.discogs.com/artists/2265415"
+    },
+    {
+      "name": "Burial",
+      "anv": "",
+      "join": "",
+      "role": "Written-By, Producer",
+      "tracks": "",
+      "id": 306157,
+      "resource_url": "https://api.discogs.com/artists/306157"
+    }
+  ],
+  "images": [
+    {
+      "type": "primary",
+      "uri": "https://i.discogs.com/g3Kv3usNWqYekdaXNU3GEFLTtG58o0bEdRx_1CXsPoc/rs:fit/g:sm/q:90/h:536/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS05OTgwLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/g3Kv3usNWqYekdaXNU3GEFLTtG58o0bEdRx_1CXsPoc/rs:fit/g:sm/q:90/h:536/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS05OTgwLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/nvt0cBp5IXs8A1bCXy-t6_J7PXLeFDDYDuVUpByHuJ4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS05OTgwLmpwZWc.jpeg",
+      "width": 600,
+      "height": 536
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/t-YRoS-ejtL23qKCLPPjL7RwUKhjLpJsJLORssLznP0/rs:fit/g:sm/q:90/h:518/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS0zMDYxLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/t-YRoS-ejtL23qKCLPPjL7RwUKhjLpJsJLORssLznP0/rs:fit/g:sm/q:90/h:518/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS0zMDYxLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/G0MS0Ubx9HG5XO98KSKprbAtEaOKL0K8WRjvUMBAMUA/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS0zMDYxLmpwZWc.jpeg",
+      "width": 600,
+      "height": 518
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/TvRYpUOysQJR4uSaLZpxOpmv2IECLgMNLqyd4vVFPEI/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDQ3/Ny5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/TvRYpUOysQJR4uSaLZpxOpmv2IECLgMNLqyd4vVFPEI/rs:fit/g:sm/q:90/h:600/w:597/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDQ3/Ny5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/eW0RzzR-l0NFyyrPj8I6QnYhdmef0uewaNtCUXk2sT4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDQ3/Ny5qcGVn.jpeg",
+      "width": 597,
+      "height": 600
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/OYbtAB0zBshw2M_C2veUBhCJRtKYAPuG8Ib6Kq9eeN4/rs:fit/g:sm/q:90/h:589/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY3MTY0NDE1/My04ODAzLmpwZWc.jpeg",
+      "resource_url": "https://i.discogs.com/OYbtAB0zBshw2M_C2veUBhCJRtKYAPuG8Ib6Kq9eeN4/rs:fit/g:sm/q:90/h:589/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY3MTY0NDE1/My04ODAzLmpwZWc.jpeg",
+      "uri150": "https://i.discogs.com/yU4YEvfjLpzIgu-qlnBXjXM1MFp4Oh9x0j_5VRZgJvg/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY3MTY0NDE1/My04ODAzLmpwZWc.jpeg",
+      "width": 600,
+      "height": 589
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/91rkYKtLRnq6ld09v0JBDdHyNfPMTtEFICdwX8_XUgs/rs:fit/g:sm/q:90/h:545/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDU3/Mi5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/91rkYKtLRnq6ld09v0JBDdHyNfPMTtEFICdwX8_XUgs/rs:fit/g:sm/q:90/h:545/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDU3/Mi5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/l7tn-NK403lraTQ9VlUKFkyNcA20WpUu_z6IcIcGBas/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwNDU3/Mi5qcGVn.jpeg",
+      "width": 600,
+      "height": 545
+    },
+    {
+      "type": "secondary",
+      "uri": "https://i.discogs.com/Wod7gJIVuNcnPtK_zjedC1n7QsebLVJw4-DTZZbxuvY/rs:fit/g:sm/q:90/h:552/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwMzgw/MC5qcGVn.jpeg",
+      "resource_url": "https://i.discogs.com/Wod7gJIVuNcnPtK_zjedC1n7QsebLVJw4-DTZZbxuvY/rs:fit/g:sm/q:90/h:552/w:600/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwMzgw/MC5qcGVn.jpeg",
+      "uri150": "https://i.discogs.com/Eie8vIM_EFm7F7Hs4B1axofpSS1xb0djy1a02ihjxeo/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTMyMjYwMzgw/MC5qcGVn.jpeg",
+      "width": 600,
+      "height": 552
+    }
+  ],
+  "thumb": "https://i.discogs.com/nvt0cBp5IXs8A1bCXy-t6_J7PXLeFDDYDuVUpByHuJ4/rs:fit/g:sm/q:40/h:150/w:150/czM6Ly9kaXNjb2dz/LWRhdGFiYXNlLWlt/YWdlcy9SLTExMjUx/MDMtMTY5MjczODYy/OS05OTgwLmpwZWc.jpeg",
+  "blocked_from_sale": false,
+  "is_offensive": false
+}

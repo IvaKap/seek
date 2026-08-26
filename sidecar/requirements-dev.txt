@@ -1,0 +1,20 @@
+# Seek sidecar — what you additionally need to TEST and FREEZE the engine.
+#
+# Kept apart from requirements.txt, which is the runtime set that ends up in a
+# user's bundle. Nothing here ships.
+
+-r requirements.txt
+
+# The test runner. `pytest-asyncio` is not optional: the integration tests drive
+# a real WebSocket against a real core, so most of them are coroutines.
+pytest>=8
+pytest-asyncio>=0.23
+
+# Freezes the engine into the .app. See seek-sidecar.spec for the two things
+# that spec exists to solve.
+pyinstaller>=6
+
+# Tag reading, for the library index and the metadata panel. Optional at
+# runtime — both call sites degrade when it is absent — but it IS frozen into
+# the bundle, so a release build needs it present.
+mutagen>=1.45

@@ -1,0 +1,22 @@
+# Seek sidecar runtime dependencies.
+#
+# websockets — the transport. Pure Python, no transitive deps, asyncio-native.
+# Its process_request hook is what lets the auth token be checked during the
+# HTTP upgrade rather than after a connection already exists. aiohttp would pull
+# in five packages for a server we do not otherwise need; hand-rolling RFC 6455
+# framing would be ~200 lines of security-sensitive code to avoid one small dep.
+websockets>=15,<18
+
+# numpy — FFT for spectral analysis (docs/PRODUCT.md §6). Non-negotiable for
+# this feature; writing an FFT by hand would be absurd.
+numpy>=1.26
+
+# soundfile — decode. Wraps libsndfile, which handles FLAC/WAV/AIFF/OGG and
+# (since 1.1) MP3 natively, covering essentially everything Soulseek carries.
+# ffmpeg is used as a fallback for AAC/ALAC/Opus/WMA and is invoked as a
+# subprocess, so it is an optional system dependency rather than a Python one.
+soundfile>=0.12
+
+# Upstream pynicotine has NO runtime dependencies for the core — its declared
+# PyGObject requirement is for the GTK UI, which we never import. Verified by
+# importing all 52 non-gtkgui modules in a venv with no PyGObject present.

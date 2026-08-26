@@ -1,0 +1,57 @@
+# Seek — tests and type checks on every push.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Deliberately NOT a release build. Compiling Rust and freezing the engine takes
+# minutes and proves nothing the tests do not; `release.yml` does that on a tag,
+# where it matters.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The engine is a submodule, and the sidecar tests import it.
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install
+        run: |
+          cd app && npm ci
+          cd ../sidecar
+          python -m venv .venv
+          # requirements.txt is the RUNTIME set and carries no test runner;
+          # requirements-dev.txt pulls it in and adds one.
+          .venv/bin/pip install --quiet -r requirements-dev.txt
+
+      # `npm test` does NOT check types — Vitest strips them, and a green suite
+      # coexists happily with a type error. Both, always.
+      - name: App tests
+        run: cd app && npm test
+      - name: App types
+        run: cd app && npm run typecheck
+
+      - name: Engine tests
+        run: |
+          cd sidecar
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../upstream:. .venv/bin/pytest tests/ -q
+
+      # The generated protocol is checked in so neither side needs a build step.
+      # If it drifts from the schema the two halves disagree silently.
+      - name: Protocol is in step with the schema
+        run: python3 shared/generate_protocol.py --check

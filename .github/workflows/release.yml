@@ -1,0 +1,121 @@
+# Seek — build a macOS app and attach it to a GitHub Release.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Runs on a tag, not on every push: the Rust compile plus the PyInstaller freeze
+# is minutes of macOS runner time.
+#
+# WHAT THIS DOES NOT DO IS NOTARISE. Without an Apple Developer ID the bundle is
+# ad-hoc signed — valid, but not trusted — so a recipient still has to allow it
+# once. See "Signing" at the foot of this file for exactly what to add when a
+# certificate exists; nothing else has to change.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed to create the release and upload the asset
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install
+        run: |
+          cd app && npm ci
+          cd ../sidecar
+          python -m venv .venv
+          # Needs the dev set: release.sh runs the tests and then freezes.
+          .venv/bin/pip install --quiet -r requirements-dev.txt
+
+      # release.sh is the whole pipeline, and it is the same script used by hand:
+      # it runs both test suites, freezes the engine, REFUSES to continue if the
+      # freeze is stale or the four version declarations disagree, builds, and
+      # fails if the bundle's signature does not verify.
+      - name: Build
+        run: ./release.sh
+
+      - name: Package
+        id: package
+        run: |
+          VERSION="$(node -p "require('./app/package.json').version")"
+          STAGE="$(mktemp -d)/Seek-${VERSION}"
+          mkdir -p "$STAGE"
+          cp -R app/src-tauri/target/release/bundle/macos/Seek.app "$STAGE/"
+          cp .github/RELEASE_README.txt "$STAGE/READ ME FIRST.txt"
+          # ditto, not zip: it preserves the bundle's symlinks and signature.
+          ditto -c -k --sequesterRsrc --keepParent "$STAGE" "Seek-${VERSION}-macOS.zip"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "zip=Seek-${VERSION}-macOS.zip" >> "$GITHUB_OUTPUT"
+
+      # Prove the artifact survived zipping before anyone downloads it. A
+      # signature that verifies here is the difference between "unidentified
+      # developer" (which the user can allow) and "is damaged" (which they
+      # cannot).
+      - name: Verify the packaged app
+        run: |
+          V="$(mktemp -d)"
+          ditto -x -k "${{ steps.package.outputs.zip }}" "$V"
+          APP="$(find "$V" -name 'Seek.app' -maxdepth 3 | head -1)"
+          codesign --verify --deep --strict "$APP"
+          codesign -dv "$APP" 2>&1 | grep -q 'linker-signed' \
+            && { echo "::error::bundle is linker-signed; Gatekeeper will call it damaged"; exit 1; } || true
+          echo "signature verifies"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.zip }}
+          draft: true          # review it, then publish
+          generate_release_notes: true
+          body: |
+            ## Installing
+
+            macOS quarantines apps that are not signed with a paid Apple
+            Developer certificate. Seek is not. After moving it to
+            Applications, run this once:
+
+            ```
+            xattr -dr com.apple.quarantine /Applications/Seek.app
+            ```
+
+            It prints nothing when it works, and Seek opens normally from then
+            on. You may instead be offered **System Settings → Privacy &
+            Security → Open Anyway**, which does the same thing.
+
+            Building from source avoids this entirely — an app you compile
+            yourself is never quarantined.
+
+# ---------------------------------------------------------------- Signing
+#
+# To ship something that opens with no warning at all, you need an Apple
+# Developer ID ($99/year). Then, in this job:
+#
+#   1. Import the certificate into a temporary keychain (see
+#      apple-actions/import-codesign-certs).
+#   2. Set bundle.macOS.signingIdentity in app/src-tauri/tauri.conf.json to the
+#      identity name instead of "-", or override it with
+#      TAURI_SIGNING_IDENTITY.
+#   3. After the build:
+#        xcrun notarytool submit "$ZIP" --apple-id … --team-id … \
+#          --password "$APP_SPECIFIC_PASSWORD" --wait
+#        xcrun stapler staple Seek.app     # then re-zip, so the ticket ships
+#
+# Nothing else in this file changes, and the verify step above keeps working.

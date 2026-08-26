@@ -1,0 +1,294 @@
+/*
+ * Seek — shell, materials, and the primitives every view shares.
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+@import './tokens.css';
+
+/* Registered so the scroll-edge fade can actually animate. A plain custom
+ * property is not interpolable; this one is. */
+@property --edge-fade {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  letter-spacing: var(--tr-body);
+  color: var(--text-primary);
+  background: var(--bg-window);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+/* Every number in this app. Non-negotiable: digits that change width while a
+ * transfer ticks destroy the calm the whole design is built on. */
+.tnum, input[type='number'] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; }
+input { font: inherit; color: inherit; }
+
+/* ------------------------------------------------------------ focus rings */
+/* Designed, not the browser default. Two rings so it reads on any surface. */
+:focus { outline: none; }
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------- native window shell */
+/*
+ * Under Tauri the window is a real NSVisualEffectView with the `sidebar`
+ * material. CSS must then get out of the way: anything opaque here would sit on
+ * top of the native vibrancy and cancel it. `backdrop-filter` also cannot help —
+ * it blurs page content, never the desktop behind the window.
+ */
+:root[data-shell='tauri'] body { background: transparent; }
+:root[data-shell='tauri'] .app { background: transparent; }
+:root[data-shell='tauri'] .sidebar {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+/* The content pane stays opaque: stacking a second translucent surface on the
+ * window material is the "never stack two light translucent surfaces" rule. */
+:root[data-shell='tauri'] .pane { background: var(--bg-content); }
+
+/* ------------------------------------------------------------ the shell */
+
+.app {
+  display: grid;
+  grid-template-columns: var(--sidebar-w) 1fr;
+  height: 100%;
+  background: var(--bg-window);
+}
+
+/*
+ * Sidebar — a translucent structural layer. Heavier material than the header,
+ * because material weight encodes hierarchy: the sidebar separates regions, the
+ * header floats over content.
+ */
+.sidebar {
+  position: relative;
+  background: var(--material-sidebar);
+  backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+  border-right: 0.5px solid var(--separator);
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--sp-6);
+  /* Room for the traffic lights when this runs in a Tauri window with a
+   * transparent titlebar. */
+  -webkit-app-region: drag;
+}
+
+.sidebar__brand {
+  padding: var(--sp-2) var(--sp-4) var(--sp-5);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  letter-spacing: -0.01em;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 0 var(--sp-3);
+  height: 2rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--fs-body);
+  letter-spacing: var(--tr-body);
+  cursor: default;
+  text-align: left;
+  transition: background-color var(--dur-fast) var(--ease-out), transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .nav-item:hover { background: var(--bg-hover); }
+}
+.nav-item:active { transform: scale(0.97); }
+.nav-item[aria-current='page'] {
+  background: var(--bg-selected);
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+.nav-item__icon { flex: none; display: grid; place-items: center; color: currentColor; }
+.nav-item__key {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--tr-micro);
+  color: var(--text-quaternary);
+}
+
+.sidebar__spacer { flex: 1; }
+
+.sidebar__status {
+  -webkit-app-region: no-drag;
+  padding: var(--sp-2) var(--sp-4) var(--sp-3);
+  border-top: 0.5px solid var(--separator);
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: var(--tr-micro);
+  color: var(--text-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+}
+.sidebar__conn { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+
+/* The live rate. Two fixed-width columns rather than a flex row: the numbers
+   change every second, and letting them size themselves means the up arrow
+   slides left and right as the download rate crosses a digit boundary. */
+.sidebar__rate {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2); padding-left: 0.9375rem;
+}
+.sidebar__rate-one {
+  display: flex; align-items: center; gap: 0.2em; min-width: 0;
+  color: var(--text-tertiary);
+}
+.sidebar__rate-one[data-idle='true'] { color: var(--text-quaternary); }
+
+.status-dot {
+  width: 0.4375rem; height: 0.4375rem;
+  border-radius: 50%;
+  background: var(--success);
+  flex: none;
+}
+.status-dot[data-state='offline'] { background: var(--text-quaternary); }
+/* Reachable but not yet usable — the socket is up, Soulseek is not signed in.
+   Must read as distinct from both others: showing it as 'online' would promise
+   that a search is going to work when it will return not_connected.
+   Carried by SHAPE, not colour — amber is the transcode warning and nothing
+   else (tokens.css), and a hollow ring reads as "not filled in yet" anyway. */
+.status-dot[data-state='pending'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-tertiary);
+}
+
+/* ------------------------------------------------------------- main pane */
+
+.pane {
+  position: relative;
+  min-width: 0;
+  background: var(--bg-content);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+}
+
+/*
+ * Header — the second, lighter material. It floats above the list and content
+ * scrolls beneath it. It is never stacked on the sidebar: they are siblings, so
+ * two translucent surfaces never overlap.
+ */
+.header {
+  position: relative;
+  z-index: 3;
+  background: var(--material-header);
+  backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
+  padding: var(--sp-4) var(--sp-5) var(--sp-3);
+  -webkit-app-region: drag;
+}
+.header > * { -webkit-app-region: no-drag; }
+
+/*
+ * Where content meets floating chrome, a mask fade — never a 1px divider.
+ * It is absent at rest and fades in only once content is actually underneath,
+ * which is the whole point: the effect marks overlap, it is not decoration.
+ */
+.header::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 100%;
+  height: var(--sp-5);
+  pointer-events: none;
+  opacity: var(--edge-fade, 0);
+  transition: opacity var(--dur-base) var(--ease-out);
+  background: linear-gradient(
+    to bottom,
+    var(--bg-content) 0%,
+    color-mix(in srgb, var(--bg-content) 55%, transparent) 45%,
+    transparent 100%
+  );
+}
+.pane[data-scrolled='true'] .header::after { --edge-fade: 1; }
+
+/* ------------------------------------------------------------ scroll area */
+
+.scroller {
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  contain: strict;
+}
+
+.list-canvas { position: relative; width: 100%; }
+
+.row-slot {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%;
+  will-change: transform;
+}
+
+/* --------------------------------------------------------- press feedback */
+/*
+ * On :active, i.e. pointer-DOWN. Not on release. Every pressable surface in the
+ * app opts into this one class so the feel is uniform.
+ */
+.pressable {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.pressable:active { transform: scale(0.97); }
+
+/* ------------------------------------------------------------- reduced -- */
+/*
+ * Reduced motion is gentler motion, not the absence of feedback. Position and
+ * scale changes go; opacity and colour stay, because they aid comprehension.
+ * The spring driver reads the same signal at runtime and steps straight to the
+ * target instead of animating.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .pressable:active { transform: none; }
+  .row[data-enter='1'] { animation: none !important; opacity: 1 !important; }
+  /* Opacity crossfades are still allowed, and still useful. */
+  .header::after { transition: opacity 120ms linear !important; }
+}
