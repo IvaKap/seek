@@ -65,7 +65,18 @@ function provenance(preview: Preview): string {
     const who = preview.provider ? PROVIDER_LABEL[preview.provider] : 'that site';
     return `Could not reach ${who}`;
   }
-  if (preview.error) return 'Not a link Seek recognises';
+  /* The lookup never ran — the engine was busy, refused, or gone. That is a
+   * fact about Seek, not about the link, and the card still offers a plain
+   * text search underneath. */
+  if (preview.error === 'lookup-failed') return 'Seek could not check that link';
+  /* Whatever is left is "the provider answered, and the answer was no". If we
+   * know WHOSE link it is then Seek plainly did recognise it, so the old blanket
+   * sentence was false on its face. It is kept only for a URL nobody claimed. */
+  if (preview.error) {
+    return preview.provider
+      ? `${PROVIDER_LABEL[preview.provider]} could not resolve that link`
+      : 'Not a link Seek recognises';
+  }
 
   const source = preview.provider ? PROVIDER_LABEL[preview.provider] : 'the link';
   if (preview.parsedFrom === null) return `From ${source} metadata`;

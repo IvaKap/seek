@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { sidecarDiagnostics } from '../data/sidecarClient.ts';
+import { copyText } from '../data/clipboard.ts';
 import { buildReport } from '../domain/bugReport.ts';
 import { SegmentedControl, Toggle } from './controls.tsx';
 import type { Segment } from './controls.tsx';
@@ -353,6 +354,15 @@ export function SettingsView({
           {prefs.saveError && (
             <p className="settings__notice settings__notice--error" role="alert">
               Could not save that: {prefs.saveError}
+            </p>
+          )}
+          {/* Queued, not lost. The engine runs commands on one thread, and on a
+              first launch the queue in front of a write can be long — telling
+              someone their change failed while it is still being applied is the
+              error that made the app look broken when it was only slow. */}
+          {prefs.saveBusy && !prefs.saveError && (
+            <p className="settings__notice" role="status">
+              Still saving — the engine is busy. This will finish on its own.
             </p>
           )}
 
@@ -798,6 +808,10 @@ function About({ client }: { client: SidecarClient | null }) {
    * connection and nothing changes it in between. */
   const diag = sidecarDiagnostics();
   const [copied, setCopied] = useState(false);
+  /* The report itself, shown only when the clipboard refused it. Someone who
+   * can see the text can still select it; someone told "Copied" over an empty
+   * clipboard cannot do anything at all. */
+  const [uncopied, setUncopied] = useState<string | null>(null);
 
   /* The whole point of the button: the facts live in three places — the app
    * knows its version, the engine knows the OS and the log, and the log is a
@@ -805,28 +819,47 @@ function About({ client }: { client: SidecarClient | null }) {
    * and most people replying to a Reddit thread will not take them. */
   const copyReport = useCallback(() => {
     if (!client) return;
-    void client.request<{
-      os: string; arch: string; python: string;
-      logPath: string; logTail: string; logBytes: number; fpcalc: string;
-    }>('app.diagnostics')
-      .then((d) => navigator.clipboard?.writeText(buildReport({
+    void (async () => {
+      /* The engine half is best-effort, and that is the point. A sidecar too
+       * busy to answer within the request timeout is PRECISELY what the first
+       * real user was trying to report, so a report that requires it to reply
+       * cannot describe the commonest failure. `buildReport` already words the
+       * gap as "engine: not connected" rather than printing a half-empty line. */
+      let engine = {
+        os: '', arch: '', python: '',
+        logPath: '', logTail: '', logBytes: 0, fpcalc: '',
+      };
+      try {
+        engine = await client.request<typeof engine>('app.diagnostics');
+      } catch {
+        // Keep going with what the app itself knows.
+      }
+      const report = buildReport({
         appVersion: __APP_VERSION__,
         sidecarVersion: diag.sidecarVersion,
         coreVersion: diag.coreVersion,
-        os: d.os,
-        arch: d.arch,
-        logPath: d.logPath,
-        logTail: d.logTail,
-        logBytes: d.logBytes,
-        fpcalc: d.fpcalc,
-      })))
-      .then(() => {
+        os: engine.os,
+        arch: engine.arch,
+        logPath: engine.logPath,
+        logTail: engine.logTail,
+        logBytes: engine.logBytes,
+        fpcalc: engine.fpcalc,
+      });
+
+      if (await copyText(report)) {
+        setUncopied(null);
         setCopied(true);
         // Long enough to read, short enough that the button is ready again
         // if the first paste went somewhere wrong.
         window.setTimeout(() => setCopied(false), 2500);
-      })
-      .catch(() => setCopied(false));
+        return;
+      }
+      /* Nothing reached the clipboard. Say so and hand over the text. The old
+       * code reported success here, which is how this button shipped doing
+       * nothing while looking like it worked. */
+      setCopied(false);
+      setUncopied(report);
+    })();
   }, [client, diag]);
 
   return (
@@ -879,6 +912,24 @@ function About({ client }: { client: SidecarClient | null }) {
           >
             {copied ? 'Copied' : 'Copy diagnostics'}
           </button>
+          {/* Only ever rendered because a write was ATTEMPTED and refused, so
+              it doubles as the report that the clipboard is unavailable. */}
+          {uncopied !== null && (
+            <>
+              <p className="settings__copyfail">
+                Seek could not write to the clipboard on this Mac. The report is
+                below — select it and copy it yourself.
+              </p>
+              <textarea
+                className="settings__report"
+                readOnly
+                rows={12}
+                value={uncopied}
+                aria-label="Diagnostic report"
+                onFocus={(event) => event.currentTarget.select()}
+              />
+            </>
+          )}
         </div>
       </Group>
       <Group

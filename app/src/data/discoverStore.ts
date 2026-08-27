@@ -260,11 +260,23 @@ export function previewFromWire(d: WireParsed): DiscoverPreview {
  * An album URL searches for the release, because the unit a DJ downloads is a
  * folder (docs/PRODUCT.md §4). A label or artist page has no track to search
  * for at all, so its own name is the best available query.
+ *
+ * And that name is used ONCE. An artist or label page carries a single name,
+ * which `parse_discogs` reports in `artist` AND `title` — one fact in two
+ * fields, because the card renders them separately. Handing both to
+ * `searchQuery` joins them, so pasting a Discogs artist link searched for
+ * "James James": a query no peer's path contains, from a link that was
+ * perfectly good. Reported by the first user to try it on a label they collect.
  */
 export function previewQuery(preview: DiscoverPreview | null): string {
   if (!preview) return '';
   if (preview.kind === 'release' && preview.album) {
     return searchQuery({ artist: preview.artist, title: preview.album });
+  }
+  if (preview.kind === 'artist' || preview.kind === 'label') {
+    // `title` is the name; `artist` is empty for a label and the same string
+    // for an artist. Preferring `title` covers both without a special case.
+    return searchQuery({ artist: '', title: preview.title || preview.artist });
   }
   return searchQuery({ artist: preview.artist, title: preview.title });
 }
@@ -449,9 +461,11 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
     setPreview({ ...skeleton(path, null), kind: 'track' });
     void client.request('discover.fingerprint', { path, durationLimit: null })
       .catch(() => {
+        // Same reasoning as `inspect` below: the command never ran, so this
+        // says nothing about the file.
         if (active.current !== path) return;
         setPreview((prev) => (prev ? {
-          ...prev, loading: false, error: 'not-recognised', needs: '',
+          ...prev, loading: false, error: 'lookup-failed', needs: '',
         } : prev));
       });
   }, [client]);
@@ -515,11 +529,18 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
     setPlaylistId(guess.playlistId);
     setPreview(skeleton(guess.url, guess.provider));
     void client.request('discover.parseUrl', { url: guess.url }).catch(() => {
-      // The command itself was refused — external lookups switched off, or the
-      // socket went away. Either way no event is coming.
+      /* The command itself was refused — external lookups switched off, the
+       * socket went away, or the engine did not answer inside the request
+       * timeout. Either way no event is coming.
+       *
+       * NOT 'not-recognised'. Nothing here is evidence about the LINK: it was
+       * never looked up. Reporting it as unrecognised is how a perfectly good
+       * Discogs artist URL came back "Not a link Seek recognises" on a first
+       * launch where the engine was busy and every other command was timing
+       * out too — the first user's report, and an hour of the wrong hypothesis. */
       if (active.current !== guess.url) return;
       setPreview((prev) => (prev ? {
-        ...prev, loading: false, error: 'not-recognised', needs: '',
+        ...prev, loading: false, error: 'lookup-failed', needs: '',
       } : prev));
     });
     return true;

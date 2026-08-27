@@ -1299,6 +1299,25 @@
   padding: var(--sp-2) var(--sp-3);
   background: var(--bg-sunken); border-radius: var(--radius-sm);
 }
+/* Shown only when the clipboard refused the write. Deliberately a real
+   textarea rather than a <pre>: it is selectable with one ⌘A, it scrolls
+   instead of growing the settings pane by a screen of log, and a keyboard
+   user can reach it. */
+.settings__copyfail {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-caption); color: var(--warn);
+}
+.settings__report {
+  display: block; width: 100%; margin-top: var(--sp-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-caption); line-height: 1.45;
+  color: var(--text-secondary); background: var(--bg-sunken);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+  resize: vertical;
+  user-select: text; -webkit-user-select: text;
+}
+
 .settings__footnote {
   margin: 0; padding: 0 var(--sp-1);
   font-size: var(--fs-caption); line-height: 1.5; color: var(--text-tertiary);
@@ -1530,6 +1549,13 @@
 .signin__field { display: flex; flex-direction: column; gap: var(--sp-1); max-width: 20rem; }
 .signin__field span { font-size: var(--fs-caption); color: var(--text-secondary); }
 .signin__field .settings__input { width: 100%; }
+/* Sits where the error would, and deliberately does not look like one: the
+   command is queued, not refused. */
+.signin__notice {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+
 .signin__error {
   margin: 0; font-size: var(--fs-caption); color: var(--danger);
 }

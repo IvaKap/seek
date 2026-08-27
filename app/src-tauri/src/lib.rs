@@ -216,6 +216,19 @@ pub fn run() {
         // that needs the user to quit and reopen by hand is most of the
         // friction the updater exists to remove.
         .plugin(tauri_plugin_process::init())
+        // Copy diagnostics, and the right-click Copy items. NOT a convenience
+        // over `navigator.clipboard`: that API is UNDEFINED in the shipped app
+        // and present in dev, which is how it shipped broken. It is gated on a
+        // secure context, and a bundle runs at `tauri://localhost` — a custom
+        // scheme, which WKWebView does not treat as one — while `npm run tauri
+        // dev` runs at `http://localhost:5273`, which it does. So the bug is
+        // invisible to every test that does not drive a real bundle.
+        //
+        // The same call is refused for a second, independent reason: WebKit
+        // requires live user activation for a clipboard write, and Copy
+        // diagnostics awaits the engine before writing. Both problems belong to
+        // the webview; this plugin writes from Rust and has neither.
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(endpoint.clone())
         .manage(error)
         .manage(Sidecar(Mutex::new(child)))

@@ -54,6 +54,7 @@ import type { Command } from './ui/CommandPalette.tsx';
 import type { MenuItem } from './ui/ContextMenu.tsx';
 import type { Row } from './data/searchStore.ts';
 import './styles/components.css';
+import { copyText } from './data/clipboard.ts';
 
 /** ⌘1–4, per docs/PRODUCT.md §2. */
 const NUMBER_KEYS: Record<string, Section> = {
@@ -583,7 +584,11 @@ export default function App() {
    * greyed — a menu of dead entries is harder to read, not more informative. */
   const openMenu = useCallback((row: Row, x: number, y: number) => {
     const items: MenuItem[] = [];
-    const copy = (text: string) => () => { void navigator.clipboard?.writeText(text); };
+    /* `copyText`, not `navigator.clipboard` — the latter is undefined in the
+     * shipped app, and `?.` made that a silent no-op for every Copy item here.
+     * See data/clipboard.ts. Nothing in a context menu can report a result, so
+     * the value of the fix is simply that these now write at all. */
+    const copy = (text: string) => () => { void copyText(text); };
 
     if (row.kind === 'release') {
       const r = row.release;

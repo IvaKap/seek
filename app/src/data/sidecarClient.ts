@@ -61,7 +61,63 @@ export interface SidecarClient extends Sidecar {
   close(): void;
 }
 
+/*
+ * How long to wait for a reply before giving up.
+ *
+ * Every command is queued to pynicotine's SINGLE main thread (`server.py`
+ * hands off to an inbox; `core_host._pump_commands` drains it), so a command is
+ * not slow because the machine is slow — it is slow because the thread in front
+ * of it has not finished. On a first launch that queue can be long: macOS is
+ * scanning a freshly downloaded 44 MB bundle, and upstream's share scanner
+ * starts with `multiprocessing` *spawn*, which in a frozen build boots a second
+ * whole copy of the interpreter.
+ *
+ * 15 s was a guess, and the first real user proved it wrong in the worst way:
+ * `connection.connect` and `app.settings.patch` both "timed out" and BOTH had
+ * actually worked — the login held and the token was saved, as a restart
+ * showed. The app called them failures anyway.
+ *
+ * So a write gets far longer than a read. A read that gives up early is a
+ * refreshable screen; a write that gives up early tells someone their change
+ * was lost while it is in fact being applied, which is the one error a settings
+ * screen must never make.
+ */
 const REQUEST_TIMEOUT_MS = 15_000;
+const WRITE_TIMEOUT_MS = 120_000;
+
+/**
+ * The engine is alive but has not got to this command yet.
+ *
+ * A distinct type rather than a distinguishing string, because the difference
+ * decides a SENTENCE a person reads: "could not save that" versus "still
+ * saving". Sniffing `message` for a phrase is how those two drift apart the
+ * first time someone rewords one of them.
+ */
+export class EngineBusyError extends Error {
+  constructor(cmd: string) {
+    super(`the engine has not answered ${cmd} yet`);
+    this.name = 'EngineBusyError';
+  }
+}
+
+/**
+ * Commands that CHANGE something, and so must not be declared failed early.
+ *
+ * Matched on the verb rather than a list of names: a list is a thing to forget
+ * to update, and every command in this protocol is `noun.verb`. Anything not
+ * recognised is treated as a read, which is the safe default — the worst case
+ * is an early give-up on something that had no side effect.
+ */
+const WRITE_VERBS = new Set([
+  'connect', 'disconnect', 'patch', 'set', 'apply', 'add', 'remove', 'update',
+  'rescan', 'start', 'stop', 'cancel', 'retry', 'clear', 'pause', 'resume',
+  'enqueue', 'enqueueFolder', 'organise', 'save', 'delete', 'reset', 'import',
+]);
+
+export function requestBudget(cmd: string): number {
+  const verb = cmd.slice(cmd.lastIndexOf('.') + 1);
+  return WRITE_VERBS.has(verb) ? WRITE_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+}
 /** Reconnect backoff. Capped so a sidecar that died does not spin the CPU. */
 const BACKOFF_MS = [500, 1000, 2000, 4000, 8000];
 
@@ -268,19 +324,28 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
   function request<T>(cmd: string, params: Record<string, unknown> = {}): Promise<T> {
     const id = `r${nextId++}`;
     return new Promise<T>((resolve, reject) => {
-      const timer = window.setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(`timed out waiting for ${cmd}`));
-      }, REQUEST_TIMEOUT_MS);
-
+      /* The clock starts when the command goes ON THE WIRE, not when it was
+       * asked for. Starting it first was a real bug and not a subtle one: the
+       * outer timer and `whenOpen`'s were both 15 s and the outer one was
+       * registered first, so it always won — `'sidecar not connected'` could
+       * never be reported, and a shell with no engine at all said "timed out
+       * waiting for connection.connect" instead. One message meant both "the
+       * engine is busy" and "there is no engine", which are opposite problems. */
       void whenOpen(REQUEST_TIMEOUT_MS).then((open) => {
         const socket = ws;
         if (!open || !socket || socket.readyState !== WebSocket.OPEN) {
-          window.clearTimeout(timer);
           pending.delete(id);
           reject(new Error('sidecar not connected'));
           return;
         }
+        const timer = window.setTimeout(() => {
+          pending.delete(id);
+          /* Deliberately not "failed". While the socket is open the engine is
+           * alive and the command is queued on its main thread, so the honest
+           * report is that it has not answered YET. `onclose` is what turns an
+           * outstanding request into a real failure. */
+          reject(new EngineBusyError(cmd));
+        }, requestBudget(cmd));
         pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer });
         socket.send(JSON.stringify({ id, cmd, params }));
       });

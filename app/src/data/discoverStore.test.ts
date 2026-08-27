@@ -141,6 +141,19 @@ describe('previewQuery', () => {
     expect(previewQuery(p)).toBe('Hyperdub');
   });
 
+  /* Shipped broken to 0.2.4 and found by the first person to paste an artist
+   * link for a label they collect. `parse_discogs` reports an artist page's
+   * one name in BOTH `artist` and `title`, so joining them searched the name
+   * twice. The label case above passed throughout, because a label page leaves
+   * `artist` empty — which is exactly why the artist case needed its own. */
+  it('an artist page searches the name ONCE, not twice', () => {
+    const p = previewFromWire(wire({
+      sourceKind: 'discogs', kind: 'artist', rawTitle: 'James',
+      artist: 'James', title: 'James',
+    }));
+    expect(previewQuery(p)).toBe('James');
+  });
+
   it('no preview is an empty query, never a search for nothing', () => {
     expect(previewQuery(null)).toBe('');
   });

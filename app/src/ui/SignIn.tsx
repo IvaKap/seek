@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { isSignedIn } from '../data/searchStore.ts';
+import { EngineBusyError } from '../data/sidecarClient.ts';
 
 export function SignIn({
   client, state, settings,
@@ -30,6 +31,9 @@ export function SignIn({
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* Not an error. The connect command is queued on the engine's one thread
+   * and has not been answered yet; `connection.state` is what settles it. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   const connected = isSignedIn(state);
 
@@ -41,9 +45,11 @@ export function SignIn({
       const d = data as { status?: string; error?: string | null };
       if (d.error) {
         setError(d.error);
+        setNotice(null);
         setBusy(false);
       } else if (isSignedIn(d.status ?? null)) {
         setBusy(false);
+        setNotice(null);
         setPassword('');   // no reason to keep it in memory once it worked
       }
     });
@@ -53,6 +59,7 @@ export function SignIn({
     if (!client) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await client.request('connection.connect', {
         username: useStored ? null : username.trim() || null,
@@ -60,6 +67,15 @@ export function SignIn({
       });
       if (!useStored) setPassword('');
     } catch (e) {
+      /* A busy engine is not a failed sign-in. The first user was shown
+       * "timed out waiting for connection.connect" and WAS logged in — the
+       * command was sitting behind a first-launch share scan, and it ran.
+       * So: stay busy, say so, and let `connection.state` decide. */
+      if (e instanceof EngineBusyError) {
+        setNotice('Still signing in — the engine is busy on first launch. '
+          + 'This will finish on its own.');
+        return;
+      }
       setError((e as Error).message);
       setBusy(false);
     }
@@ -131,6 +147,7 @@ export function SignIn({
       </label>
 
       {error && <p className="signin__error" role="alert">{error}</p>}
+      {notice && !error && <p className="signin__notice" role="status">{notice}</p>}
 
       <div className="import__actions">
         <button

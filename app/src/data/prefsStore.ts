@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
+import { EngineBusyError } from './sidecarClient.ts';
 import { reliabilityFrom } from '../domain/score.ts';
 
 export interface AppSettings {
@@ -99,6 +100,8 @@ export interface PrefsSession {
   /** Why the last save failed, or null. Settings shows it; nothing else may
    *  claim a save succeeded while this is set. */
   saveError: string | null;
+  /** The write is queued behind a busy engine — not lost. */
+  saveBusy: boolean;
   available: boolean;
 }
 
@@ -107,6 +110,7 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
   const [peers, setPeers] = useState<Map<string, PeerRecord>>(() => new Map());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!client) return;
@@ -165,15 +169,24 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       .then((saved) => {
         setSettings(saved);
         setError(null);
+        setBusy(false);
       })
       /* NOT swallowed. The optimistic update above has already told the user
        * their token is stored; if the write then fails, silence turns a
        * recoverable error into "the app is lying to me". Re-reading the real
        * settings afterwards undoes the optimistic claim. */
       .catch((e: unknown) => {
-        setError(e instanceof Error ? e.message : String(e));
+        /* Busy is not failed. The engine takes commands on one thread, so a
+         * write that has not answered is still QUEUED — the first user was told
+         * "Could not save that" about a Discogs token that a restart then
+         * showed had saved perfectly. Re-read either way: that is what settles
+         * which it was, and it is the only honest source. */
+        setBusy(e instanceof EngineBusyError);
+        setError(e instanceof EngineBusyError
+          ? null
+          : (e instanceof Error ? e.message : String(e)));
         void client.request<AppSettings>('app.settings.get')
-          .then(setSettings)
+          .then((s) => { setSettings(s); setBusy(false); })
           .catch(() => {});
       })
       .finally(() => setSaving(false));
@@ -189,6 +202,7 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
     },
     saving,
     saveError: error,
+    saveBusy: busy,
     available: Boolean(client),
   };
 }
