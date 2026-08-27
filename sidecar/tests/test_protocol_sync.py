@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import os
+import re
 import subprocess
 import sys
 
@@ -126,3 +127,37 @@ def test_unknown_command_and_event_rejected():
         protocol.validate_command("search.telepathy", {})
     with pytest.raises(protocol.SchemaError):
         protocol.validate_event("search.telepathy", {})
+
+
+def test_the_settings_screen_sends_every_key_the_patch_requires():
+    """THE BUG THIS EXISTS FOR.
+
+    `Optional` in the schema means nullable, not omittable: validate_struct
+    rejects a missing key as hard as an unknown one. `prefsStore.ts` builds one
+    literal carrying every field so a caller can patch just the one it cares
+    about — and `youtubeApiKey` was never added to it when the field was.
+
+    The result was that EVERY save on the Settings screen failed, for months,
+    silently: the request was rejected, the frontend swallowed the error, and
+    the optimistic update said "Token saved". It reached a real user as
+    "i pasted and saved the token, now the search says discogs token needed".
+
+    A type cannot catch this — the literal is spread into `...p` and TypeScript
+    sees a valid partial. Only comparing the two sides does.
+    """
+    store = os.path.join(ROOT, "app", "src", "data", "prefsStore.ts")
+    with open(store, encoding="utf-8") as handle:
+        source = handle.read()
+
+    start = source.index("'app.settings.patch'")
+    body = source[start:source.index("...p,", start)]
+    sent = set(re.findall(r"^\s+([a-zA-Z]+):\s*null,\s*$", body, re.M))
+
+    required = {name for name, _type, _array, _null
+                in protocol.STRUCT_FIELDS["AppSettingsPatch"]}
+
+    assert sent == required, (
+        "prefsStore.ts and AppSettingsPatch disagree.\n"
+        f"  missing from the request: {sorted(required - sent)}\n"
+        f"  sent but not in the schema: {sorted(sent - required)}"
+    )

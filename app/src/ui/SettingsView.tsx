@@ -166,6 +166,23 @@ function SecretRow({
   help?: React.ReactNode;
 }) {
   const [draft, setDraft] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
+
+  /* WHY THESE ARE TWO BUTTONS.
+   *
+   * They used to be one, whose label flipped to "Clear" the moment the field
+   * emptied — which is exactly what saving does. So: paste a token, press Save,
+   * the field clears, and the button under the user's finger silently becomes a
+   * destroy button. A second press — a double-click, or clicking again to check
+   * it took — sent an empty string, and the sidecar reads empty as "delete it".
+   *
+   * Reported from real use: "i pasted and saved the token, now the search says
+   * discogs token needed". It fires on pointerDOWN, so a stray double-tap was
+   * enough, and nothing said the token had gone.
+   *
+   * Save is now disabled with nothing to save, Clear only exists when there IS
+   * something to clear, and Clear asks twice.
+   */
   return (
     <Row
       label={label}
@@ -179,19 +196,46 @@ function SecretRow({
             value={draft}
             placeholder={stored ? placeholderSet : placeholderUnset}
             aria-label={ariaLabel}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              // Typing is a change of mind about clearing.
+              setConfirmClear(false);
+            }}
           />
           <button
             type="button"
             className="btn pressable"
-            disabled={!available}
+            disabled={!available || !draft.trim()}
             onPointerDown={() => {
+              if (!draft.trim()) return;
               onSave(draft);
               setDraft('');
+              setConfirmClear(false);
             }}
           >
-            {draft.trim() ? 'Save' : 'Clear'}
+            Save
           </button>
+          {stored && (
+            <button
+              type="button"
+              className="btn pressable"
+              disabled={!available}
+              aria-label={confirmClear ? `Confirm clearing ${label}` : `Clear ${label}`}
+              /* onClick, not onPointerDown: the rest of the app uses pointerDown
+                 for responsiveness, but this one throws away a credential the
+                 user had to leave the app to obtain. */
+              onClick={() => {
+                if (!confirmClear) {
+                  setConfirmClear(true);
+                  return;
+                }
+                onSave('');
+                setConfirmClear(false);
+              }}
+            >
+              {confirmClear ? 'Really clear?' : 'Clear'}
+            </button>
+          )}
         </span>
       )}
     />
@@ -299,6 +343,14 @@ export function SettingsView({
           {error && (
             <p className="settings__notice settings__notice--error" role="alert">
               {error}
+            </p>
+          )}
+          {/* A failed save used to be discarded, while the field optimistically
+              showed the new value — so a token could read as saved and not be.
+              That is what a user hit; it must never be silent again. */}
+          {prefs.saveError && (
+            <p className="settings__notice settings__notice--error" role="alert">
+              Could not save that: {prefs.saveError}
             </p>
           )}
 

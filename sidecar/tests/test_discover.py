@@ -896,3 +896,67 @@ def test_unreachable_defaults_off():
     the network is down."""
     assert discover.DiscoverError("no title").unreachable is False
     assert discover.DiscoverError("needs a token", needs="discogsToken").unreachable is False
+
+
+# --------------------------------------------- a token that was REFUSED
+#
+# From a real 0.2.2 report: "i pasted and saved the token, now the search says
+# discogs token needed". A 401 has to carry BOTH facts — which credential, and
+# that it is present but wrong — or the UI tells someone to supply what they
+# already supplied.
+
+
+def test_a_401_is_marked_unauthorised(monkeypatch):
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.HTTPError(
+            "https://api.discogs.com/x", 401, "Unauthorized", {}, None)),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://api.discogs.com/x")
+    assert caught.value.unauthorised is True
+    # Not a transport failure: the provider answered.
+    assert caught.value.unreachable is False
+
+
+def test_a_403_is_marked_unauthorised(monkeypatch):
+    monkeypatch.setattr(
+        discover.urllib.request, "urlopen",
+        _Boom(discover.urllib.error.HTTPError(
+            "https://api.discogs.com/x", 403, "Forbidden", {}, None)),
+    )
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover._fetch("https://api.discogs.com/x")
+    assert caught.value.unauthorised is True
+
+
+def test_a_refused_discogs_token_names_the_field_too():
+    """`_fetch` knows the request was refused; only parse_discogs knows it was
+    the DISCOGS token. Both facts have to survive."""
+    def refuse(*_args, **_kwargs):
+        raise discover.DiscoverError("HTTP 401: not authorised", unauthorised=True)
+
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover.parse_discogs(
+            "https://www.discogs.com/release/1122550-Aphex-Twin-Windowlicker",
+            token="a-wrong-token", fetch_json=refuse,
+        )
+    assert caught.value.unauthorised is True
+    assert caught.value.needs == "discogsToken"
+
+
+def test_no_token_at_all_is_not_unauthorised():
+    """The opposite case, and the one that must keep saying 'add a token'."""
+    with pytest.raises(discover.DiscoverError) as caught:
+        discover.parse_discogs(
+            "https://www.discogs.com/release/1122550-Aphex-Twin-Windowlicker",
+            token="",
+        )
+    assert caught.value.needs == "discogsToken"
+    assert caught.value.unauthorised is False
+
+
+def test_a_404_is_neither():
+    monkeypatch_free = discover.DiscoverError("not found")
+    assert monkeypatch_free.unauthorised is False
+    assert monkeypatch_free.unreachable is False

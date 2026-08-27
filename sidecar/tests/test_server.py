@@ -385,7 +385,7 @@ def _event_samples():
         "discover.parseFailed": {
             "requestId": "r1", "url": "https://www.discogs.com/release/1125103",
             "reason": "a Discogs personal access token is required",
-            "needs": "discogsToken", "unreachable": False,
+            "needs": "discogsToken", "unreachable": False, "unauthorised": False,
         },
         "discover.tracklistParsed": {
             "requestId": "r4", "url": "https://youtu.be/x",
@@ -403,7 +403,7 @@ def _event_samples():
         },
         "discover.browseFailed": {
             "requestId": "r2", "url": "", "reason": "not found", "needs": "",
-            "unreachable": False,
+            "unreachable": False, "unauthorised": False,
         },
         "discover.catalog": {
             "requestId": "r3", "sourceKind": "discogs", "kind": "label",

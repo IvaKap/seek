@@ -96,6 +96,9 @@ export interface PrefsSession {
   reliability(username: string): number;
   peers: Map<string, PeerRecord>;
   saving: boolean;
+  /** Why the last save failed, or null. Settings shows it; nothing else may
+   *  claim a save succeeded while this is set. */
+  saveError: string | null;
   available: boolean;
 }
 
@@ -103,6 +106,7 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
   const [settings, setSettings] = useState<AppSettings>(DEFAULTS);
   const [peers, setPeers] = useState<Map<string, PeerRecord>>(() => new Map());
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!client) return;
@@ -142,6 +146,12 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       externalLookups: null,
       discogsToken: null,
       acoustidApiKey: null,
+      // Its absence made EVERY settings save fail. `Optional` in the sidecar's
+      // schema means nullable, not omittable, and validate_struct rejects a
+      // missing key as hard as an unknown one — so one forgotten line here
+      // silently broke every toggle and every key on this screen. Reported from
+      // real use as "i pasted and saved the token, now it says token needed".
+      youtubeApiKey: null,
       artworkCacheMb: null,
       embedArtwork: null,
       writeCoverFile: null,
@@ -152,8 +162,20 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       autoDigSessions: null,
       ...p,
     })
-      .then(setSettings)
-      .catch(() => {})
+      .then((saved) => {
+        setSettings(saved);
+        setError(null);
+      })
+      /* NOT swallowed. The optimistic update above has already told the user
+       * their token is stored; if the write then fails, silence turns a
+       * recoverable error into "the app is lying to me". Re-reading the real
+       * settings afterwards undoes the optimistic claim. */
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e));
+        void client.request<AppSettings>('app.settings.get')
+          .then(setSettings)
+          .catch(() => {});
+      })
       .finally(() => setSaving(false));
   }, [client]);
 
@@ -166,6 +188,7 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       return reliabilityFrom(p?.ok ?? 0, p?.failed ?? 0);
     },
     saving,
+    saveError: error,
     available: Boolean(client),
   };
 }

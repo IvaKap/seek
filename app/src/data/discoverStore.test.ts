@@ -189,3 +189,35 @@ describe('classifyFailure — the message a person actually gets', () => {
       .toBe('unreachable');
   });
 });
+
+describe('a token that exists and was refused', () => {
+  /* From a real report: "i pasted and saved the token, now the search says
+   * discogs token needed". A 401 carries `needs` too, so without this the
+   * card told someone to supply what they had already supplied. */
+
+  it('is not reported as a missing setting', () => {
+    const line = classifyFailure(
+      { needs: 'discogsToken', unauthorised: true }, 'not-recognised',
+    );
+    expect(line).toBe('unauthorised');
+    expect(line).not.toBe('needs-setting');
+  });
+
+  it('still says needs-setting when there genuinely is no token', () => {
+    expect(classifyFailure({ needs: 'discogsToken' }, 'not-recognised'))
+      .toBe('needs-setting');
+  });
+
+  it('outranks unreachable, because the provider clearly answered', () => {
+    expect(classifyFailure(
+      { needs: 'discogsToken', unauthorised: true, unreachable: false }, 'not-recognised',
+    )).toBe('unauthorised');
+  });
+
+  it('treats an absent flag as "not refused" rather than assuming the worst', () => {
+    /* An older sidecar sends no `unauthorised` at all. */
+    expect(classifyFailure({ needs: 'discogsToken' }, 'not-recognised'))
+      .toBe('needs-setting');
+    expect(classifyFailure({}, 'not-recognised')).toBe('not-recognised');
+  });
+});

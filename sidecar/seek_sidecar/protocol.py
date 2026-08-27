@@ -1076,6 +1076,12 @@ class DiscoverFailed(TypedDict):
     # Machine-readable ('discogsToken') so the UI can offer the right Settings
     # link without reading English out of `reason`.
     needs: str
+    # True when the provider ANSWERED and refused the credential - an HTTP 401
+    # or 403. `needs` names which credential, so the pair reads as 'the
+    # Discogs token you have is wrong' rather than 'supply a Discogs token'.
+    # Telling someone to add a token they already added is what 0.2.2 did, and
+    # it is indistinguishable from the app being broken.
+    unauthorised: bool
     # True when the provider was never reached at all - DNS, TLS, a refused
     # connection, a timeout. False when it answered and the answer was no.
     # Same distinction `needs` exists for, and the same reason it is a flag: a
@@ -2415,6 +2421,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("url", "str", False, False),
         ("reason", "str", False, False),
         ("needs", "str", False, False),
+        ("unauthorised", "bool", False, False),
         ("unreachable", "bool", False, False),
     ),
     "WantEntry": (

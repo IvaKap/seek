@@ -48,6 +48,13 @@ function SourceIcon({ provider }: { provider: Preview['provider'] }) {
  * what makes the editable fields feel like a correction rather than a repair.
  */
 function provenance(preview: Preview): string {
+  /* A credential that EXISTS and was refused. Separate from 'needs-setting'
+   * because the action is different: not "add one", but "the one you added is
+   * wrong". 0.2.2 told people to supply a token they had already supplied,
+   * which from the outside is indistinguishable from the app being broken. */
+  if (preview.error === 'unauthorised') {
+    return `${PROVIDER_LABEL[preview.provider ?? 'discogs']} rejected your token`;
+  }
   if (preview.error === 'needs-setting') {
     return `${PROVIDER_LABEL[preview.provider ?? 'discogs']} lookups need a token`;
   }
@@ -182,7 +189,10 @@ export function DiscoverPreviewCard({
             <div className="dig__error">
               <p className="dig__raw">{shown.url}</p>
               <p className="dig__hint">
-                {shown.needs === 'discogsToken'
+                {shown.error === 'unauthorised'
+                  ? 'The token is saved, but the provider would not accept it. Generate a '
+                    + 'fresh one and paste it into Settings → External lookups.'
+                  : shown.needs === 'discogsToken'
                   ? 'Add a Discogs personal access token in Settings and paste this again.'
                   /* Searching Soulseek for the URL text is the right fallback for a
                      link nothing recognises, and the wrong one for a link that is

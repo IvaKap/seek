@@ -1548,6 +1548,7 @@ class CoreHost:
                 "requestId": request_id, "url": path,
                 "reason": str(error), "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
@@ -1555,6 +1556,7 @@ class CoreHost:
             self.bridge.broadcast("discover.parseFailed", {
                 "requestId": request_id, "url": path, "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id
@@ -1583,6 +1585,7 @@ class CoreHost:
                 "requestId": request_id, "url": "", "reason": str(error),
                 "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         payload["requestId"] = request_id
@@ -1608,6 +1611,7 @@ class CoreHost:
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id
@@ -1631,6 +1635,7 @@ class CoreHost:
                 "requestId": request_id, "url": playlist_id,
                 "reason": str(error), "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
@@ -1639,6 +1644,7 @@ class CoreHost:
                 "requestId": request_id, "url": playlist_id,
                 "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id
@@ -1661,6 +1667,7 @@ class CoreHost:
                 "requestId": request_id, "url": "",
                 "reason": str(error), "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
@@ -1669,6 +1676,7 @@ class CoreHost:
                 "requestId": request_id, "url": "",
                 "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id
@@ -1704,6 +1712,7 @@ class CoreHost:
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
@@ -1712,6 +1721,7 @@ class CoreHost:
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id
@@ -1725,6 +1735,7 @@ class CoreHost:
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": getattr(error, "needs", ""),
                 "unreachable": bool(getattr(error, "unreachable", False)),
+                "unauthorised": bool(getattr(error, "unauthorised", False)),
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
@@ -1736,6 +1747,7 @@ class CoreHost:
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": "",
                 "unreachable": False,
+                "unauthorised": False,
             })
             return
         payload["requestId"] = request_id

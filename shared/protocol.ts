@@ -1321,6 +1321,15 @@ export interface DiscoverFailed {
   needs: string;
 
   /**
+   * True when the provider ANSWERED and refused the credential - an HTTP 401
+   * or 403. `needs` names which credential, so the pair reads as 'the Discogs
+   * token you have is wrong' rather than 'supply a Discogs token'. Telling
+   * someone to add a token they already added is what 0.2.2 did, and it is
+   * indistinguishable from the app being broken.
+   */
+  unauthorised: boolean;
+
+  /**
    * True when the provider was never reached at all - DNS, TLS, a refused
    * connection, a timeout. False when it answered and the answer was no. Same
    * distinction `needs` exists for, and the same reason it is a flag: a 404

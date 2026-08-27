@@ -77,10 +77,15 @@ class DiscoverError(Exception):
     string is not an interface.
     """
 
-    def __init__(self, message, needs="", unreachable=False):
+    def __init__(self, message, needs="", unreachable=False, unauthorised=False):
         super().__init__(message)
         self.needs = needs
         self.unreachable = unreachable
+        # A credential that EXISTS and was refused. Distinct from `needs` alone,
+        # which means one was never supplied: "add a token" and "the token you
+        # added is wrong" send the user to different places, and telling someone
+        # to supply what they already supplied is how a bug report starts.
+        self.unauthorised = unauthorised
 
 
 # ----------------------------------------------------------------- transport
@@ -139,7 +144,11 @@ def _fetch(url, headers=None, gate=None, accept="application/json", data=None,
         # 401/403 from Discogs means the token is missing or wrong, which is a
         # different thing from a URL that names nothing.
         if error.code in (401, 403):
-            raise DiscoverError(f"HTTP {error.code}: not authorised") from error
+            # The provider answered, and the answer was "not you". Only ever a
+            # credential problem — every request Seek makes that can 401 carries
+            # one. Which credential is the caller's business; see parse_discogs.
+            raise DiscoverError(f"HTTP {error.code}: not authorised",
+                                unauthorised=True) from error
         if error.code == 404:
             raise DiscoverError("not found") from error
         raise DiscoverError(f"HTTP {error.code}") from error
@@ -544,11 +553,21 @@ def parse_discogs(url, token, fetch_json=None, fetch_image=None):
         "artist": f"{DISCOGS_API}/artists/{entity_id}",
         "label": f"{DISCOGS_API}/labels/{entity_id}",
     }[entity]
-    payload = fetch_json(
-        endpoint,
-        headers={"Authorization": f"Discogs token={token}"},
-        gate=_discogs_gate,
-    )
+    try:
+        payload = fetch_json(
+            endpoint,
+            headers={"Authorization": f"Discogs token={token}"},
+            gate=_discogs_gate,
+        )
+    except DiscoverError as error:
+        # `_fetch` knows the request was refused; only here do we know it was
+        # the Discogs token that was refused, so this is where `needs` is
+        # attached. Both flags travel: the UI needs "which field" AND "it is
+        # present but wrong" to write a sentence worth reading.
+        if getattr(error, "unauthorised", False):
+            raise DiscoverError(str(error), needs="discogsToken",
+                                unauthorised=True) from error
+        raise
 
     kind = _DISCOGS_KIND[entity]
     out = _blank(url, "discogs", kind)

@@ -209,9 +209,15 @@ function skeleton(url: string, provider: UrlProvider | null): DiscoverPreview {
  * link was unrecognised. One function now, so the three cannot drift apart.
  */
 export function classifyFailure(
-  d: { needs?: string; unreachable?: boolean },
+  d: { needs?: string; unreachable?: boolean; unauthorised?: boolean },
   fallback: 'not-recognised' | 'failed',
 ): string {
+  // BEFORE `needs`, deliberately. A refused credential also carries `needs`,
+  // because the UI still has to know WHICH field — but "add a Discogs token"
+  // is the wrong sentence for someone who added one and had it rejected. That
+  // was 0.2.2's answer, and from the outside it is indistinguishable from the
+  // app simply not working.
+  if (d.unauthorised) return 'unauthorised';
   if (d.needs) return 'needs-setting';
   if (d.unreachable) return 'unreachable';
   return fallback;
@@ -294,7 +300,7 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
     const offFailed = client.on('discover.parseFailed', (data) => {
       const d = data as {
         requestId: string; url: string; reason: string; needs: string;
-        unreachable: boolean;
+        unreachable: boolean; unauthorised: boolean;
       };
       /* A failed wantlist read arrives here too, and it is matched on
        * `requestId` rather than `url` because the wantlist command HAS no url
