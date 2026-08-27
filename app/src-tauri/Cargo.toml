@@ -1,6 +1,6 @@
 [package]
 name = "seek"
-version = "0.2.3"
+version = "0.2.4"
 description = "Seek — an Apple-native frontend for Nicotine+"
 edition = "2021"
 rust-version = "1.77"
