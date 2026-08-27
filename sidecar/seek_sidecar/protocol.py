@@ -289,6 +289,12 @@ class HelloResult(TypedDict):
     protocolVersion: int
     # Seek sidecar version string.
     sidecarVersion: str
+    # Absolute path to the diagnostic log, or empty when running without one.
+    # Sent so Settings can tell someone where to find the file a bug report
+    # should carry - the alternative is asking them to hunt inside an .app
+    # bundle. LOCAL ONLY: Seek never reads it back, never uploads it, and
+    # nothing but the person at the keyboard can attach it.
+    logPath: str
     # Upstream pynicotine __version__ in use.
     coreVersion: str
     # Current connection state.
@@ -2056,6 +2062,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "HelloResult": (
         ("protocolVersion", "int", False, False),
         ("sidecarVersion", "str", False, False),
+        ("logPath", "str", False, False),
         ("coreVersion", "str", False, False),
         ("connection", "ConnectionState", False, False),
         ("transfers", "Transfer", True, False),

@@ -27,7 +27,11 @@ from PyInstaller.utils.hooks import (
 # be added to the analysis path explicitly rather than found on sys.path.
 UPSTREAM = "../upstream"
 
-hidden = []
+hidden = [
+    # Separate module from `logging`, and only bundled if something
+    # imports it. logfile.py does, but naming it here too is cheap
+    # insurance: absent, the app works from the venv and dies shipped.
+    "logging.handlers",]
 hidden += collect_submodules("pynicotine")
 hidden += collect_submodules("seek_sidecar")
 # soundfile loads libsndfile through cffi at import time; numpy pulls parts of

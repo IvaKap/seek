@@ -1281,6 +1281,20 @@
 .settings__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .settings__suffix { font-size: var(--fs-caption); color: var(--text-tertiary); }
 .settings__static { font-size: var(--fs-secondary); color: var(--text-tertiary); }
+/* A filesystem path is long, monospaced and worth selecting. It wraps rather
+   than truncating: a path you cannot read all of is a path you cannot use. */
+.settings__path {
+  margin: var(--sp-2) 0 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+  /* Selectable, because the only useful thing to do with it is copy it. */
+  user-select: text; -webkit-user-select: text;
+  /* Wraps rather than truncating: a path you can only see half of is a path
+     you cannot use, and this one is what a bug report is meant to carry. */
+  word-break: break-all;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-sunken); border-radius: var(--radius-sm);
+}
 .settings__footnote {
   margin: 0; padding: 0 var(--sp-1);
   font-size: var(--fs-caption); line-height: 1.5; color: var(--text-tertiary);

@@ -301,6 +301,15 @@ export interface HelloResult {
   /** Seek sidecar version string. */
   sidecarVersion: string;
 
+  /**
+   * Absolute path to the diagnostic log, or empty when running without one.
+   * Sent so Settings can tell someone where to find the file a bug report
+   * should carry - the alternative is asking them to hunt inside an .app
+   * bundle. LOCAL ONLY: Seek never reads it back, never uploads it, and
+   * nothing but the person at the keyboard can attach it.
+   */
+  logPath: string;
+
   /** Upstream pynicotine __version__ in use. */
   coreVersion: string;
 

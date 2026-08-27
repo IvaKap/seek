@@ -179,7 +179,9 @@ def apply(config, params, config_path=None):
             config.sections["server"]["passw"] = str(password)
             result["importedCredentials"] = True
             result["username"] = str(username)
-            log.info("imported credentials for user %s", username)
+            # The username is not logged: it is a persistent identity on the
+            # network, and this line would pair it with a bug report.
+            log.info("imported credentials")
 
     if params.get("shares"):
         folders = _shared_folders(transfers)

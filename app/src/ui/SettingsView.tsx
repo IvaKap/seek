@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { sidecarDiagnostics } from '../data/sidecarClient.ts';
 import { SegmentedControl, Toggle } from './controls.tsx';
 import type { Segment } from './controls.tsx';
 import { ImportPanel } from './ImportPanel.tsx';
@@ -792,6 +793,9 @@ function PortField({
 }
 
 function About() {
+  /* Read at render rather than held in state: the handshake writes it once per
+   * connection and nothing changes it in between. */
+  const diag = sidecarDiagnostics();
   return (
     <>
       <Group title="Seek">
@@ -806,13 +810,41 @@ function About() {
           control={<span className="settings__static">GPL-3.0-or-later</span>}
         />
       </Group>
+      {/* The three facts every bug report needs, in one place, so nobody has to
+          be talked through finding them. The log path especially: it is inside
+          the app's data folder, which no one will guess at. */}
+      <Group
+        title="Diagnostics"
+        footnote="If something goes wrong, this is what to include. The log records what Seek itself did — not what you searched for, and not who you exchanged files with."
+      >
+        <Row
+          label="Engine"
+          hint="The Python sidecar, and the Nicotine+ core it runs."
+          control={(
+            <span className="settings__static tnum">
+              {diag.sidecarVersion || '—'}
+              {diag.coreVersion ? ` · core ${diag.coreVersion}` : ''}
+            </span>
+          )}
+        />
+        {/* A block row, not a Row with a `control`: the control column is
+            sized for a toggle or a short value, and a filesystem path squeezed
+            into it wraps the LABEL to one character per line. Measured. */}
+        <div className="settings__row settings__row--block">
+          <span className="settings__label">Log file</span>
+          <p className="settings__hint">
+            On this machine only. Nothing reads it back and nothing uploads it.
+          </p>
+          <p className="settings__path">{diag.logPath || 'Not connected'}</p>
+        </div>
+      </Group>
       <Group
         title="What Seek does not do"
         footnote="These are commitments, not settings, which is why there is nothing here to switch."
       >
         <Row
           label="No telemetry"
-          hint="Nothing is collected, nothing is sent, and there is no crash reporting."
+          hint="Nothing is collected, nothing is sent, and there is no crash reporting. Seek keeps a diagnostic log on this machine; it goes nowhere unless you attach it to a bug report yourself."
           control={<span className="settings__static">—</span>}
         />
         <Row

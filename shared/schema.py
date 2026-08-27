@@ -312,6 +312,16 @@ STRUCTS = {
         [
             ("protocolVersion", "int", "Sidecar's PROTOCOL_VERSION."),
             ("sidecarVersion", "str", "Seek sidecar version string."),
+            (
+                "logPath",
+                "str",
+                "Absolute path to the diagnostic log, or empty when running "
+                "without one. Sent so Settings can tell someone where to find "
+                "the file a bug report should carry - the alternative is "
+                "asking them to hunt inside an .app bundle. LOCAL ONLY: Seek "
+                "never reads it back, never uploads it, and nothing but the "
+                "person at the keyboard can attach it.",
+            ),
             ("coreVersion", "str", "Upstream pynicotine __version__ in use."),
             ("connection", "ConnectionState", "Current connection state."),
             ("transfers", "Transfer[]", "Every download the core currently knows about."),

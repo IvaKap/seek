@@ -87,11 +87,15 @@ class CoreHost:
                           # pump alone would spend all of it.
 
     def __init__(self, bridge, config_folder, data_folder, upstream_path=None,
-                 enable_shares=False):
+                 enable_shares=False, log_file=""):
         self.bridge = bridge
         self.config_folder = config_folder
         self.data_folder = data_folder
         self.enable_shares = enable_shares
+        # Reported in the hello reply so Settings can tell someone where to find
+        # it. Empty when running without one — a test host, or a machine where
+        # the file could not be opened.
+        self.log_file = log_file or ""
         self._running = False
         self._shutdown_done = False
         self._last_sweep = 0.0
@@ -2489,7 +2493,9 @@ class CoreHost:
         try:
             self.core.search.remove_allowed_token(token)
         except Exception:
-            log.debug("could not remove allowed token %s", token, exc_info=True)
+            # The token is NOT logged. It is a credential, and this file is
+            # written to be attached to a bug report.
+            log.debug("could not remove an allowed token", exc_info=True)
         self.bridge.broadcast("search.closed", payload)
 
     # -- command dispatch --------------------------------------------------
@@ -2511,9 +2517,16 @@ class CoreHost:
                 f"protocol version mismatch: client {params.get('protocolVersion')}, "
                 f"sidecar {PROTOCOL_VERSION}",
             )
+        # `client` is documented in the schema as "for the sidecar log" and was
+        # being ignored. Logged here so every log opens with who connected and
+        # which versions are talking — the first three questions of any report.
+        log.info("client %r connected: sidecar %s, core %s",
+                 str(params.get("client") or "unknown"), SIDECAR_VERSION,
+                 __import__("pynicotine").__version__)
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "sidecarVersion": SIDECAR_VERSION,
+            "logPath": self.log_file,
             "coreVersion": __import__("pynicotine").__version__,
             "connection": dict(self._connection),
             "transfers": self._transfer_snapshot(),

@@ -122,9 +122,22 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
       // Identify immediately. The reply carries the core version and the live
       // connection state, which is what the UI needs before it can say anything
       // truthful about whether search will work.
-      void request<{ connection?: unknown }>('hello', {
+      void request<{
+        connection?: unknown;
+        sidecarVersion?: string;
+        coreVersion?: string;
+        logPath?: string;
+      }>('hello', {
         protocolVersion: 1, client: 'seek-app',
       }).then((result) => {
+        /* The handshake has always carried these three and always thrown them
+         * away. They are exactly what a bug report needs, and the log path is
+         * otherwise buried inside an .app bundle where nobody would find it. */
+        diagnostics = {
+          sidecarVersion: result?.sidecarVersion ?? '',
+          coreVersion: result?.coreVersion ?? '',
+          logPath: result?.logPath ?? '',
+        };
         /* Replay the handshake's connection snapshot as if it were an event.
          *
          * HelloResult carries the login state precisely so a client never has
@@ -415,6 +428,26 @@ export function resolveSidecarEndpoint(): SidecarEndpoint | null {
   if (!host || !Number.isFinite(port) || port <= 0) return null;
 
   return { host, port, token };
+}
+
+/** What the sidecar said about itself at handshake time. */
+export interface Diagnostics {
+  sidecarVersion: string;
+  coreVersion: string;
+  /** Absolute path to the diagnostic log, or '' when there is none. */
+  logPath: string;
+}
+
+let diagnostics: Diagnostics = { sidecarVersion: '', coreVersion: '', logPath: '' };
+
+/**
+ * The last handshake's diagnostics.
+ *
+ * A plain module value rather than a store: written once per connection, read
+ * by one screen, and unchanged in between.
+ */
+export function sidecarDiagnostics(): Diagnostics {
+  return diagnostics;
 }
 
 /** True when running inside the Tauri shell rather than a plain browser tab. */

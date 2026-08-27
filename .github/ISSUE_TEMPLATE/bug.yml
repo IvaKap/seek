@@ -1,0 +1,90 @@
+# Seek — bug report form.
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# A form rather than a Markdown template, because the fields that make a report
+# actionable are the ones people skip. The first bug report this project ever
+# received was "Not a link Seek recognises — that's all I get", which was true,
+# complete, and took an hour of live debugging to turn into a cause.
+
+name: Bug report
+description: Something in Seek behaves wrongly
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. **Settings → About** has everything the
+        first three boxes ask for.
+
+  - type: input
+    id: version
+    attributes:
+      label: Seek version
+      description: Settings → About → Version.
+      placeholder: "0.2.2"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description:  → About This Mac.
+      placeholder: "15.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: chip
+    attributes:
+      label: Mac type
+      description:  → About This Mac. "Chip" means Apple silicon, "Processor" means Intel.
+      options:
+        - Apple silicon (M1 / M2 / M3 / M4)
+        - Intel
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, and what Seek did instead of what you expected.
+      placeholder: |
+        I pasted a Discogs link into the search bar.
+        I expected it to find the release; instead the card said
+        "Not a link Seek recognises".
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        ### The log
+
+        **Settings → About → Log file** shows the path. Open it in any text
+        editor and paste the last 50 or so lines below, or attach the file.
+
+        It records what Seek itself did — not what you searched for, and not
+        who you exchanged files with. Your home folder is written as `~`
+        rather than your real name.
+
+        > ⚠️ **Please do not attach these two, whatever else you send:**
+        >
+        > - **`seek-state.json`**, in the same folder — it holds your Discogs,
+        >   AcoustID and YouTube keys **in plain text**.
+        > - **the `logs/` folder**, also nearby — those are your private
+        >   Soulseek chats and room history, and they are nothing to do with
+        >   Seek's own logging.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: Paste the last lines here. It will be formatted as code.
+      render: text
+    validations:
+      required: false

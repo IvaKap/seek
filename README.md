@@ -330,6 +330,21 @@ things the obvious assumption gets wrong — and `docs/PRODUCT.md` is the produc
 spec. Both are worth reading before changing anything at the seam between the
 Python engine and the TypeScript frontend.
 
+## Reporting a bug
+
+Open an [issue](../../issues/new/choose). The form asks for three things, all
+of which are on **Settings → About**: the Seek version, your macOS version, and
+the **log file** path.
+
+Seek keeps a diagnostic log on your machine. It records what Seek itself did —
+not what you searched for, and not who you exchanged files with — and your home
+folder appears as `~` rather than your real name. Nothing reads it back and
+nothing uploads it; it only ever leaves your Mac if you attach it yourself.
+
+> Two files live near it that you should **not** send: `seek-state.json` holds
+> your API keys in plain text, and the `logs/` folder is your private Soulseek
+> chat history, which has nothing to do with Seek's own logging.
+
 ## Your responsibility
 
 Seek is a client. What you search for, share and download is up to you, and so

@@ -17,6 +17,7 @@ import signal
 import sys
 
 from .core_host import CoreHost
+from . import logfile
 from .server import Bridge, generate_token
 
 DEFAULT_APP_SUPPORT = os.path.expanduser("~/Library/Application Support/Seek")
@@ -63,6 +64,13 @@ def main(argv=None):
         stream=sys.stderr,
     )
 
+    # A file as well as stderr, because stderr goes nowhere a person can reach:
+    # the Tauri shell inherits it, so under a double-clicked .app it lands in
+    # the system log. Everything diagnosed by hand up to now — a missing CA
+    # bundle, every settings save failing on one absent field — was invisible
+    # for exactly that reason.
+    log_file = logfile.attach(args.app_folder, verbose=args.verbose)
+
     token = args.token or os.environ.get("SEEK_TOKEN") or generate_token()
 
     bridge = Bridge(token=token, host=args.host, port=args.port,
@@ -78,6 +86,7 @@ def main(argv=None):
         config_folder=os.path.join(args.app_folder, "config"),
         data_folder=os.path.join(args.app_folder, "data"),
         enable_shares=args.enable_shares,
+        log_file=log_file,
     )
     host.start()
 
