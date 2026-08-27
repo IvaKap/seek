@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LibrarySession } from '../data/libraryStore.ts';
 import { fileSize } from '../domain/format.ts';
+import { canChooseFolder, chooseFolder } from '../data/choose.ts';
 import { IconLibrary, IconSearch } from '../icons/index.tsx';
 import type { LibraryRelease } from '../data/libraryStore.ts';
 import { StatsView } from './StatsView.tsx';
@@ -149,6 +150,26 @@ export function LibraryView({
   }, [library, readTags]);
   const { state, releases, loadReleases } = library;
 
+  /* The folder picker, and the reason it exists: until it did, the ONLY way to
+   * index anything but the download folder was the drop handler above, and that
+   * cannot fire — Tauri v2 intercepts the OS drag before the webview sees it,
+   * and a `File` in a Tauri webview has no `.path` anyway. So a collection that
+   * already existed could not be pointed at, and the screen read zero for
+   * anyone whose music was not downloaded through Seek. Reported by a user with
+   * 53,000 tracks and an empty library.
+   *
+   * `state.roots` is carried back in every scan, here and on Rescan, because
+   * the sidecar builds its list as `[download folder] + what it is given`: send
+   * nothing and an added folder is silently dropped the next time anyone
+   * rescans. Re-sending the download folder inside that list is harmless —
+   * `dedupe_roots` collapses it, and collapses a folder that CONTAINS it too,
+   * which is the common case and would otherwise count those files twice. */
+  const addFolder = useCallback(() => {
+    void chooseFolder('Choose a folder to add to your library').then((picked) => {
+      if (picked) library.scan([...state.roots, picked], readTags);
+    });
+  }, [library, state.roots, readTags]);
+
   useEffect(() => { loadReleases(); }, [loadReleases, state.scannedAt]);
 
   const shown = useMemo(() => {
@@ -179,10 +200,29 @@ export function LibraryView({
             type="button"
             className="btn btn--primary pressable"
             disabled={state.scanning || !library.available}
-            onPointerDown={() => library.scan([], readTags)}
+            onPointerDown={() => library.scan(state.roots, readTags)}
           >
             {state.scanning ? 'Scanning…' : state.scannedAt ? 'Rescan' : 'Scan my downloads'}
           </button>
+          {/* Absent in a plain browser, where there is no native panel — the
+              same contract as the folder settings, which is why this reuses
+              their `chooseFolder` rather than growing a second one. */}
+          {canChooseFolder() && (
+            <button
+              type="button"
+              className="btn pressable"
+              disabled={state.scanning || !library.available}
+              /* onClick, not onPointerDown as the button beside it uses: a
+                 keyboard Enter dispatches a click and never a pointerdown, so
+                 the house pattern here is silently mouse-only. The sidebar has
+                 the same problem and that is why Library cannot be reached from
+                 a keyboard at all — worth fixing broadly, but not by leaving
+                 this one unreachable in the meantime. */
+              onClick={addFolder}
+            >
+              Add a folder…
+            </button>
+          )}
           {/* Borrowed from the metadata panel — the same shape, a checkbox with
               an inline label. Renamed along with it when `.meta` was
               namespaced away from the search row's grid. */}
@@ -242,8 +282,10 @@ export function LibraryView({
             <p className="empty__body">
               {state.scanning
                 ? `${state.trackCount.toLocaleString()} files so far.`
-                : 'Scan your download folder and Seek will mark search results you '
-                  + 'already own, so you stop downloading the same record twice.'}
+                : 'Seek indexes your download folder. Add the folder your collection '
+                  + 'already lives in and it will mark search results you own, so you '
+                  + 'stop downloading the same record twice. This is separate from your '
+                  + 'shared folders, which are what you send to other people.'}
             </p>
           </div>
         ) : tab === 'stats' ? (

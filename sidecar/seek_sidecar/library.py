@@ -55,6 +55,41 @@ def normalise(text):
     return " ".join(out.lower().split())
 
 
+def dedupe_roots(roots):
+    """The folders to walk, with overlaps removed.
+
+    Overlap is not an edge case now that folders can be ADDED to the scan: the
+    download folder is always included, and the obvious thing to add is the
+    music folder that contains it. `os.walk` would then visit those files twice
+    and `trackCount += 1` would run twice for each — a library reporting twice
+    the records you own, from a perfectly reasonable pair of folders.
+
+    So: resolve each (symlinks and `..` included, or two spellings of one folder
+    read as two folders), drop anything that is not a real directory, and drop
+    any root that lives inside another. Shortest first, so the parent is the one
+    that survives and its subtree is still covered.
+    """
+    resolved = []
+    for root in roots:
+        if not root:
+            continue
+        try:
+            real = os.path.realpath(root)
+        except OSError:
+            continue
+        if os.path.isdir(real):
+            resolved.append(real)
+
+    kept = []
+    for root in sorted(set(resolved), key=len):
+        # `startswith` alone is wrong: "/a/music" would swallow "/a/music-old".
+        # The separator is what makes it containment rather than a prefix.
+        if any(root == k or root.startswith(k + os.sep) for k in kept):
+            continue
+        kept.append(root)
+    return kept
+
+
 def release_key(artist, release):
     """The key search results are matched against. Artist may be empty."""
     return f"{normalise(artist)}|{normalise(release)}".strip("|")
@@ -226,13 +261,15 @@ class Library:
                 return self.state()
             self._scanning = True
 
+        # Before anything is walked: two spellings of one folder, or a folder
+        # nested in another, would each be counted twice.
+        roots = dedupe_roots(roots)
+
         releases = {}
         tracks = {}
         seen = 0
         try:
             for root in roots:
-                if not root or not os.path.isdir(root):
-                    continue
                 for folder, _dirs, files in os.walk(root):
                     for name in files:
                         if os.path.splitext(name)[1].lower() not in AUDIO_EXTENSIONS:
@@ -283,7 +320,7 @@ class Library:
             with self._lock:
                 self._data = {
                     "scannedAt": int(time.time()),
-                    "roots": [r for r in roots if r],
+                    "roots": list(roots),
                     "releases": releases,
                     "tracks": tracks,
                 }

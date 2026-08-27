@@ -474,6 +474,11 @@ export default function App() {
       { id: 'go.failed', group: 'Go', label: 'Failed', run: go2('failed') },
       { id: 'go.uploads', group: 'Go', label: 'Uploads', run: go2('uploads') },
       { id: 'go.stats', group: 'Go', label: 'Statistics', run: go2('stats') },
+      /* The sidebar's Library. It was the ONE section reachable by neither a
+         shortcut nor the palette, so the only way in was clicking it — and the
+         sidebar activates on pointerdown, which a keyboard never sends. A
+         keyboard user could focus the item and press Return all day. */
+      { id: 'go.library', group: 'Go', label: 'Library', run: go2('collections') },
       { id: 'go.wishlist', group: 'Go', label: 'Wishlist', run: go2('wishlist') },
       { id: 'go.history', group: 'Go', label: 'Search History', run: go2('history') },
       { id: 'go.saved', group: 'Go', label: 'Saved Searches', run: go2('saved') },
