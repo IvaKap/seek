@@ -335,6 +335,14 @@ STRUCTS = {
             ),
             ("logBytes", "int", "Size of the whole log, so a truncated tail is "
                                 "obvious rather than misleading."),
+            (
+                "fpcalc",
+                "str",
+                "Path to the fingerprinting tool, or empty when identify-by-"
+                "sound is unavailable. Included because 'that feature does "
+                "nothing' is otherwise indistinguishable from 'that feature is "
+                "broken', and the two have completely different answers.",
+            ),
         ],
     ),
     "HelloResult": (

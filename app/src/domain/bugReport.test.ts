@@ -20,6 +20,7 @@ function input(over: Partial<Parameters<typeof buildReport>[0]> = {}) {
     logPath: '/x/data/seek.log',
     logTail: 'INFO seek.core  something happened\n',
     logBytes: 512,
+    fpcalc: '/x/Resources/sidecar/fpcalc',
     ...over,
   };
 }
@@ -75,7 +76,7 @@ describe('when things are missing, which is when it matters most', () => {
   it('still produces a usable report with nothing but a version', () => {
     const out = buildReport(input({
       sidecarVersion: '', coreVersion: '', os: '', arch: '',
-      logPath: '', logTail: '', logBytes: 0,
+      logPath: '', logTail: '', logBytes: 0, fpcalc: '',
     }));
     expect(out).toContain('Seek 0.2.3');
     expect(out.length).toBeGreaterThan(0);
@@ -108,5 +109,17 @@ describe('trimming', () => {
     expect(out).toContain('```\none\ntwo\nthree\n```');
     expect(out).toContain('Log:');
     expect(out).not.toContain('last part of');
+  });
+});
+
+describe('fingerprinting availability', () => {
+  /* "Identify by sound does nothing" and "identify by sound is broken" are
+   * different reports with different answers. Only this line separates them. */
+  it('says so when the tool is there', () => {
+    expect(buildReport(input())).toContain('fingerprinting: available');
+  });
+
+  it('shouts when it is not', () => {
+    expect(buildReport(input({ fpcalc: '' }))).toContain('fingerprinting: UNAVAILABLE');
   });
 });

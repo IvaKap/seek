@@ -29,6 +29,8 @@ export interface ReportInput {
   arch: string;
   logPath: string;
   logTail: string;
+  /** Path to the fingerprinter, or '' when identify-by-sound is unavailable. */
+  fpcalc: string;
   /** Size of the whole log, so a trimmed tail is stated rather than implied. */
   logBytes: number;
 }
@@ -56,6 +58,9 @@ export function buildReport(input: ReportInput): string {
   // Absent when the sidecar never answered — which is itself the bug, and
   // saying so beats printing "engine  · core ".
   lines.push(engine || 'engine: not connected');
+  /* Stated either way. "Identify by sound does nothing" and "identify by sound
+   * is broken" are different reports, and only this line tells them apart. */
+  lines.push(input.fpcalc ? 'fingerprinting: available' : 'fingerprinting: UNAVAILABLE');
 
   lines.push('');
   lines.push('What I did:');

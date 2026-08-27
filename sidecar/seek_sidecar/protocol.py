@@ -311,6 +311,11 @@ class DiagnosticReport(TypedDict):
     # Size of the whole log, so a truncated tail is obvious rather than
     # misleading.
     logBytes: int
+    # Path to the fingerprinting tool, or empty when identify-by-sound is
+    # unavailable. Included because 'that feature does nothing' is otherwise
+    # indistinguishable from 'that feature is broken', and the two have
+    # completely different answers.
+    fpcalc: str
 
 
 class HelloResult(TypedDict):
@@ -2099,6 +2104,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("logPath", "str", False, False),
         ("logTail", "str", False, False),
         ("logBytes", "int", False, False),
+        ("fpcalc", "str", False, False),
     ),
     "HelloResult": (
         ("protocolVersion", "int", False, False),

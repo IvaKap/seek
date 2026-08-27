@@ -636,20 +636,22 @@ FPCALC_CANDIDATES = (
 
 
 def _bundled_fpcalc():
-    """A copy shipped beside the frozen sidecar, for a machine without Homebrew.
+    """The copy shipped beside the frozen sidecar. Since 0.2.5 there is one.
 
-    Nothing ships one yet, and the reason is worth recording: Homebrew's
-    `fpcalc` is NOT portable. `otool -L` on it lists
-    `@rpath/libchromaprint.1.dylib` plus four Homebrew ffmpeg dylibs
-    (libavformat, libavcodec, libavutil, libswresample), so copying the binary
-    alone produces something that dies on any machine without an identical
-    Homebrew tree. Shipping it means either relocating that whole dylib set
-    with install_name_tool, or taking the statically linked build from
-    acoustid.org — which is a licensing and supply-chain decision, not a
-    packaging detail, so it is deliberately left to a human.
+    Homebrew's `fpcalc` is NOT portable and was never a candidate: `otool -L`
+    on it lists `@rpath/libchromaprint.1.dylib` plus four Homebrew ffmpeg
+    dylibs, so copying that binary alone produces something that dies on any
+    machine without an identical Homebrew tree.
 
-    This lookup exists so that when such a binary IS added, dropping it beside
-    the frozen sidecar is all that is required.
+    What ships instead is the statically linked universal build from acoustid's
+    own releases, fetched against a pinned checksum by
+    `sidecar/fetch-fpcalc.sh`. It depends on nothing outside the OS — libSystem,
+    Accelerate, libz, libc++ — which the fetch script re-checks every time
+    rather than trusting this comment.
+
+    Checked BEFORE the PATH candidates below, deliberately: the version we
+    shipped is the version we tested against, and a stray older fpcalc on
+    someone's PATH should not silently take over.
     """
     if not getattr(sys, "frozen", False):
         return None

@@ -72,8 +72,6 @@ Settings > Folders is where.
 What does not work yet
 ----------------------
 
-  - Identifying a track by its sound needs `fpcalc`, which is not
-    bundled. Without it that one feature is simply inert.
   - Seek cannot list every open connection, only the peers you are
     actually exchanging files with. The socket count on Settings >
     Network is usually much larger, because most of those connections

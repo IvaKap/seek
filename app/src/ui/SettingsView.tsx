@@ -807,7 +807,7 @@ function About({ client }: { client: SidecarClient | null }) {
     if (!client) return;
     void client.request<{
       os: string; arch: string; python: string;
-      logPath: string; logTail: string; logBytes: number;
+      logPath: string; logTail: string; logBytes: number; fpcalc: string;
     }>('app.diagnostics')
       .then((d) => navigator.clipboard?.writeText(buildReport({
         appVersion: __APP_VERSION__,
@@ -818,6 +818,7 @@ function About({ client }: { client: SidecarClient | null }) {
         logPath: d.logPath,
         logTail: d.logTail,
         logBytes: d.logBytes,
+        fpcalc: d.fpcalc,
       })))
       .then(() => {
         setCopied(true);

@@ -53,6 +53,16 @@ say "Freezing the engine"
     || die "pyinstaller failed"
 
 # --- the guard this script exists for -------------------------------------
+# fpcalc rides INSIDE the frozen directory, because tauri.conf.json copies that
+# whole folder into Contents/Resources/sidecar — so dropping it here is all the
+# bundling there is, and `discover._bundled_fpcalc` already looks beside the
+# frozen executable. Done after the freeze, since --noconfirm wipes dist/.
+say "Bundling fpcalc"
+./sidecar/fetch-fpcalc.sh || die "could not vendor fpcalc"
+install -m 755 sidecar/vendor/fpcalc sidecar/dist/seek-sidecar/fpcalc \
+  || die "could not place fpcalc beside the frozen engine"
+printf '  fpcalc is beside the engine\n'
+
 say "Checking the freeze is not stale"
 TOC="sidecar/build/seek-sidecar/PYZ-00.toc"
 [ -f "$TOC" ] || die "no $TOC — cannot verify what was frozen"
@@ -158,6 +168,20 @@ sig = unwrap(open(sys.argv[1]).read().strip())[2:10]
 sys.exit(0 if pub == sig else 1)
 KEYCHECK
 printf '  update signed by the key installed copies trust\n'
+
+# --- fpcalc actually made it, and still runs -------------------------------
+#
+# It is a DATA-shaped payload as far as the freeze checks are concerned: every
+# module can be present and the binary fresh while this is missing, and the only
+# symptom is one feature silently doing nothing on a stranger's machine. The
+# same blind spot as the CA bundle.
+say "Checking fpcalc shipped and works"
+FPC="$APP/Contents/Resources/sidecar/fpcalc"
+[ -x "$FPC" ] || die "no fpcalc in the bundle at Contents/Resources/sidecar/fpcalc.
+Identify-by-sound would be inert for everyone. Check that release.sh placed it
+before tauri built, and that tauri.conf.json still copies the sidecar folder."
+"$FPC" -version >/dev/null 2>&1 || die "the bundled fpcalc does not run"
+printf '  %s\n' "$("$FPC" -version 2>&1 | head -1)"
 
 # Say plainly what this build is and is not, so nobody assumes otherwise.
 if codesign -dv "$APP" 2>&1 | grep -q "Signature=adhoc"; then

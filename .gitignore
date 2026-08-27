@@ -67,3 +67,7 @@ docs/BACKLOG.md
 docs/STATUS.md
 app/STATUS.md
 .claude/
+
+# Fetched at release time by sidecar/fetch-fpcalc.sh, against a pinned checksum.
+# A 2.6 MB binary does not belong in git just to save one scripted download.
+sidecar/vendor/

@@ -332,6 +332,14 @@ export interface DiagnosticReport {
    * misleading.
    */
   logBytes: number;
+
+  /**
+   * Path to the fingerprinting tool, or empty when identify-by-sound is
+   * unavailable. Included because 'that feature does nothing' is otherwise
+   * indistinguishable from 'that feature is broken', and the two have
+   * completely different answers.
+   */
+  fpcalc: string;
 }
 
 /**

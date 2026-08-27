@@ -199,7 +199,7 @@ only ever leaves your Mac to reach the service it belongs to.
 | Track analysis / spectrograms | ✅ Nothing — runs locally |
 | **Discogs links, catalogues, want list import** | 🔑 [Discogs token](#discogs-token) |
 | **Import a YouTube playlist** | 🔑 [YouTube Data API key](#youtube-data-api-key) |
-| **Identify a file by its sound** | 🔑 [AcoustID key](#acoustid-application-key) + `brew install chromaprint` |
+| **Identify a file by its sound** | 🔑 [AcoustID key](#acoustid-application-key) |
 
 ---
 
@@ -259,7 +259,6 @@ Only needed to **identify an unlabelled file by its sound**.
 3. Copy the **API key shown for that application**.
 4. In Seek: **Settings → External lookups → AcoustID application key**, paste,
    save.
-5. Install the fingerprinting tool: `brew install chromaprint`
 
 > ⚠️ **Use the APPLICATION key, not the API key on your profile page.** They look
 > identical and the wrong one silently fails. The profile key is for *submitting*
@@ -267,9 +266,8 @@ Only needed to **identify an unlabelled file by its sound**.
 > as an empty result rather than an error, so it just looks like nothing matched.
 > This cost an hour to work out while building Seek; now you don't have to.
 
-`chromaprint` is a separate install because the tool it provides links against
-Homebrew's ffmpeg and can't simply be copied into the app bundle. Everything else
-in Seek works without it.
+The fingerprinting tool itself (`fpcalc`) ships inside Seek — you don't need to
+install anything. Only the free AcoustID key is required.
 
 ---
 
@@ -358,3 +356,13 @@ Seek uses [Nicotine+](https://github.com/nicotine-plus/nicotine-plus)
 (GPL-3.0-or-later) as its protocol engine, pinned as a submodule. Because a
 packaged build embeds Nicotine+, the corresponding source for everything in the
 app is this repository plus that pinned submodule.
+
+A packaged build also ships **`fpcalc`** from
+[Chromaprint](https://github.com/acoustid/chromaprint) 1.6.1
+(LGPL-2.1-or-later), used to fingerprint a file for AcoustID. It is the
+official universal macOS build, shipped **unmodified** and run as a separate
+program — Seek never links against it. Its source is
+[chromaprint-1.6.1.tar.gz](https://github.com/acoustid/chromaprint/releases/tag/v1.6.1),
+and `sidecar/fetch-fpcalc.sh` records the exact artifact and its checksum. That
+binary statically links [FFmpeg](https://ffmpeg.org/), also under
+LGPL-2.1-or-later.

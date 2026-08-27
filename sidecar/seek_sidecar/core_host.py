@@ -1084,6 +1084,9 @@ class CoreHost:
             "logPath": self.log_file,
             "logTail": text,
             "logBytes": size,
+            # Empty means identify-by-sound is simply unavailable, which is a
+            # different bug report from it being broken.
+            "fpcalc": discover_mod.fpcalc_path() or "",
         }
 
     def _cmd_app_settings_get(self, _params):
