@@ -291,6 +291,50 @@ export interface HelloParams {
 }
 
 /**
+ * Everything a bug report needs, gathered in one call so a person can paste it
+ * rather than be talked through finding it.
+ *
+ * The log tail is included DELIBERATELY, even though the frontend could be
+ * told the path instead: the path means opening Finder, then a text editor,
+ * then choosing how much to copy. Five steps is enough friction that most
+ * people give up, and a report with no log is the one that costs an hour of
+ * live debugging.
+ *
+ * Nothing here is sent anywhere. The reply goes to the clipboard and no
+ * further; whether it reaches anybody is the user's decision, made afterwards,
+ * in whatever app they choose.
+ */
+export interface DiagnosticReport {
+  /**
+   * e.g. 'macOS 15.5'. From the engine, because the webview's user agent lies
+   * about both the version and the architecture on macOS.
+   */
+  os: string;
+
+  /** e.g. 'arm64' or 'x86_64'. */
+  arch: string;
+
+  /** The frozen interpreter's version. */
+  python: string;
+
+  /** Absolute path to the log, or empty. */
+  logPath: string;
+
+  /**
+   * The end of the log, newest last, already trimmed to something a person can
+   * paste into a comment. Empty when there is no log file - which is itself
+   * worth reporting.
+   */
+  logTail: string;
+
+  /**
+   * Size of the whole log, so a truncated tail is obvious rather than
+   * misleading.
+   */
+  logBytes: number;
+}
+
+/**
  * Sidecar's handshake reply, including a full state snapshot so the frontend
  * never has to guess after a reconnect.
  */
@@ -2645,6 +2689,11 @@ export interface CommandParams {
    */
   'preview.get': PreviewParams;
   /**
+   * Gather version, platform and the tail of the log for a bug report. Reads
+   * only; sends nothing.
+   */
+  'app.diagnostics': Record<string, never>;
+  /**
    * Seek's own preferences. Distinct from `settings.get`, which is
    * pynicotine's config — these live in Seek's state file because they are not
    * upstream's concern.
@@ -2857,6 +2906,7 @@ export interface CommandResult {
   'metadata.apply': MetadataApplyResult;
   'organise.file': OrganiseResult;
   'preview.get': RequestAccepted;
+  'app.diagnostics': DiagnosticReport;
   'app.settings.get': AppSettings;
   'app.settings.patch': AppSettings;
   'peers.stats': PeerHistory;
@@ -2944,6 +2994,7 @@ export const COMMAND_NAMES = [
   'metadata.apply',
   'organise.file',
   'preview.get',
+  'app.diagnostics',
   'app.settings.get',
   'app.settings.patch',
   'peers.stats',

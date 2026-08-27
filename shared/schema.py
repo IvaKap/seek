@@ -306,6 +306,37 @@ STRUCTS = {
             ("client", "str", "Free-form client identifier, for the sidecar log."),
         ],
     ),
+    "DiagnosticReport": (
+        "Everything a bug report needs, gathered in one call so a person can "
+        "paste it rather than be talked through finding it.\n"
+        "\n"
+        "The log tail is included DELIBERATELY, even though the frontend could "
+        "be told the path instead: the path means opening Finder, then a text "
+        "editor, then choosing how much to copy. Five steps is enough friction "
+        "that most people give up, and a report with no log is the one that "
+        "costs an hour of live debugging.\n"
+        "\n"
+        "Nothing here is sent anywhere. The reply goes to the clipboard and no "
+        "further; whether it reaches anybody is the user's decision, made "
+        "afterwards, in whatever app they choose.",
+        [
+            ("os", "str", "e.g. 'macOS 15.5'. From the engine, because the "
+                          "webview's user agent lies about both the version "
+                          "and the architecture on macOS."),
+            ("arch", "str", "e.g. 'arm64' or 'x86_64'."),
+            ("python", "str", "The frozen interpreter's version."),
+            ("logPath", "str", "Absolute path to the log, or empty."),
+            (
+                "logTail",
+                "str",
+                "The end of the log, newest last, already trimmed to something "
+                "a person can paste into a comment. Empty when there is no log "
+                "file - which is itself worth reporting.",
+            ),
+            ("logBytes", "int", "Size of the whole log, so a truncated tail is "
+                                "obvious rather than misleading."),
+        ],
+    ),
     "HelloResult": (
         "Sidecar's handshake reply, including a full state snapshot so the "
         "frontend never has to guess after a reconnect.",
@@ -2276,6 +2307,12 @@ COMMANDS = {
         "over the socket to play them would be neither.",
         "PreviewParams",
         "RequestAccepted",
+    ),
+    "app.diagnostics": (
+        "Gather version, platform and the tail of the log for a bug report. "
+        "Reads only; sends nothing.",
+        None,
+        "DiagnosticReport",
     ),
     "app.settings.get": (
         "Seek's own preferences. Distinct from `settings.get`, which is "

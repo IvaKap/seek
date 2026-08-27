@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { sidecarDiagnostics } from '../data/sidecarClient.ts';
+import { buildReport } from '../domain/bugReport.ts';
 import { SegmentedControl, Toggle } from './controls.tsx';
 import type { Segment } from './controls.tsx';
 import { ImportPanel } from './ImportPanel.tsx';
@@ -714,7 +715,7 @@ export function SettingsView({
             </Group>
           )}
 
-          {tab === 'about' && <About />}
+          {tab === 'about' && <About client={client} />}
         </div>
       </div>
     </>
@@ -792,10 +793,41 @@ function PortField({
   );
 }
 
-function About() {
+function About({ client }: { client: SidecarClient | null }) {
   /* Read at render rather than held in state: the handshake writes it once per
    * connection and nothing changes it in between. */
   const diag = sidecarDiagnostics();
+  const [copied, setCopied] = useState(false);
+
+  /* The whole point of the button: the facts live in three places — the app
+   * knows its version, the engine knows the OS and the log, and the log is a
+   * file inside the .app's data folder. Gathering them by hand is five steps,
+   * and most people replying to a Reddit thread will not take them. */
+  const copyReport = useCallback(() => {
+    if (!client) return;
+    void client.request<{
+      os: string; arch: string; python: string;
+      logPath: string; logTail: string; logBytes: number;
+    }>('app.diagnostics')
+      .then((d) => navigator.clipboard?.writeText(buildReport({
+        appVersion: __APP_VERSION__,
+        sidecarVersion: diag.sidecarVersion,
+        coreVersion: diag.coreVersion,
+        os: d.os,
+        arch: d.arch,
+        logPath: d.logPath,
+        logTail: d.logTail,
+        logBytes: d.logBytes,
+      })))
+      .then(() => {
+        setCopied(true);
+        // Long enough to read, short enough that the button is ready again
+        // if the first paste went somewhere wrong.
+        window.setTimeout(() => setCopied(false), 2500);
+      })
+      .catch(() => setCopied(false));
+  }, [client, diag]);
+
   return (
     <>
       <Group title="Seek">
@@ -833,9 +865,19 @@ function About() {
         <div className="settings__row settings__row--block">
           <span className="settings__label">Log file</span>
           <p className="settings__hint">
-            On this machine only. Nothing reads it back and nothing uploads it.
+            On this machine only. <b>Copy diagnostics</b> puts the version, your
+            macOS details and the end of this log on the clipboard, ready to
+            paste into a bug report. Nothing is sent anywhere by Seek.
           </p>
           <p className="settings__path">{diag.logPath || 'Not connected'}</p>
+          <button
+            type="button"
+            className="btn btn--primary pressable settings__copy"
+            disabled={!client}
+            onClick={copyReport}
+          >
+            {copied ? 'Copied' : 'Copy diagnostics'}
+          </button>
         </div>
       </Group>
       <Group

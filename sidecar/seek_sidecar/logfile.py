@@ -123,3 +123,36 @@ def attach(app_folder, verbose=False):
     # `basicConfig` may have set higher than this handler wants.
     seek.setLevel(logging.DEBUG if verbose else logging.INFO)
     return path
+
+
+#: How much of the log to hand back for a bug report. Sized to be pasteable
+#: into a Reddit comment or a GitHub issue without collapsing it behind a
+#: "show more" — past that people stop reading, and an unread log is no better
+#: than no log.
+TAIL_BYTES = 16 * 1024
+
+
+def tail(path, limit=TAIL_BYTES):
+    """The end of the log, plus the size of the whole thing.
+
+    Reads from the END rather than loading the file: it is capped at a megabyte,
+    but this runs on the command thread and there is no reason to hold all of it
+    in memory to show the last page.
+
+    Returns `(text, total_bytes)`. A missing file is ("", 0) rather than an
+    error — "there is no log" is a legitimate answer and a useful one.
+    """
+    try:
+        size = os.path.getsize(path)
+        with open(path, "rb") as handle:
+            if size > limit:
+                handle.seek(size - limit)
+                # The seek almost certainly landed mid-line; drop the fragment
+                # so the paste does not open on half a word.
+                handle.readline()
+            body = handle.read()
+    except OSError:
+        return "", 0
+    # errors="replace" rather than strict: a truncated multi-byte character at
+    # the seek point must not cost somebody their whole bug report.
+    return body.decode("utf-8", errors="replace"), size

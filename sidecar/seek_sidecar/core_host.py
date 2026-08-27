@@ -17,14 +17,15 @@ import json
 import logging
 import base64
 import os
+import platform
 import sys
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from . import (
-    discover as discover_mod, enrich, library as library_mod, nicotine_import,
-    registries, translate,
+    discover as discover_mod, enrich, library as library_mod, logfile,
+    nicotine_import, registries, translate,
 )
 from .protocol import PROTOCOL_VERSION
 
@@ -1065,6 +1066,25 @@ class CoreHost:
         out["acoustidApiKey"] = bool(stored.get("acoustidApiKey"))
         out["youtubeApiKey"] = bool(stored.get("youtubeApiKey"))
         return out
+
+    def _cmd_app_diagnostics(self, _params):
+        """Everything a bug report needs, in one paste.
+
+        Gathered here rather than in the frontend because the webview cannot
+        read the log, and because its user agent lies about macOS: it reports
+        the version as 10_15_7 for ever, and says "Intel" on Apple silicon.
+        `platform` knows the truth.
+        """
+        text, size = logfile.tail(self.log_file) if self.log_file else ("", 0)
+        return {
+            "os": f"macOS {platform.mac_ver()[0]}" if platform.mac_ver()[0]
+                  else platform.platform(),
+            "arch": platform.machine(),
+            "python": platform.python_version(),
+            "logPath": self.log_file,
+            "logTail": text,
+            "logBytes": size,
+        }
 
     def _cmd_app_settings_get(self, _params):
         return self._app_settings()

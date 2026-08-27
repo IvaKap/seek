@@ -280,6 +280,39 @@ class HelloParams(TypedDict):
     client: str
 
 
+class DiagnosticReport(TypedDict):
+    """
+    Everything a bug report needs, gathered in one call so a person can
+    paste it rather than be talked through finding it.
+
+    The log tail is included DELIBERATELY, even though the frontend could be
+    told the path instead: the path means opening Finder, then a text
+    editor, then choosing how much to copy. Five steps is enough friction
+    that most people give up, and a report with no log is the one that costs
+    an hour of live debugging.
+
+    Nothing here is sent anywhere. The reply goes to the clipboard and no
+    further; whether it reaches anybody is the user's decision, made
+    afterwards, in whatever app they choose.
+    """
+    # e.g. 'macOS 15.5'. From the engine, because the webview's user agent
+    # lies about both the version and the architecture on macOS.
+    os: str
+    # e.g. 'arm64' or 'x86_64'.
+    arch: str
+    # The frozen interpreter's version.
+    python: str
+    # Absolute path to the log, or empty.
+    logPath: str
+    # The end of the log, newest last, already trimmed to something a person
+    # can paste into a comment. Empty when there is no log file - which is
+    # itself worth reporting.
+    logTail: str
+    # Size of the whole log, so a truncated tail is obvious rather than
+    # misleading.
+    logBytes: int
+
+
 class HelloResult(TypedDict):
     """
     Sidecar's handshake reply, including a full state snapshot so the
@@ -2059,6 +2092,14 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("protocolVersion", "int", False, False),
         ("client", "str", False, False),
     ),
+    "DiagnosticReport": (
+        ("os", "str", False, False),
+        ("arch", "str", False, False),
+        ("python", "str", False, False),
+        ("logPath", "str", False, False),
+        ("logTail", "str", False, False),
+        ("logBytes", "int", False, False),
+    ),
     "HelloResult": (
         ("protocolVersion", "int", False, False),
         ("sidecarVersion", "str", False, False),
@@ -2863,6 +2904,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "metadata.apply": ("MetadataApplyParams", "MetadataApplyResult"),
     "organise.file": ("SpectralRequestParams", "OrganiseResult"),
     "preview.get": ("PreviewParams", "RequestAccepted"),
+    "app.diagnostics": (None, "DiagnosticReport"),
     "app.settings.get": (None, "AppSettings"),
     "app.settings.patch": ("AppSettingsPatch", "AppSettings"),
     "peers.stats": (None, "PeerHistory"),
