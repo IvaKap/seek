@@ -352,7 +352,10 @@ class CoreHost:
             upstream = self._find_upstream_transfer(record)
             if upstream is not None:
                 self.bridge.broadcast(
-                    "transfer.updated", translate.transfer(record, upstream)
+                    "transfer.updated",
+                    translate.transfer(
+                        record, upstream, self.transfers.since_progress(record)
+                    ),
                 )
 
     # -- upstream event handlers -------------------------------------------
@@ -1047,6 +1050,11 @@ class CoreHost:
         "embedArtwork": True,
         "writeCoverFile": False,
         "autoDigSessions": True,
+        # Both off by default. The first changes where a download APPEARS and
+        # the second forgets records, and neither should start happening to
+        # somebody who never asked for it.
+        "stalledFailMinutes": 0,
+        "clearCompletedDays": 0,
         "acoustidApiKey": False,
         "youtubeApiKey": False,
     }
@@ -1109,6 +1117,12 @@ class CoreHost:
             self.config.write_configuration()
         if params.get("minBitrate") is not None:
             stored["minBitrate"] = max(0, int(params["minBitrate"]))
+        # Clamped, not trusted. These come off number inputs, and a negative
+        # threshold would mean "every download has already been quiet too long"
+        # — i.e. the whole list into Failed on the next tick.
+        for key in ("stalledFailMinutes", "clearCompletedDays"):
+            if params.get(key) is not None:
+                stored[key] = max(0, int(params[key]))
         if params.get("artworkCacheMb") is not None:
             stored["artworkCacheMb"] = max(50, int(params["artworkCacheMb"]))
         if params.get("acoustidApiKey") is not None:
@@ -2452,7 +2466,9 @@ class CoreHost:
             self._record_outcome(record, state)
         record.last_emitted_state = state
 
-        payload = translate.transfer(record, upstream_transfer)
+        payload = translate.transfer(
+            record, upstream_transfer, self.transfers.since_progress(record)
+        )
         self.bridge.broadcast("transfer.added" if is_new else "transfer.updated",
                               payload)
 
@@ -2740,7 +2756,9 @@ class CoreHost:
                 record = self.transfers.record_for(
                     direction, upstream.username, upstream.virtual_path
                 )
-                out.append(translate.transfer(record, upstream))
+                out.append(translate.transfer(
+                    record, upstream, self.transfers.since_progress(record)
+                ))
         return out
 
     # -- settings ----------------------------------------------------------

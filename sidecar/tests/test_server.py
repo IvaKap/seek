@@ -238,7 +238,9 @@ def _transfer(direction="download"):
             "username": "u", "path": "p", "localFolder": None,
             "size": 1, "bytesDone": 0, "state": "queued", "speed": 0,
             "averageSpeed": 0, "queuePosition": None, "secondsLeft": None,
-            "secondsElapsed": 0, "stalled": False, "file": None, "error": None}
+            "secondsElapsed": 0, "stalled": False, "secondsSinceProgress": 0,
+            "finishedAt": None,
+            "file": None, "error": None}
 
 
 def _folder():
@@ -315,7 +317,8 @@ def _event_samples():
             "rejectTranscodes": False, "autoOrganise": False,
             "externalLookups": True, "discogsToken": False,
             "artworkCacheMb": 500, "embedArtwork": True, "writeCoverFile": False,
-            "autoDigSessions": True, "acoustidApiKey": False,
+            "autoDigSessions": True, "stalledFailMinutes": 0, "clearCompletedDays": 0,
+            "acoustidApiKey": False,
             "youtubeApiKey": False,
         },
         "peers.stats": {

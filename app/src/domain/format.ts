@@ -36,6 +36,24 @@ export function since(epochSeconds: number): string {
   return `${months} ${months === 1 ? 'month' : 'months'} ago`;
 }
 
+/**
+ * Seconds → `34 minutes`. A LENGTH of time, not a clock and not a moment.
+ *
+ * `duration` would render this as 34:00, which reads as a track length, and
+ * `since` would say "34 min ago", which names a point in the past. What a
+ * stalled download needs stated is how long it has been that way.
+ */
+export function spanWords(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  if (s < 90) return 'less than a minute';
+  const minutes = Math.round(s / 60);
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  const days = Math.round(hours / 24);
+  return `${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
 /** Bytes → `48.2 MB`. One decimal below 100, none above, so width is stable. */
 export function fileSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '—';

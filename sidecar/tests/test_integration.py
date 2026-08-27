@@ -300,6 +300,7 @@ def _settings_patch(**overrides):
         "artworkCacheMb": None, "embedArtwork": None, "writeCoverFile": None,
         "preferLossless": None, "minBitrate": None, "rejectTranscodes": None,
         "autoOrganise": None, "autoDigSessions": None,
+        "stalledFailMinutes": None, "clearCompletedDays": None,
         "acoustidApiKey": None, "youtubeApiKey": None,
     }
     patch.update(overrides)

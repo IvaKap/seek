@@ -241,7 +241,7 @@ def connection_stats(total_conns=0, download_bandwidth=0, upload_bandwidth=0):
     }
 
 
-def transfer(record, upstream_transfer):
+def transfer(record, upstream_transfer, seconds_since_progress=0):
     """(SidecarTransfer, pynicotine Transfer) -> wire Transfer.
 
     `record` supplies the stable id, the direction and the stall verdict;
@@ -281,6 +281,13 @@ def transfer(record, upstream_transfer):
         "secondsLeft": seconds_left,
         "secondsElapsed": int(t.time_elapsed or 0),
         "stalled": bool(record.stalled),
+        # How long the offset has been still. `stalled` says THAT it is
+        # stuck; this says how long, which is the difference between a peer
+        # that hiccuped and one that is never coming back. Supplied by the
+        # registry, which owns the clock — a default of 0 here would be a
+        # lie the caller could forget to correct, so callers pass it.
+        "secondsSinceProgress": int(seconds_since_progress or 0),
+        "finishedAt": int(record.finished_at) or None,
         "file": record.file,
         # For 'rejected' this is the only surviving copy of what the peer
         # said. Dropping it is what made every refusal read "unknown".

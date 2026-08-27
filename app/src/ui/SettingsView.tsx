@@ -484,6 +484,54 @@ export function SettingsView({
                 />
               </Group>
 
+              <Group
+                title="Keeping the list readable"
+                footnote="Neither of these touches a file, and neither cancels anything. The first only changes which list a download appears in; the second forgets records Seek is holding."
+              >
+                <Row
+                  label="Move silent downloads to Failed"
+                  hint="A download that has not moved a byte for this long is shown under Failed instead of Downloads. Seek does not cancel it — it keeps its place in the peer's queue, which is often hours long, and it returns here by itself if it starts again. 0 never moves anything."
+                  control={(
+                    <span className="settings__inline">
+                      <input
+                        className="settings__input settings__input--num tnum"
+                        type="number"
+                        min={0}
+                        max={1440}
+                        step={5}
+                        value={settings.stalledFailMinutes}
+                        aria-label="Minutes of silence before showing a download under Failed"
+                        onChange={(e) => prefs.patch({
+                          stalledFailMinutes: Number(e.target.value),
+                        })}
+                      />
+                      <span className="settings__unit">minutes</span>
+                    </span>
+                  )}
+                />
+                <Row
+                  label="Forget completed downloads"
+                  hint="Clear finished downloads from the Completed list once they are this old. This forgets Seek's RECORD of the download — the files on disk are never touched. 0 keeps them forever."
+                  control={(
+                    <span className="settings__inline">
+                      <input
+                        className="settings__input settings__input--num tnum"
+                        type="number"
+                        min={0}
+                        max={365}
+                        step={1}
+                        value={settings.clearCompletedDays}
+                        aria-label="Days before forgetting a completed download"
+                        onChange={(e) => prefs.patch({
+                          clearCompletedDays: Number(e.target.value),
+                        })}
+                      />
+                      <span className="settings__unit">days</span>
+                    </span>
+                  )}
+                />
+              </Group>
+
               <Group title="After downloading">
                 <Row
                   label="Organise completed downloads"

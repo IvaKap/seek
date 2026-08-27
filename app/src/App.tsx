@@ -151,7 +151,14 @@ export default function App() {
     .reduce((n, c) => n + (c.scope === 'room' ? c.unread : 0), 0);
   const privateUnread = chat.conversations
     .reduce((n, c) => n + (c.scope === 'private' ? c.unread : 0), 0);
-  const transfers = useTransfers(session.client);
+  /* Minutes in the setting, seconds in the store — the setting is a number a
+   * person picks and the store compares against a clock. Converting at the one
+   * boundary keeps the unit out of both. */
+  const transfers = useTransfers(
+    session.client,
+    prefs.settings.stalledFailMinutes * 60,
+    prefs.settings.clearCompletedDays,
+  );
   const updates = useUpdates();
   const analysis = useAnalysis(session.client);
   const artwork = useArtwork(session.client);

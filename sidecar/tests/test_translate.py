@@ -290,10 +290,12 @@ def test_user_status_mapping(code, expected):
 # ---------------------------------------------------------------- transfer
 
 class FakeRecord:
-    def __init__(self, id="abc123", stalled=False, file=None, direction="download"):
+    def __init__(self, id="abc123", stalled=False, file=None, direction="download",
+                 finished_at=0.0):
         self.id = id
         self.stalled = stalled
         self.file = file
+        self.finished_at = finished_at
         # The direction comes from the RECORD, not from the upstream object:
         # pynicotine uses one Transfer class both ways and it does not know
         # which list it is in.

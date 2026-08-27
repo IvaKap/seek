@@ -37,6 +37,10 @@ export interface AppSettings {
   autoOrganise: boolean;
   /** Group a burst of want list additions into a digging session. */
   autoDigSessions: boolean;
+  /** Minutes of silence before a download shows under Failed. 0 = never. */
+  stalledFailMinutes: number;
+  /** Forget completed records older than this many days. 0 = keep. */
+  clearCompletedDays: number;
   /** Whether an AcoustID key is stored — never the value. */
   acoustidApiKey: boolean;
   /** Whether a YouTube Data API key is stored — never the value. */
@@ -64,6 +68,8 @@ const DEFAULTS: AppSettings = {
   rejectTranscodes: false,
   autoOrganise: false,
   autoDigSessions: true,
+  stalledFailMinutes: 0,
+  clearCompletedDays: 0,
   acoustidApiKey: false,
   youtubeApiKey: false,
 };
@@ -86,6 +92,8 @@ export interface AppSettingsPatch {
   rejectTranscodes?: boolean;
   autoOrganise?: boolean;
   autoDigSessions?: boolean;
+  stalledFailMinutes?: number;
+  clearCompletedDays?: number;
   acoustidApiKey?: string;
   youtubeApiKey?: string;
 }
@@ -164,6 +172,8 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       rejectTranscodes: null,
       autoOrganise: null,
       autoDigSessions: null,
+      stalledFailMinutes: null,
+      clearCompletedDays: null,
       ...p,
     })
       .then((saved) => {

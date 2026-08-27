@@ -18,7 +18,7 @@ import { fileName, isActive, isFailed } from '../data/transferStore.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
 import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
-import { fileSize, integer, speed as fmtSpeed } from '../domain/format.ts';
+import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
 import type { Density } from './ViewMenu.tsx';
@@ -443,7 +443,18 @@ function Group({
                 <span className="tnum">{eta(groupEta(g))}</span>
               </>
             )}
-            {g.stalled && <span className="dl__flag">stalled</span>}
+            {/* The number, not the word. "Stalled" is a state; "no movement
+                for 34 minutes" is the fact a person needs to decide whether to
+                retry it, and it is the same number the give-up threshold is
+                compared against — so the row explains its own presence in
+                Failed rather than appearing there unaccountably. */}
+            {g.state === 'stalled' ? (
+              <span className="dl__flag dl__flag--bad">
+                no movement for {spanWords(g.quietFor)}
+              </span>
+            ) : g.stalled ? (
+              <span className="dl__flag">stalled</span>
+            ) : null}
             {g.failed > 0 && (
               <span className="dl__flag dl__flag--bad tnum">{g.failed} failed</span>
             )}
@@ -509,10 +520,14 @@ export function DownloadsView({
   discovery?: RelatedDiscovery;
 }) {
   const groups = session.groups.filter((g) => (
+    /* A given-up group is excluded from 'active' by having its own state, and
+     * joins Failed below. It is not a failure — nothing refused it and nothing
+     * errored — but Failed is where you go to deal with downloads that are not
+     * happening, and that is exactly what this is. */
     filter === 'active' ? g.state === 'active' || g.state === 'queued' || g.state === 'paused'
       : filter === 'finished' ? g.state === 'finished'
         // Cancelled sits with Failed: it did not complete, and it can be retried.
-        : g.state === 'failed' || g.state === 'cancelled'
+        : g.state === 'failed' || g.state === 'cancelled' || g.state === 'stalled'
   ));
 
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);

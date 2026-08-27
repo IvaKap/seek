@@ -589,6 +589,8 @@ STRUCTS = {
                 "On by default — it only ever adds a grouping, never changes "
                 "or hides an entry, and it can be switched off here.",
             ),
+            ("stalledFailMinutes", "int", "How many minutes of silence before a download is shown under Failed instead of Downloads. 0 never does it. Seek does NOT touch the transfer: it keeps its place in the peer's queue, which is often hours long and frequently does come good, and the row returns to Downloads by itself the moment a byte moves. This is a lens on the same list, not an action."),
+            ("clearCompletedDays", "int", "Forget completed downloads older than this many days. 0 keeps them forever. Forgets the RECORD only — the files on disk are never touched — and off by default, because it is the one preference here that destroys something the user did not ask to lose."),
         ],
     ),
     "AppSettingsPatch": (
@@ -608,6 +610,8 @@ STRUCTS = {
             ("acoustidApiKey", "str?", "The key itself, for writing. Empty clears it."),
             ("youtubeApiKey", "str?", "The key itself, for writing. Empty clears it."),
             ("autoDigSessions", "bool?", ""),
+            ("stalledFailMinutes", "int?", ""),
+            ("clearCompletedDays", "int?", ""),
         ],
     ),
     "PeerRecord": (
@@ -1766,6 +1770,26 @@ STRUCTS = {
                 "bool",
                 "Seek-specific: state is 'transferring' but bytesDone has not moved "
                 "for `Settings.stallSeconds`. Upstream provides no such signal.",
+            ),
+            (
+                "finishedAt",
+                "int?",
+                "Epoch seconds when this first read 'finished', null while it "
+                "has not. Wall clock, because it is compared against a "
+                "threshold in days. After a sidecar restart every restored "
+                "transfer is stamped fresh, since nothing durable records when "
+                "it actually landed — so an age-based clear errs LATE, which is "
+                "the right direction for something that forgets records.",
+            ),
+            (
+                "secondsSinceProgress",
+                "int",
+                "Seconds since bytesDone last moved. Only meaningful beside "
+                "`stalled`, which is what says the offset was supposed to be "
+                "moving; for a queued or paused transfer this is just time since "
+                "the last observation. `stalled` says THAT a transfer is stuck and "
+                "this says how long, which is the difference between a peer that "
+                "hiccuped and one that is never coming back.",
             ),
             (
                 "file",

@@ -235,7 +235,8 @@ class TransferRecord:
     """Sidecar-side state for one transfer, in either direction."""
 
     __slots__ = ("id", "direction", "username", "path", "file", "last_offset",
-                 "last_progress_at", "stalled", "last_emitted_state")
+                 "last_progress_at", "stalled", "last_emitted_state",
+                 "finished_at")
 
     def __init__(self, direction, username, path, file=None, now=0.0):
         self.id = transfer_key(direction, username, path)
@@ -249,6 +250,11 @@ class TransferRecord:
         self.last_progress_at = now
         self.stalled = False
         self.last_emitted_state = None
+        #: Wall-clock epoch seconds when this first read 'finished', 0 while it
+        #: has not. WALL clock, not the monotonic one the stall timer uses: this
+        #: one is compared against a threshold in DAYS and has to survive being
+        #: read by a human, and monotonic time has no meaning across a restart.
+        self.finished_at = 0.0
 
 
 class TransferRegistry:
@@ -280,11 +286,47 @@ class TransferRegistry:
             record.file = file
         return record
 
+    def since_progress(self, record):
+        """Seconds since this transfer's byte offset last moved.
+
+        Only meaningful beside `stalled`, which is the flag that says the
+        offset was SUPPOSED to be moving. For a queued or paused transfer this
+        is simply time since the last observation of it, which is not a stall
+        and must not be read as one.
+
+        Exists because `stalled` is a boolean and the question a stalled
+        download actually raises is *how long*. Without it the frontend cannot
+        tell a peer that hiccuped ten seconds ago from one that has been silent
+        since yesterday, and cannot offer to sweep the second kind away.
+        """
+        return max(0, int(self._clock() - record.last_progress_at))
+
     def get(self, transfer_id_):
         return self.records.get(transfer_id_)
 
     def forget(self, transfer_id_):
         return self.records.pop(transfer_id_, None)
+
+    def mark_finished(self, record, state):
+        """Stamp the completion time the first time a transfer reads finished.
+
+        First time only: upstream re-emits a finished transfer on every list
+        refresh, and re-stamping would keep pushing the age back to zero, so an
+        age-based clear would never fire for anything.
+
+        Note what this CANNOT know. After a sidecar restart the records are
+        rebuilt from upstream's restored list and every finished transfer is
+        stamped now, because nothing durable records when it actually landed.
+        That errs late — a completed download survives one threshold longer than
+        it should — which is the right direction for the only setting here that
+        forgets something.
+        """
+        if state == "finished":
+            if not record.finished_at:
+                record.finished_at = time.time()
+        elif record.finished_at:
+            # Retried, or upstream changed its mind. It is not finished now.
+            record.finished_at = 0.0
 
     def observe(self, record, state, byte_offset):
         """Feed a progress observation in. Returns True if `stalled` flipped.
@@ -295,6 +337,7 @@ class TransferRegistry:
         """
         now = self._clock()
         offset = int(byte_offset or 0)
+        self.mark_finished(record, state)
 
         if state != "transferring":
             record.last_offset = offset

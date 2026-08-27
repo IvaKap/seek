@@ -551,6 +551,17 @@ class AppSettings(TypedDict):
     # default — it only ever adds a grouping, never changes or hides an entry,
     # and it can be switched off here.
     autoDigSessions: bool
+    # How many minutes of silence before a download is shown under Failed
+    # instead of Downloads. 0 never does it. Seek does NOT touch the transfer:
+    # it keeps its place in the peer's queue, which is often hours long and
+    # frequently does come good, and the row returns to Downloads by itself
+    # the moment a byte moves. This is a lens on the same list, not an action.
+    stalledFailMinutes: int
+    # Forget completed downloads older than this many days. 0 keeps them
+    # forever. Forgets the RECORD only — the files on disk are never touched —
+    # and off by default, because it is the one preference here that destroys
+    # something the user did not ask to lose.
+    clearCompletedDays: int
 
 
 class AppSettingsPatch(TypedDict):
@@ -574,6 +585,8 @@ class AppSettingsPatch(TypedDict):
     # The key itself, for writing. Empty clears it.
     youtubeApiKey: Optional[str]
     autoDigSessions: Optional[bool]
+    stalledFailMinutes: Optional[int]
+    clearCompletedDays: Optional[int]
 
 
 class PeerRecord(TypedDict):
@@ -1708,6 +1721,19 @@ class Transfer(TypedDict):
     # Seek-specific: state is 'transferring' but bytesDone has not moved for
     # `Settings.stallSeconds`. Upstream provides no such signal.
     stalled: bool
+    # Epoch seconds when this first read 'finished', null while it has not.
+    # Wall clock, because it is compared against a threshold in days. After a
+    # sidecar restart every restored transfer is stamped fresh, since nothing
+    # durable records when it actually landed — so an age-based clear errs
+    # LATE, which is the right direction for something that forgets records.
+    finishedAt: Optional[int]
+    # Seconds since bytesDone last moved. Only meaningful beside `stalled`,
+    # which is what says the offset was supposed to be moving; for a queued or
+    # paused transfer this is just time since the last observation. `stalled`
+    # says THAT a transfer is stuck and this says how long, which is the
+    # difference between a peer that hiccuped and one that is never coming
+    # back.
+    secondsSinceProgress: int
     # The originating FileRef when the client supplied one on enqueue, so
     # quality info survives into the transfers view.
     file: Optional["FileRef"]
@@ -2208,6 +2234,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("acoustidApiKey", "bool", False, False),
         ("youtubeApiKey", "bool", False, False),
         ("autoDigSessions", "bool", False, False),
+        ("stalledFailMinutes", "int", False, False),
+        ("clearCompletedDays", "int", False, False),
     ),
     "AppSettingsPatch": (
         ("autoConnect", "bool", False, True),
@@ -2223,6 +2251,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("acoustidApiKey", "str", False, True),
         ("youtubeApiKey", "str", False, True),
         ("autoDigSessions", "bool", False, True),
+        ("stalledFailMinutes", "int", False, True),
+        ("clearCompletedDays", "int", False, True),
     ),
     "PeerRecord": (
         ("username", "str", False, False),
@@ -2730,6 +2760,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("secondsLeft", "int", False, True),
         ("secondsElapsed", "int", False, False),
         ("stalled", "bool", False, False),
+        ("finishedAt", "int", False, True),
+        ("secondsSinceProgress", "int", False, False),
         ("file", "FileRef", False, True),
         ("error", "str", False, True),
     ),

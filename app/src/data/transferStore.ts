@@ -53,7 +53,29 @@ export interface Transfer {
   secondsLeft: number | null;
   secondsElapsed: number;
   stalled: boolean;
+  /** Seconds since bytesDone last moved, AS OF WHEN THE SIDECAR SENT THIS. */
+  secondsSinceProgress: number;
+  /** Epoch seconds this first read finished, null while it has not. */
+  finishedAt: number | null;
   error: string | null;
+
+  /* Frontend-only, not on the wire. `secondsSinceProgress` is a snapshot, and a
+   * transfer that has gone quiet sends nothing more by definition — that is what
+   * being quiet means — so the snapshot is the last thing we will ever hear.
+   * Stamping arrival is what lets `silenceSeconds` keep counting afterwards
+   * instead of freezing at whatever the last event happened to say. */
+  seenAt?: number;
+}
+
+/**
+ * How long this transfer has been silent, right now.
+ *
+ * The sidecar's number plus however long we have held it. Not `secondsElapsed`,
+ * which counts from the START of the transfer and keeps rising for one that is
+ * downloading perfectly well.
+ */
+export function silenceSeconds(t: Transfer, now: number): number {
+  return t.secondsSinceProgress + Math.max(0, (now - (t.seenAt ?? now)) / 1000);
 }
 
 export interface TransferGroup {
@@ -70,7 +92,9 @@ export interface TransferGroup {
   finished: number;
   failed: number;
   stalled: boolean;
-  state: 'active' | 'finished' | 'failed' | 'paused' | 'queued' | 'cancelled';
+  /** Silence of the LIVELIEST unfinished file, in seconds. See `group`. */
+  quietFor: number;
+  state: 'active' | 'finished' | 'failed' | 'paused' | 'queued' | 'cancelled' | 'stalled';
 }
 
 const ACTIVE: TransferState[] = ['queued', 'getting_status', 'transferring'];
@@ -86,6 +110,13 @@ export const isFailed = (s: TransferState) => FAILED.includes(s);
  * cancelled download sat in Downloads looking exactly as it had before —
  * which is why Cancel appeared to do nothing at all. */
 export const isCancelled = (s: TransferState) => s === 'cancelled' || s === 'filtered';
+
+/** Nothing more will happen to it: finished, failed, or given up on by someone.
+ *  Used to decide which files can be "quiet" — a finished file is silent
+ *  forever, and counting it would sweep every completed release into Failed. */
+export const isTerminal = (s: TransferState) => (
+  s === 'finished' || isFailed(s) || isCancelled(s)
+);
 
 /** Split a remote virtual path on the backslash Soulseek actually uses. */
 function splitPath(path: string): { folder: string; name: string } {
@@ -104,7 +135,22 @@ function groupOf(t: Transfer): string {
   return `${t.username}\0${splitPath(t.path).folder}`;
 }
 
-function group(transfers: Transfer[]): TransferGroup[] {
+/**
+ * Group into releases, and decide which have gone quiet.
+ *
+ * `quietSeconds` is the give-up threshold, 0 for never. A group crosses it only
+ * when EVERY unfinished file in it has been silent that long: one file still
+ * moving means the release is still arriving, and burying it in Failed because
+ * its siblings are queued behind it would hide a working download.
+ *
+ * This is a DERIVATION, deliberately, and nothing here is remembered. A stalled
+ * download keeps its place in the peer's queue and very often resumes hours
+ * later; the moment a byte moves, `secondsSinceProgress` resets at the source
+ * and the group reappears in Downloads on its own. A stored "gave up" flag
+ * could not do that — it would have to be cleared by something, and nothing
+ * would be watching.
+ */
+export function group(transfers: Transfer[], quietSeconds = 0, now = Date.now()): TransferGroup[] {
   const map = new Map<string, Transfer[]>();
   for (const t of transfers) {
     const k = groupOf(t);
@@ -124,6 +170,14 @@ function group(transfers: Transfer[]): TransferGroup[] {
     const paused = list.filter((t) => t.state === 'paused').length;
     const cancelled = list.filter((t) => isCancelled(t.state)).length;
 
+    /* Only unfinished files can be quiet — a finished one is silent forever and
+     * counting it would drag every completed release into Failed. */
+    const unfinished = list.filter((t) => !isTerminal(t.state));
+    const quietFor = unfinished.length === 0
+      ? 0
+      : Math.min(...unfinished.map((t) => silenceSeconds(t, now)));
+    const gaveUp = quietSeconds > 0 && unfinished.length > 0 && quietFor >= quietSeconds;
+
     out.push({
       key,
       username,
@@ -135,7 +189,12 @@ function group(transfers: Transfer[]): TransferGroup[] {
       speed: list.reduce((n, t) => n + t.speed, 0),
       active, finished, failed,
       stalled: list.some((t) => t.stalled),
-      state: active > 0 ? 'active'
+      quietFor,
+      /* BEFORE `active`, and that ordering is the whole feature: a transfer
+       * that has gone quiet is still `transferring` as far as upstream is
+       * concerned, so `active > 0` is true and would win every time. */
+      state: gaveUp ? 'stalled'
+        : active > 0 ? 'active'
         : failed > 0 ? 'failed'
           : paused > 0 ? 'paused'
             : cancelled > 0 && finished === 0 ? 'cancelled'
@@ -146,12 +205,16 @@ function group(transfers: Transfer[]): TransferGroup[] {
   // Active first — the thing you are waiting on should not be below the
   // hundred files that already finished.
   const rank = {
-    active: 0, queued: 1, paused: 2, failed: 3, cancelled: 4, finished: 5,
+    active: 0, queued: 1, paused: 2, stalled: 3, failed: 4, cancelled: 5, finished: 6,
   } as const;
   return out.sort((a, b) => rank[a.state] - rank[b.state] || a.title.localeCompare(b.title));
 }
 
 const PUBLISH_MS = 400;
+/* How often to re-derive when a give-up threshold is set. A minute is far finer
+ * than any threshold worth setting (the smallest offered is 5 minutes), and the
+ * work is one grouping pass, so there is nothing to gain by tuning it. */
+const QUIET_SWEEP_MS = 60_000;
 
 export interface TransferSession {
   /** Downloads, grouped into releases. */
@@ -177,7 +240,13 @@ export interface TransferSession {
   note: string | null;
 }
 
-export function useTransfers(client: SidecarClient | null): TransferSession {
+export function useTransfers(
+  client: SidecarClient | null,
+  /** Give-up threshold in seconds; 0 never gives up. From Settings. */
+  quietSeconds = 0,
+  /** Forget completed records older than this many days; 0 keeps them. */
+  clearCompletedDays = 0,
+): TransferSession {
   const byId = useRef<Map<string, Transfer>>(new Map());
   const [groups, setGroups] = useState<TransferGroup[]>([]);
   const [uploadGroups, setUploadGroups] = useState<TransferGroup[]>([]);
@@ -185,6 +254,13 @@ export function useTransfers(client: SidecarClient | null): TransferSession {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const dirty = useRef(false);
+  /* In a ref, not a dep: `publish` is rebuilt by nothing, and threading the
+   * threshold through its deps would tear down the event subscriptions every
+   * time the setting changed. */
+  const quiet = useRef(quietSeconds);
+  quiet.current = quietSeconds;
+  const clearDays = useRef(clearCompletedDays);
+  clearDays.current = clearCompletedDays;
 
   const publish = useCallback(() => {
     const list = [...byId.current.values()];
@@ -193,9 +269,13 @@ export function useTransfers(client: SidecarClient | null): TransferSession {
      * both halves in one release row. */
     const downloads = list.filter((t) => t.direction !== 'upload');
     const uploads = list.filter((t) => t.direction === 'upload');
+    const now = Date.now();
     setAll(downloads);
-    setGroups(group(downloads));
-    setUploadGroups(group(uploads));
+    setGroups(group(downloads, quiet.current, now));
+    /* Uploads are never reclassified. A peer who stops taking a file from you
+     * is their problem, not a download of yours that needs cleaning up, and
+     * `uploads.py` has no paused or stalled state to reason about anyway. */
+    setUploadGroups(group(uploads, 0, now));
   }, []);
 
   useEffect(() => {
@@ -203,12 +283,12 @@ export function useTransfers(client: SidecarClient | null): TransferSession {
 
     const onAdded = (data: unknown) => {
       const t = data as Transfer;
-      byId.current.set(t.id, t);
+      byId.current.set(t.id, { ...t, seenAt: Date.now() });
       dirty.current = true;
     };
     const onUpdated = (data: unknown) => {
       const t = data as Transfer;
-      byId.current.set(t.id, { ...byId.current.get(t.id), ...t });
+      byId.current.set(t.id, { ...byId.current.get(t.id), ...t, seenAt: Date.now() });
       dirty.current = true;
     };
     const onRemoved = (data: unknown) => {
@@ -228,7 +308,8 @@ export function useTransfers(client: SidecarClient | null): TransferSession {
     // appear instead of the list looking empty until something changes.
     void client.request<{ transfers: Transfer[] }>('transfer.list')
       .then((r) => {
-        for (const t of r.transfers ?? []) byId.current.set(t.id, t);
+        const at = Date.now();
+        for (const t of r.transfers ?? []) byId.current.set(t.id, { ...t, seenAt: at });
         publish();
       })
       .catch(() => {});
@@ -241,9 +322,49 @@ export function useTransfers(client: SidecarClient | null): TransferSession {
       publish();
     }, PUBLISH_MS);
 
+    /* A transfer that has gone quiet sends NOTHING — that is what quiet means —
+     * so `dirty` never gets set and the tick above would never re-derive. The
+     * threshold would then be crossed by a clock nobody was reading. This is
+     * the clock: cheap, because grouping is a sweep over a few hundred rows,
+     * and only running at all when a threshold is set. */
+    const sweep = window.setInterval(() => {
+      /* Reads the REF, not the parameter. Putting `quietSeconds` in this
+       * effect's deps would tear down and rebuild every event subscription each
+       * time the setting changed; closing over it without doing so would leave
+       * the sweep permanently off for anyone who switched it on after launch. */
+      if (quiet.current > 0) publish();
+
+      /* Forgetting old completed downloads. Rides the same tick because it
+       * needs the same thing — a clock nobody else is reading — and because a
+       * finished transfer, like a quiet one, sends no further events to hang
+       * this off.
+       *
+       * Downloads only. An upload record is the history of someone taking a
+       * file from you, and "my Completed list is crowded" is not a reason to
+       * discard it. Only rows with a REAL `finishedAt` are eligible: a null
+       * means the sidecar never saw it finish, and guessing an age for it is
+       * how this would delete something it should not. */
+      const days = clearDays.current;
+      if (days > 0) {
+        const cutoff = Date.now() / 1000 - days * 86_400;
+        const stale = [...byId.current.values()]
+          .filter((t) => (
+            t.direction !== 'upload'
+            && t.state === 'finished'
+            && t.finishedAt !== null
+            && t.finishedAt < cutoff
+          ))
+          .map((t) => t.id);
+        if (stale.length > 0) {
+          void client.request('transfer.clear', { transferIds: stale }).catch(() => {});
+        }
+      }
+    }, QUIET_SWEEP_MS);
+
     return () => {
       for (const fn of off) fn();
       window.clearInterval(timer);
+      window.clearInterval(sweep);
     };
   }, [client, publish]);
 
