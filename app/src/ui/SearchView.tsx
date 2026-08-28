@@ -16,6 +16,7 @@ import { SegmentedControl, Select, Chip } from './controls.tsx';
 import { ViewMenu } from './ViewMenu.tsx';
 import type { Density, SearchDensity } from './ViewMenu.tsx';
 import type { ColumnId } from '../domain/searchColumns.ts';
+import type { SearchTabs } from '../data/searchTabs.ts';
 import { FilterBar } from './FilterBar.tsx';
 import { ResultList } from './ResultList.tsx';
 import type { TransferSession } from '../data/transferStore.ts';
@@ -60,7 +61,7 @@ const QUICK = [
 ];
 
 export function SearchView({
-  session, searchRef, density, onDensity, columns, onColumns, transfers, onBrowse, onSave,
+  session, searchRef, density, onDensity, columns, onColumns, tabs, transfers, onBrowse, onSave,
   artwork, library,
   onContext, onWish, prefs, discover, onOpenSettings, onWant, wanted, onBrowseCatalog, onWantTracklist, onWantPlaylist,
   peers,
@@ -71,6 +72,8 @@ export function SearchView({
   /** Chosen table columns, in order. */
   columns: ColumnId[];
   onColumns(next: ColumnId[]): void;
+  /** Open searches. Absent means the tab strip is not offered. */
+  tabs?: SearchTabs;
   onDensity(d: Density): void;
   transfers: TransferSession;
   onBrowse?(username: string): void;
@@ -259,6 +262,48 @@ export function SearchView({
         }}
         data-dropping={dropping ? 'true' : undefined}
       >
+        {/* Above the field, because the field belongs to the tab: it shows
+            that tab's query and searching in it replaces that tab's results.
+            Hidden while there is only one, so the ordinary case of one search
+            looks exactly as it did before tabs existed. */}
+        {tabs && (tabs.tabs.length > 1) && (
+          <div className="tabs" role="tablist" aria-label="Open searches">
+            {tabs.tabs.map((t) => (
+              <div
+                key={t.id}
+                className="tabs__tab"
+                data-active={t.id === tabs.activeId ? 'true' : undefined}
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={t.id === tabs.activeId}
+                  className="tabs__label"
+                  onClick={() => tabs.select(t.id)}
+                >
+                  {t.running && <span className="tabs__dot" aria-hidden />}
+                  {t.label}
+                </button>
+                <button
+                  type="button"
+                  className="tabs__close"
+                  aria-label={`Close ${t.label}`}
+                  onClick={() => tabs.close(t.id)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              className="tabs__new"
+              aria-label="New search tab"
+              onClick={() => tabs.open()}
+            >
+              +
+            </button>
+          </div>
+        )}
         <div className="search">
           <IconSearch size={17} painted={1.7} className="search__icon" />
           <input

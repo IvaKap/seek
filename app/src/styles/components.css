@@ -1342,6 +1342,45 @@
 .viewmenu__move:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
 .viewmenu__move:disabled { opacity: 0.3; }
 
+/* The search tab strip. Deliberately quiet: it sits above the field and only
+   appears once there is more than one search, so the ordinary case looks
+   exactly as it did before tabs existed. */
+.tabs {
+  display: flex; align-items: stretch; gap: var(--sp-1);
+  margin-bottom: var(--sp-2); flex-wrap: wrap;
+}
+.tabs__tab {
+  display: flex; align-items: center;
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: transparent; max-width: 14rem;
+}
+.tabs__tab[data-active='true'] {
+  background: var(--bg-selected); border-color: transparent;
+}
+.tabs__label {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2); border: none; background: transparent;
+  font: inherit; font-size: var(--fs-caption); color: var(--text-secondary);
+  cursor: default; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tabs__tab[data-active='true'] .tabs__label { color: var(--text-primary); }
+/* A dot, not a spinner: the tab that is on the wire is a fact, not an
+   animation competing with the list for attention. */
+.tabs__dot {
+  width: 6px; height: 6px; flex: none; border-radius: 50%;
+  background: var(--accent);
+}
+.tabs__close, .tabs__new {
+  border: none; background: transparent; color: var(--text-tertiary);
+  font: inherit; line-height: 1; cursor: default;
+  padding: var(--sp-1) var(--sp-2);
+}
+.tabs__close:hover, .tabs__new:hover { color: var(--text-primary); }
+.tabs__new {
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+}
+
 .dls__tools {
   display: flex; align-items: center; gap: var(--sp-2);
   margin-left: auto; min-width: 0;

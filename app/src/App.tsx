@@ -16,6 +16,7 @@ import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useSidecarConnection } from './data/connectionStore.ts';
+import { useSearchTabs } from './data/searchTabs.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
@@ -174,6 +175,10 @@ export default function App() {
   /* One connection, shared. The search session is per-tab and takes it. */
   const conn = useSidecarConnection();
   const session = useSearchSession(conn, { reliability: prefs.reliability });
+  /* Several searches open at once. One runs at a time — the transport allows no
+   * more — so a tab is a search put away with everything needed to bring it
+   * back. See data/searchTabs.ts. */
+  const searchTabs = useSearchTabs(session);
   // The client is created inside the session, so hand it back to prefs once.
   useEffect(() => { setPrefsClient(session.client); }, [session.client]);
   const chat = useChatSession(session.client, isSignedIn(session.serverState));
@@ -463,6 +468,17 @@ export default function App() {
         searchRef.current?.select();
         return;
       }
+      /* ⌘T, as everywhere else that has tabs. It has to exist rather than only
+       * the + in the strip, because the strip is hidden until there are two
+       * tabs — so the button that makes the second one would have been inside
+       * the thing that only appears once it exists. */
+      if (e.key === 't') {
+        e.preventDefault();
+        setSection('search');
+        searchTabs.open();
+        searchRef.current?.focus();
+        return;
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
         setSection('search');
@@ -525,6 +541,10 @@ export default function App() {
          sidebar activates on pointerdown, which a keyboard never sends. A
          keyboard user could focus the item and press Return all day. */
       { id: 'go.library', group: 'Go', label: 'Library', run: go2('collections') },
+      {
+        id: 'search.newtab', group: 'Search', label: 'New search tab', shortcut: '⌘T',
+        run: () => { setSection('search'); searchTabs.open(); searchRef.current?.focus(); },
+      },
       { id: 'go.wishlist', group: 'Go', label: 'Wishlist', run: go2('wishlist') },
       { id: 'go.history', group: 'Go', label: 'Search History', run: go2('history') },
       { id: 'go.saved', group: 'Go', label: 'Saved Searches', run: go2('saved') },
@@ -732,6 +752,7 @@ export default function App() {
             onDensity={changeDensity}
             columns={columns}
             onColumns={changeColumns}
+            tabs={searchTabs}
             transfers={transfers}
             artwork={artwork}
             library={library}

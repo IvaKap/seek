@@ -113,6 +113,28 @@ function compare(a: Row, b: Row, key: SortKey): number {
 /* ----------------------------------------------------------------- session */
 
 /** Supplied by the app so scoring can use real transfer history. */
+/**
+ * Everything one tab holds. Enough to put a finished search away and bring it
+ * back exactly as it was.
+ *
+ * `files` rather than rows: rows are derived (filter → group → sort), and
+ * storing the derivation would mean two things that could disagree about the
+ * same search. Re-adding the sources rebuilds the grouper deterministically —
+ * same order in, same cluster ids out — which is what keeps `expanded` valid
+ * across a restore.
+ */
+export interface SearchSnapshot {
+  query: string;
+  files: SourceFile[];
+  peers: string[];
+  filters: Filters;
+  groupBy: GroupBy;
+  sort: SortKey;
+  expanded: Set<string>;
+  closedReason: string | null;
+  tick: number;
+}
+
 export interface SearchSessionOptions {
   reliability?(username: string): number;
 }
@@ -164,6 +186,13 @@ export interface SearchSession {
   client: SidecarClient | null;
   /** Why the Tauri shell could not start a sidecar, if it could not. */
   startupError: string | null;
+
+  /* ---- tabs ---- */
+
+  /** Everything this search is, for putting away. */
+  snapshot(): SearchSnapshot;
+  /** Become that search again. Stops whatever is running first. */
+  restore(snap: SearchSnapshot): void;
 }
 
 export function useSearchSession(
@@ -455,8 +484,46 @@ export function useSearchSession(
     });
   }, []);
 
+  /* ---- tabs: putting a search away and bringing it back ---- */
+
+  const snapshot = useCallback((): SearchSnapshot => ({
+    query, files: grouper.all.slice(), peers: [...peers.current],
+    filters, groupBy, sort, expanded, closedReason,
+    tick: tickRef.current,
+  }), [query, grouper, filters, groupBy, sort, expanded, closedReason]);
+
+  const restore = useCallback((snap: SearchSnapshot) => {
+    /* Stop first. Only one search can run at a time — `sidecar.start` replaces
+     * the previous handlers — so bringing a tab back necessarily ends whatever
+     * was streaming into the tab being left. Saying so is the honest part: the
+     * restored tab reports the reason it stopped, it does not pretend to be
+     * still going. */
+    sidecar.stop();
+    grouper.reset();
+    for (const f of snap.files) grouper.add(f);
+    buffer.current = [];
+    peers.current = new Set(snap.peers);
+    order.current = [];
+    /* Continue the tick sequence rather than restarting it. The rows carry the
+     * tick they arrived on and the list animates anything newer than the last
+     * one it drew; rewinding the counter would make a restored tab replay its
+     * whole arrival animation. */
+    tickRef.current = snap.tick;
+    resortAll.current = true;
+    setPending([]);
+    setQuery(snap.query);
+    setFiltersState(snap.filters);
+    setGroupByState(snap.groupBy);
+    setSortState(snap.sort);
+    setExpanded(snap.expanded);
+    setClosedReason(snap.closedReason);
+    setRunning(false);
+    setTick(snap.tick);
+  }, [sidecar, grouper]);
+
   return {
     query, setQuery, run, stop, running, closedReason,
+    snapshot, restore,
     rows,
     pendingCount: pending.length,
     foldInPending,
