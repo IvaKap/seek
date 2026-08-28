@@ -264,11 +264,29 @@ export function SearchView({
       >
         {/* Above the field, because the field belongs to the tab: it shows
             that tab's query and searching in it replaces that tab's results.
-            Hidden while there is only one, so the ordinary case of one search
-            looks exactly as it did before tabs existed. */}
-        {tabs && (tabs.tabs.length > 1) && (
-          <div className="tabs" role="tablist" aria-label="Open searches">
-            {tabs.tabs.map((t) => (
+
+            The TAB CHIPS are hidden while there is only one, so the ordinary
+            case of one search looks as it did before tabs existed. The + is
+            NOT: it used to live inside the chip strip, which meant the only
+            control that could make a second tab appeared solely once a second
+            tab already existed. ⌘T was the escape hatch, and a keyboard
+            shortcut is not a way to find out a feature exists — it is a way to
+            use one you already know about. Someone working with a mouse could
+            not reach search tabs at all.
+
+            So the chips are conditional and the + is permanent. It costs one
+            small button of height in the single-search case, which is the
+            price of the feature being reachable rather than merely present.
+
+            The tablist role goes with the chips for the same reason: a
+            tablist containing no tabs is a lie told to a screen reader. */}
+        {tabs && (
+          <div
+            className="tabs"
+            role={tabs.tabs.length > 1 ? 'tablist' : undefined}
+            aria-label={tabs.tabs.length > 1 ? 'Open searches' : undefined}
+          >
+            {tabs.tabs.length > 1 && tabs.tabs.map((t) => (
               <div
                 key={t.id}
                 className="tabs__tab"
@@ -298,6 +316,9 @@ export function SearchView({
               type="button"
               className="tabs__new"
               aria-label="New search tab"
+              /* Names the shortcut, so the one place the feature is visible is
+                 also where you learn the faster way to reach it. */
+              title="New search tab (⌘T)"
               onClick={() => tabs.open()}
             >
               +
