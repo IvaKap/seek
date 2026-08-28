@@ -15,6 +15,7 @@ import type { Row, SearchSession } from '../data/searchStore.ts';
 import { SegmentedControl, Select, Chip } from './controls.tsx';
 import { ViewMenu } from './ViewMenu.tsx';
 import type { Density, SearchDensity } from './ViewMenu.tsx';
+import type { ColumnId } from '../domain/searchColumns.ts';
 import { FilterBar } from './FilterBar.tsx';
 import { ResultList } from './ResultList.tsx';
 import type { TransferSession } from '../data/transferStore.ts';
@@ -59,13 +60,17 @@ const QUICK = [
 ];
 
 export function SearchView({
-  session, searchRef, density, onDensity, transfers, onBrowse, onSave, artwork, library,
+  session, searchRef, density, onDensity, columns, onColumns, transfers, onBrowse, onSave,
+  artwork, library,
   onContext, onWish, prefs, discover, onOpenSettings, onWant, wanted, onBrowseCatalog, onWantTracklist, onWantPlaylist,
   peers,
 }: {
   session: SearchSession;
   searchRef: React.RefObject<HTMLInputElement | null>;
   density: SearchDensity;
+  /** Chosen table columns, in order. */
+  columns: ColumnId[];
+  onColumns(next: ColumnId[]): void;
   onDensity(d: Density): void;
   transfers: TransferSession;
   onBrowse?(username: string): void;
@@ -439,7 +444,12 @@ export function SearchView({
                 Save
               </button>
             )}
-            <ViewMenu density={density} onDensity={onDensity} />
+            <ViewMenu
+              density={density}
+              onDensity={onDensity}
+              columns={columns}
+              onColumns={onColumns}
+            />
           </div>
         </div>
       </header>
@@ -448,6 +458,7 @@ export function SearchView({
         rows={session.rows}
         currentTick={session.tick}
         density={density}
+        columns={columns}
         expanded={session.expanded}
         onToggle={session.toggleExpanded}
         onQueue={onQueue}

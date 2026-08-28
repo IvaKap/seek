@@ -21,6 +21,7 @@
 
 import type { ReactNode } from 'react';
 import type { Release, SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
+import type { ColumnId } from '../domain/searchColumns.ts';
 import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/format.ts';
 import {
   IconChevronDown, IconDownload, IconRelease, IconUser,
@@ -51,9 +52,20 @@ export function Quality({ file }: { file: SourceFile }) {
 
 /* ------------------------------------------------------------- meta pieces */
 
-function Meta({ children, dim, title }: { children: ReactNode; dim?: boolean; title?: string }) {
+/**
+ * One cell of the metadata line.
+ *
+ * `col` names WHICH column it is, and that name is what the table density
+ * orders and hides by. The rules it replaces counted position — `nth-child(9)`
+ * meaning "the user column" — which is only true until someone reorders them,
+ * and was already wrong for release rows, whose different cell count made
+ * `nth-child(2)` the track count rather than the spec it was written for.
+ */
+function Meta({ children, dim, title, col }: {
+  children: ReactNode; dim?: boolean; title?: string; col: ColumnId;
+}) {
   return (
-    <span className="meta__cell" data-dim={dim ? 'true' : undefined} title={title}>
+    <span className="meta__cell" data-col={col} data-dim={dim ? 'true' : undefined} title={title}>
       {children}
     </span>
   );
@@ -68,6 +80,7 @@ function AdvertisedSpeed({ bytesPerSec }: { bytesPerSec: number }) {
   return (
     <span
       className="meta__cell meta__speed"
+      data-col="speed"
       title="Speed advertised by the peer. This is a claim, not a measurement."
     >
       <span aria-hidden className="meta__speed-glyph">≈</span>
@@ -130,21 +143,25 @@ export function TrackRow({
           </span>
 
           <span className="meta">
-            <Meta>
+            <Meta col="format">
               <FormatBadge
                 label={best.quality.label}
                 tier={best.quality.tier}
                 title={best.quality.description}
               />
             </Meta>
-            <Meta dim>{spec ?? ''}</Meta>
-            <Meta><span className="tnum">{duration(track.duration)}</span></Meta>
-            <Meta><span className="tnum">{fileSize(best.size)}</span></Meta>
+            <Meta col="spec" dim>{spec ?? ''}</Meta>
+            <Meta col="time"><span className="tnum">{duration(track.duration)}</span></Meta>
+            <Meta col="size"><span className="tnum">{fileSize(best.size)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={best.peer.advertisedSpeed} />
-            <Meta dim={best.peer.queueLength === 0}>
+            <Meta col="queue" dim={best.peer.queueLength === 0}>
               <span className="tnum">{best.peer.queueLength}</span> queued
             </Meta>
-            <Quality file={best} />
+            <Meta col="bitrate" dim>
+              {best.bitrate ? <span className="tnum">{best.bitrate} kbps</span> : ''}
+            </Meta>
+            <Meta col="user" dim>{best.peer.username}</Meta>
+            <Meta col="check"><Quality file={best} /></Meta>
           </span>
         </span>
 
@@ -218,14 +235,19 @@ export function ReleaseRow({
           </span>
 
           <span className="meta">
-            <Meta>
+            <Meta col="format">
               <FormatBadge label={release.dominantLabel} tier={release.dominantTier} />
             </Meta>
-            <Meta><span className="tnum">{release.trackCount}</span> tracks</Meta>
-            <Meta><span className="tnum">{fileSize(release.totalSize)}</span></Meta>
+            <Meta col="files"><span className="tnum">{release.trackCount}</span> tracks</Meta>
+            <Meta col="size"><span className="tnum">{fileSize(release.totalSize)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={release.peer.advertisedSpeed} />
-            <Meta dim>{release.user}</Meta>
-            <QualityIndicator assessment={worstAssessment(release.files)} />
+            <Meta col="year" dim>
+              {release.year ? <span className="tnum">{release.year}</span> : ''}
+            </Meta>
+            <Meta col="user" dim>{release.user}</Meta>
+            <Meta col="check">
+              <QualityIndicator assessment={worstAssessment(release.files)} />
+            </Meta>
           </span>
         </span>
 
@@ -290,11 +312,11 @@ export function UserRow({
             {p.freeSlots && <span className="row__free">slot free</span>}
           </span>
           <span className="meta">
-            <Meta><FormatBadge label={bestLabel(group)} tier={group.bestTier} /></Meta>
-            <Meta><span className="tnum">{group.files.length}</span> files</Meta>
-            <Meta><span className="tnum">{fileSize(group.totalSize)}</span></Meta>
+            <Meta col="format"><FormatBadge label={bestLabel(group)} tier={group.bestTier} /></Meta>
+            <Meta col="files"><span className="tnum">{group.files.length}</span> files</Meta>
+            <Meta col="size"><span className="tnum">{fileSize(group.totalSize)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={p.advertisedSpeed} />
-            <Meta dim={p.queueLength === 0}>
+            <Meta col="queue" dim={p.queueLength === 0}>
               <span className="tnum">{p.queueLength}</span> queued
             </Meta>
           </span>
@@ -373,23 +395,27 @@ export function SourceRow({
               {source.parsed.displayTitle}
             </span>
           )}
+          {/* `meta--source` is the list of PEERS offering one track, nested
+              inside an expanded row. It carries the same column ids so it reads
+              the same way, but it is not part of the table's shared grid — the
+              choice of columns is about the top-level rows. */}
           <span className="meta meta--source">
-            <Meta>
+            <Meta col="format">
               <FormatBadge
                 label={source.quality.label}
                 tier={source.quality.tier}
                 title={source.quality.description}
               />
             </Meta>
-            <Meta dim>{spec ?? ''}</Meta>
-            <Meta><span className="tnum">{duration(source.duration)}</span></Meta>
-            <Meta><span className="tnum">{fileSize(source.size)}</span></Meta>
+            <Meta col="spec" dim>{spec ?? ''}</Meta>
+            <Meta col="time"><span className="tnum">{duration(source.duration)}</span></Meta>
+            <Meta col="size"><span className="tnum">{fileSize(source.size)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={source.peer.advertisedSpeed} />
-            <Meta dim={source.peer.queueLength === 0}>
+            <Meta col="queue" dim={source.peer.queueLength === 0}>
               <span className="tnum">{source.peer.queueLength}</span> queued
             </Meta>
-            <Quality file={source} />
-            <Meta dim>
+            <Meta col="check"><Quality file={source} /></Meta>
+            <Meta col="user" dim>
               <Flag code={source.peer.country} />
               {source.user}
               {/* Compact here: the cell is already the narrowest in the grid,

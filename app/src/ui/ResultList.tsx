@@ -22,7 +22,7 @@
  * property for the length of the reflow. That is a FLIP with no measurement code.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Row } from '../data/searchStore.ts';
 import type { Release } from '../domain/types.ts';
@@ -31,6 +31,10 @@ import { SourceRow, TrackRow, UserRow } from './rows.tsx';
 import { ReleaseCard } from './ReleaseCard.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
 import type { SearchDensity } from './ViewMenu.tsx';
+import {
+  ALL_COLUMNS, COLUMNS, DEFAULT_COLUMNS, templateFor, visibleColumns,
+} from '../domain/searchColumns.ts';
+import type { ColumnId } from '../domain/searchColumns.ts';
 import { IconArrowUp } from '../icons/index.tsx';
 import { integer } from '../domain/format.ts';
 import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
@@ -69,6 +73,35 @@ function useRootFontSize(): number {
   return px;
 }
 
+/**
+ * The results container's width in REM, tracked live.
+ *
+ * Rem rather than pixels, and measured rather than declared in a media query,
+ * for the same reason the rules this replaces were container queries: `rem` in
+ * a media query resolves against the INITIAL font size, so it never fires when
+ * the OS scales text — and a table that keeps nine columns at 200% text is a
+ * table that overflows.
+ */
+function useWidthRem(ref: React.RefObject<HTMLElement | null>, rootPx: number): number {
+  const [px, setPx] = useState(0);
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    if (typeof ResizeObserver !== 'function') {
+      setPx(node.getBoundingClientRect().width);
+      return;
+    }
+    const ro = new ResizeObserver(([entry]) => {
+      setPx(entry.contentRect.width);
+    });
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, [ref]);
+  // 0 before the first measurement: report a very wide container so the first
+  // paint shows every chosen column rather than flashing a stripped-down table.
+  return px === 0 ? Number.POSITIVE_INFINITY : px / rootPx;
+}
+
 const EXIT_MS = 180;
 const REFLOW_MS = 260;
 /** Cap the stagger so a burst never takes longer than a beat to land. */
@@ -77,11 +110,14 @@ const STAGGER_MAX = 130;
 
 export function ResultList({
   rows, currentTick, expanded, onToggle, onQueue, onBrowse, onContext, pendingCount, onFoldIn,
-  onViewport, emptyState, density, artwork, library, peers, copies, onCompare,
+  onViewport, emptyState, density, columns = DEFAULT_COLUMNS, artwork, library, peers,
+  copies, onCompare,
 }: {
   rows: Row[];
   currentTick: number;
   density: SearchDensity;
+  /** Chosen table columns, in order. Ignored at other densities. */
+  columns?: ColumnId[];
   expanded: Set<string>;
   onToggle(id: string): void;
   onQueue(row: Row): void;
@@ -101,9 +137,36 @@ export function ResultList({
   emptyState: React.ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const rootPx = useRootFontSize();
+  /* Which columns actually fit, and the grid they imply. Computed here and
+     handed down as a custom property so the header and every row subscribe to
+     ONE track list — the alignment guarantee the table has always depended on,
+     now with a set that can change. */
+  const widthRem = useWidthRem(resultsRef, rootPx);
+  const shownColumns = useMemo(
+    () => (density === 'table' ? visibleColumns(columns, widthRem) : columns),
+    [density, columns, widthRem],
+  );
+  /* The template, plus a position and a visibility for every column.
+   *
+   * Custom properties rather than restructuring the rows: the cells already sit
+   * in a fixed DOM order inside each row type, and grid `order` moves them
+   * without any of the three row components needing to know what the user
+   * chose. A column that is not shown is hidden rather than unmounted, so the
+   * DOM stays identical whatever the width — which is what lets the header and
+   * the rows share one track list without either counting children. */
+  const columnStyle = useMemo(() => {
+    const style: Record<string, string> = { '--cols': templateFor(shownColumns) };
+    for (const id of ALL_COLUMNS) {
+      const at = shownColumns.indexOf(id);
+      style[`--ord-${id}`] = String(at < 0 ? 99 : at);
+      style[`--vis-${id}`] = at < 0 ? 'none' : 'inline-flex';
+    }
+    return style as React.CSSProperties;
+  }, [shownColumns]);
 
   /* ---- [rows lag the store so removals can animate out] ---- */
   const [display, setDisplay] = useState<Row[]>(rows);
@@ -285,7 +348,7 @@ export function ResultList({
   }, [onFoldIn, springToTop]);
 
   return (
-    <div className="results">
+    <div className="results" ref={resultsRef} style={columnStyle}>
       {/* [5] The single most important interaction decision in the app: new
           results that would sort above the scroll position wait here instead of
           shifting the list the user is reading. */}
@@ -303,15 +366,9 @@ export function ResultList({
         /* A table without a header row cannot be read: nothing tells you whether
            a bare number is a queue depth or a file count. */
         <div className="thead" role="row" aria-hidden>
-          <span>Name</span>
-          <span>Format</span>
-          <span>Spec</span>
-          <span>Time</span>
-          <span>Size</span>
-          <span>Speed</span>
-          <span>Queue</span>
-          <span>Check</span>
-          <span>User</span>
+          {shownColumns.map((id: ColumnId) => (
+            <span key={id} data-col={id}>{COLUMNS[id].label}</span>
+          ))}
         </div>
       )}
 

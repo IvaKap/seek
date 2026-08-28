@@ -15,6 +15,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { IconCheck, IconFilters } from '../icons/index.tsx';
 import { SORT_LABELS, naturallyDescending } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
+import { ALL_COLUMNS, COLUMNS, reorderColumns, toggleColumn } from '../domain/searchColumns.ts';
+import type { ColumnId } from '../domain/searchColumns.ts';
 
 export type Density = 'comfortable' | 'compact' | 'table' | 'grid';
 
@@ -46,7 +48,7 @@ const DEFAULT_DENSITIES: Density[] = ['comfortable', 'compact', 'table'];
  * Optional, because Search uses this menu too and has its own ordering. */
 export function ViewMenu({
   density, onDensity, densities = DEFAULT_DENSITIES,
-  sort, onSort, descending, onDescending,
+  sort, onSort, descending, onDescending, columns, onColumns,
 }: {
   density: Density;
   onDensity(d: Density): void;
@@ -56,6 +58,9 @@ export function ViewMenu({
   onSort?(k: SortKey): void;
   descending?: boolean;
   onDescending?(d: boolean): void;
+  /** Chosen table columns, in order. Only meaningful at `table` density. */
+  columns?: ColumnId[];
+  onColumns?(next: ColumnId[]): void;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -121,6 +126,59 @@ export function ViewMenu({
               </span>
             </button>
           ))}
+
+          {/* Only at table density, because only the table has columns. The
+              other densities render a designed metadata line whose order is
+              part of the reading, and offering to reorder it would be offering
+              to break a layout rather than to configure one. */}
+          {columns && onColumns && density === 'table' && (
+            <>
+              <div className="viewmenu__section">Columns</div>
+              {ALL_COLUMNS.filter((id) => !COLUMNS[id].pinned).map((id) => {
+                const on = columns.includes(id);
+                const at = columns.indexOf(id);
+                return (
+                  <div key={id} className="viewmenu__item viewmenu__item--col">
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={on}
+                      className="viewmenu__coltoggle"
+                      onClick={() => onColumns(toggleColumn(columns, id))}
+                    >
+                      <span className="viewmenu__check" aria-hidden>
+                        {on && <IconCheck size={13} painted={1.9} />}
+                      </span>
+                      <span className="viewmenu__item-label">{COLUMNS[id].label}</span>
+                    </button>
+                    {/* Buttons rather than a drag handle: dragging inside a
+                        popover fights the outside-click dismissal, and two
+                        keystrokes move a column for someone who cannot drag. */}
+                    <span className="viewmenu__movers">
+                      <button
+                        type="button"
+                        className="viewmenu__move"
+                        disabled={!on || at <= 1}
+                        aria-label={`Move ${COLUMNS[id].label} left`}
+                        onClick={() => onColumns(reorderColumns(columns, id, at - 1))}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="viewmenu__move"
+                        disabled={!on || at === columns.length - 1}
+                        aria-label={`Move ${COLUMNS[id].label} right`}
+                        onClick={() => onColumns(reorderColumns(columns, id, at + 1))}
+                      >
+                        ↓
+                      </button>
+                    </span>
+                  </div>
+                );
+              })}
+            </>
+          )}
 
           {sort && onSort && (
             <>

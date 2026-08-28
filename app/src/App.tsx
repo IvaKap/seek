@@ -12,6 +12,8 @@ import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
 import { SectionView } from './ui/views.tsx';
 import type { Density, SearchDensity } from './ui/ViewMenu.tsx';
+import { normaliseColumns } from './domain/searchColumns.ts';
+import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
@@ -74,6 +76,20 @@ const DENSITY_KEY = 'seek.density';
  * have already decided on — and a collector who wants roomy release cards while
  * choosing usually wants a dense table while watching them arrive. */
 const DL_DENSITY_KEY = 'seek.density.downloads';
+/* The table's columns. Local, like density, and for the same reason: it is a
+   view preference about this machine's window, not an account setting the
+   sidecar has any use for. */
+const COLUMNS_KEY = 'seek.columns';
+
+function storedColumns(): ColumnId[] {
+  try {
+    return normaliseColumns(JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? 'null'));
+  } catch {
+    // Unreadable, unparseable, or a shape from a future version: the defaults
+    // are always renderable, which is the only thing this must guarantee.
+    return normaliseColumns(null);
+  }
+}
 
 /* Grid is a Downloads layout only, so a stored 'grid' reaching the search list
  * — from an older build, or a hand-edited localStorage — resolves to the
@@ -136,6 +152,16 @@ export default function App() {
   /* Table by default here, unlike search. A transfer list is a status board:
      the question is "what is happening to all of it", and the card layout
      answered that for four releases per screen. */
+  const [columns, setColumns] = useState<ColumnId[]>(storedColumns);
+  const changeColumns = useCallback((next: ColumnId[]) => {
+    setColumns(next);
+    try {
+      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
+    } catch {
+      /* nothing to do — the choice simply won't be remembered */
+    }
+  }, []);
+
   const [dlDensity, setDlDensity] = useState<Density>(
     () => storedDensity(DL_DENSITY_KEY, 'table'),
   );
@@ -701,6 +727,8 @@ export default function App() {
             searchRef={searchRef}
             density={density}
             onDensity={changeDensity}
+            columns={columns}
+            onColumns={changeColumns}
             transfers={transfers}
             artwork={artwork}
             library={library}

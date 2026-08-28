@@ -652,6 +652,10 @@
 .viewmenu__pop {
   position: absolute; right: 0; top: calc(100% + var(--sp-2)); z-index: 20;
   min-width: 15rem; padding: var(--sp-1);
+  /* Twelve columns plus density plus sort is taller than a short window. Cap it
+     and let the list scroll rather than running off the bottom of the screen,
+     where the last few options simply cannot be reached. */
+  max-height: min(70vh, 34rem); overflow-y: auto; overscroll-behavior: contain;
   border-radius: var(--radius-md);
   background: var(--material-popover);
   backdrop-filter: blur(var(--blur-popover)) saturate(180%);
@@ -1316,6 +1320,28 @@
 .dl__artist { color: var(--text-secondary); }
 .dl__dash { color: var(--text-tertiary); }
 
+/* A column row: the on/off toggle takes the width, the two movers sit at the
+   end. Not a drag handle — dragging inside a popover fights its own
+   outside-click dismissal, and arrows are reachable from a keyboard. */
+.viewmenu__item--col {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 0 var(--sp-2) 0 0;
+}
+.viewmenu__coltoggle {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border: none; background: transparent;
+  text-align: left; color: inherit; font: inherit; cursor: default;
+}
+.viewmenu__coltoggle:hover { background: var(--bg-hover); }
+.viewmenu__movers { display: flex; gap: 2px; flex: none; }
+.viewmenu__move {
+  width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-secondary); cursor: default;
+}
+.viewmenu__move:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.viewmenu__move:disabled { opacity: 0.3; }
+
 .dls__tools {
   display: flex; align-items: center; gap: var(--sp-2);
   margin-left: auto; min-width: 0;
@@ -1921,16 +1947,14 @@
      minmax() on the value columns starved the name whenever the pane was
      narrow — nine columns simply do not fit, and the fix is to drop the least
      useful ones (below), not to squeeze the one that identifies the row. */
-  grid-template-columns:
-    minmax(6rem, 1fr)  /* name    */
-    4.5rem             /* format  */
-    5.5rem             /* spec    */
-    3.5rem             /* time    */
-    5rem               /* size    */
-    6rem               /* speed   */
-    5.5rem             /* queue   */
-    1.75rem            /* check   */
-    7rem;              /* user    */
+  /* One track list for the header and every row, now COMPUTED — `--cols` is set
+     on `.results` from the chosen columns and what fits. The nine hard-coded
+     tracks that used to live here, and the three container queries that
+     redefined them while hiding columns by `nth-child`, are in
+     domain/searchColumns.ts: a positional rule cannot survive the user
+     reordering the thing it was counting. The fallback keeps this readable if
+     the property is ever missing. */
+  grid-template-columns: var(--cols, minmax(6rem, 1fr) 4.5rem 5.5rem 3.5rem 5rem 6rem 5.5rem 1.75rem 7rem);
   align-items: center;
   gap: var(--sp-3);
 }
@@ -1948,6 +1972,26 @@
 
 .list-canvas[data-density='table'] .row__main,
 .list-canvas[data-density='table'] .meta { display: contents; }
+
+/* Where the chosen column order actually lands. `--ord-*` and `--vis-*` are set
+   on `.results` from the user's choice and what fits; the cells stay in their
+   natural DOM order inside each row type and grid `order` moves them, so no row
+   component has to know anything about columns. Scoped away from
+   `.meta--source`, which is the peer list inside an expanded row and keeps its
+   own designed order. */
+.list-canvas[data-density='table'] .row__title { order: 0; }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='format'] { order: var(--ord-format, 99); display: var(--vis-format, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='spec'] { order: var(--ord-spec, 99); display: var(--vis-spec, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='time'] { order: var(--ord-time, 99); display: var(--vis-time, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='size'] { order: var(--ord-size, 99); display: var(--vis-size, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='speed'] { order: var(--ord-speed, 99); display: var(--vis-speed, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='queue'] { order: var(--ord-queue, 99); display: var(--vis-queue, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='check'] { order: var(--ord-check, 99); display: var(--vis-check, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='user'] { order: var(--ord-user, 99); display: var(--vis-user, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='bitrate'] { order: var(--ord-bitrate, 99); display: var(--vis-bitrate, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='year'] { order: var(--ord-year, 99); display: var(--vis-year, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='files'] { order: var(--ord-files, 99); display: var(--vis-files, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='country'] { order: var(--ord-country, 99); display: var(--vis-country, inline-flex); }
 
 .list-canvas[data-density='table'] .row__title { min-width: 0; }
 .list-canvas[data-density='table'] .meta__cell { justify-content: flex-end; text-align: right; }
@@ -2181,24 +2225,11 @@
    keeps its space instead of every column shrinking into illegibility.
    Container queries, not media queries: `rem` in a media query resolves
    against the INITIAL font size, so it never fires when the OS scales text. */
-@container results (max-width: 58em) {
-  .list-canvas[data-density='table'] .row__hit,
-  .thead { grid-template-columns:
-    minmax(6rem, 1fr) 4.5rem 5.5rem 3.5rem 5rem 6rem 5.5rem 1.75rem; }
-  .thead span:nth-child(9),
-  .list-canvas[data-density='table'] .meta__cell:nth-last-child(1) { display: none; }
-}
-@container results (max-width: 46em) {
-  .list-canvas[data-density='table'] .row__hit,
-  .thead { grid-template-columns:
-    minmax(6rem, 1fr) 4.5rem 5.5rem 3.5rem 5rem 6rem 1.75rem; }
-  .thead span:nth-child(7) { display: none; }
-}
-@container results (max-width: 38em) {
-  .list-canvas[data-density='table'] .row__hit,
-  .thead { grid-template-columns: minmax(6rem, 1fr) 4.5rem 3.5rem 5rem 6rem 1.75rem; }
-  .thead span:nth-child(3) { display: none; }
-}
+/* The three container queries that used to live here dropped columns by
+   nth-child, which silently means "whatever is ninth" rather than "the user
+   column". `visibleColumns` does it by priority instead, so the same order of
+   sacrifice — user, then queue, then spec — survives the user reordering them.
+   See domain/searchColumns.ts. */
 
 /* ============================================================ heatmap ==== */
 /* Spek-style spectrogram with real axes: frequency left, time below, dB scale
