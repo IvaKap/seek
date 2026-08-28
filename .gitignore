@@ -42,6 +42,7 @@ target/
 # Raw screenshots kept for reference. The named copies the guide uses are
 # committed; these originals are not worth the repo weight.
 docs/guide-shots/originals/
+docs/screenshots/originals/
 
 # A loose screenshot that twice got swept into a commit by a broad
 # `git add docs`. It may or may not be the guide's missing 04-compare.png and
