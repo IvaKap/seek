@@ -1342,9 +1342,11 @@
 .viewmenu__move:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
 .viewmenu__move:disabled { opacity: 0.3; }
 
-/* The search tab strip. Deliberately quiet: it sits above the field and only
-   appears once there is more than one search, so the ordinary case looks
-   exactly as it did before tabs existed. */
+/* The search tab strip. Deliberately quiet: it sits above the field, and the
+   CHIPS appear only once there is more than one search, so the ordinary case
+   stays close to what it looked like before tabs existed. The + is always
+   there — see SearchView.tsx for why hiding it made the feature unreachable
+   for anyone not using the keyboard. */
 .tabs {
   display: flex; align-items: stretch; gap: var(--sp-1);
   margin-bottom: var(--sp-2); flex-wrap: wrap;
