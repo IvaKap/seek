@@ -15,6 +15,7 @@ import type { Density, SearchDensity } from './ui/ViewMenu.tsx';
 import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
+import { useSidecarConnection } from './data/connectionStore.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
@@ -170,7 +171,9 @@ export default function App() {
    * history, so the lookup has to exist before the session that reads it. */
   const [prefsClient, setPrefsClient] = useState<SidecarClient | null>(null);
   const prefs = usePrefs(prefsClient);
-  const session = useSearchSession({ reliability: prefs.reliability });
+  /* One connection, shared. The search session is per-tab and takes it. */
+  const conn = useSidecarConnection();
+  const session = useSearchSession(conn, { reliability: prefs.reliability });
   // The client is created inside the session, so hand it back to prefs once.
   useEffect(() => { setPrefsClient(session.client); }, [session.client]);
   const chat = useChatSession(session.client, isSignedIn(session.serverState));
