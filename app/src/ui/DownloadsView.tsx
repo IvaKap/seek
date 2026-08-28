@@ -12,7 +12,7 @@
  * thing the brief says destroys the calm.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed } from '../data/transferStore.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
@@ -21,6 +21,8 @@ import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
+import { matchesQuery, sortGroups } from '../domain/transferOrder.ts';
+import type { SortKey } from '../domain/transferOrder.ts';
 import type { Density } from './ViewMenu.tsx';
 import type { AnalysisSession } from '../data/analysisStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
@@ -35,7 +37,9 @@ import type { RelatedSession } from '../data/relatedStore.ts';
 import type { CatalogEntry } from '../data/catalogStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
-import { IconChevronDown, IconDownload, IconEmpty } from '../icons/index.tsx';
+import { IconChevronDown, IconDownload, IconEmpty, IconRelease } from '../icons/index.tsx';
+import { Placeholder } from './ReleaseCard.tsx';
+import { useNearViewport } from './useNearViewport.ts';
 
 /** Everything the Related shelf needs, bundled so it threads as one prop. */
 export interface RelatedDiscovery {
@@ -420,15 +424,23 @@ function Group({
   }
 
   return (
-    <div className="dl" data-state={g.state}>
+    <div className="dl" data-state={g.state} data-open={open ? 'true' : undefined}>
       <button
         type="button"
         className="dl__hit"
         aria-expanded={open}
         onPointerDown={() => setOpen((v) => !v)}
       >
+        {/* Review lenses only. While a download is RUNNING the folder name is
+            the honest label — it is literally what is arriving — and a cover
+            beside a progress bar is decoration. Once it has stopped, the
+            question changes from "how far" to "what is this", and the record
+            is the answer. */}
+        {filter !== 'active' && <Cover g={g} artwork={discovery?.artwork} />}
         <span className="dl__main">
-          <span className="dl__title">{g.title}</span>
+          <span className="dl__title">
+            {filter === 'active' ? g.title : <ReleaseName g={g} />}
+          </span>
           <span className="dl__sub">
             <span className="dl__who">{g.username}</span>
             <span className="tnum">
@@ -483,6 +495,74 @@ function Group({
   );
 }
 
+/**
+ * The cover and the real name, for a row you are REVIEWING rather than watching.
+ *
+ * `g.title` is the last segment of the remote folder, which is a filename and
+ * often looks like one: `[HDA002] Seafoam - Lost In The Archives Vol. 2 [2025]`.
+ * That is the right thing to show while a download is running, because it is
+ * literally what is arriving — but a Failed list exists to be triaged, and
+ * triage needs the record, not the path it came down.
+ *
+ * `releaseOf` already parses artist and release out of the path (the same
+ * `parsePath` the whole app uses), and it is exactly the pair `artwork.want`
+ * takes, so the cover costs no new lookup path.
+ *
+ * Only rendered when NEAR the viewport. These lists are not virtualised, so a
+ * Completed section with four hundred releases would otherwise queue four
+ * hundred rate-limited MusicBrainz requests the moment it opened.
+ */
+/**
+ * `Artist — Release`, falling back to the folder name.
+ *
+ * Falls back rather than guessing: `parsePath` reports what it could actually
+ * read, and a folder it cannot parse is shown verbatim instead of being
+ * rendered as an empty artist and a mangled title. Half a parse looks like a
+ * bug; the raw name at least matches what is on disk.
+ */
+function ReleaseName({ g }: { g: TransferGroup }) {
+  const { artist, release } = releaseOf(g);
+  if (!artist) return <>{release || g.title}</>;
+  /* Some folders name the artist twice — `Revenge Of The Jaguar - The Aztec
+   * Mystic` parses to an artist that is also the start of the release, and
+   * rendering both gives "Revenge Of The Jaguar — Revenge Of The Jaguar - …".
+   * The release alone is the more complete of the two, so it wins. Observed on
+   * real completed downloads, not imagined. */
+  if (release.toLowerCase().startsWith(artist.toLowerCase())) {
+    return <>{release}</>;
+  }
+  return (
+    <>
+      <span className="dl__artist">{artist}</span>
+      <span className="dl__dash" aria-hidden> — </span>
+      {release}
+    </>
+  );
+}
+
+function Cover({ g, artwork }: { g: TransferGroup; artwork?: ArtworkSession }) {
+  const { artist, release } = releaseOf(g);
+  const key = `dl:${g.key}`;
+  const [ref, near] = useNearViewport();
+
+  // In an effect, not in render: React double-invokes render in development and
+  // a network request is not something to fire while deciding what to draw.
+  useEffect(() => {
+    if (near) artwork?.want(key, artist, release);
+  }, [near, artwork, key, artist, release]);
+
+  const art = artwork?.get(key);
+  return (
+    <span className="art art--dl" ref={ref} aria-hidden>
+      <Placeholder seed={`${artist}${release}`} />
+      <IconRelease size={13} painted={1.3} className="art__fallback" />
+      {art?.state === 'ready' && (
+        <img className="art__img" src={art.dataUri} alt="" loading="lazy" />
+      )}
+    </span>
+  );
+}
+
 const TITLES: Record<'active' | 'finished' | 'failed', string> = {
   active: 'Downloads', finished: 'Completed', failed: 'Failed',
 };
@@ -519,7 +599,14 @@ export function DownloadsView({
   onDensity(d: Density): void;
   discovery?: RelatedDiscovery;
 }) {
-  const groups = session.groups.filter((g) => (
+  /* Sort and query are per-lens and per-visit, deliberately. A search box that
+   * remembered what you typed last time is a list that looks empty for reasons
+   * you cannot see, which is the single most confusing state a filter has. */
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('default');
+  const [descending, setDescending] = useState(false);
+
+  const lens = session.groups.filter((g) => (
     /* A given-up group is excluded from 'active' by having its own state, and
      * joins Failed below. It is not a failure — nothing refused it and nothing
      * errored — but Failed is where you go to deal with downloads that are not
@@ -530,8 +617,19 @@ export function DownloadsView({
         : g.state === 'failed' || g.state === 'cancelled' || g.state === 'stalled'
   ));
 
+  const groups = useMemo(
+    () => sortGroups(lens.filter((g) => matchesQuery(g, query)), sort, descending),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lens, query, sort, descending],
+  );
+
+  /* Counted off the FILTERED list, so the subtitle describes what is on screen.
+   * `hiddenCount` is what the filter is holding back, and it is stated rather
+   * than left implied — an empty list with a stale query in the box is the
+   * thing people report as "my downloads disappeared". */
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);
   const totalFiles = groups.reduce((n, g) => n + g.transfers.length, 0);
+  const hiddenCount = lens.length - groups.length;
 
   const header = (
     <header className="header header--plain dls__header">
@@ -542,12 +640,70 @@ export function DownloadsView({
             {integer(groups.length)} {groups.length === 1 ? 'release' : 'releases'}
             {' · '}{integer(totalFiles)} {totalFiles === 1 ? 'file' : 'files'}
             {' · '}{fileSize(totalBytes)}
+            {hiddenCount > 0 && <> · {integer(hiddenCount)} hidden by the filter</>}
           </p>
         )}
       </div>
-      {groups.length > 0 && <ViewMenu density={density} onDensity={onDensity} />}
+      <div className="dls__tools">
+        {(lens.length > 0 || query) && (
+          <input
+            className="settings__input browse__filter"
+            value={query}
+            placeholder={filter === 'failed' ? 'Filter by release or peer…' : 'Filter these…'}
+            aria-label="Filter by release name or peer"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+        {lens.length > 0 && (
+          <ViewMenu
+            density={density}
+            onDensity={onDensity}
+            /* Grid is for picking through a pile of records you already have or
+               already lost. While a download is running the useful information
+               is progress and speed, and a cover says neither. */
+            densities={filter === 'active'
+              ? ['comfortable', 'compact', 'table']
+              : ['comfortable', 'compact', 'table', 'grid']}
+            sort={sort}
+            onSort={setSort}
+            descending={descending}
+            onDescending={setDescending}
+          />
+        )}
+      </div>
     </header>
   );
+
+  /* A filter that matches nothing is NOT an empty section, and saying "no
+   * completed downloads yet" over twenty of them is the confidently-wrong
+   * answer this app exists not to give. Caught by driving the real thing: the
+   * filter box stays on screen, so the state is recoverable — but the sentence
+   * was still a lie about what the user has. */
+  if (groups.length === 0 && lens.length > 0) {
+    return (
+      <>
+        {header}
+        <div className="pane__scroll">
+          <div className="empty empty--section">
+            <span className="empty__icon"><IconEmpty size={28} painted={1.3} /></span>
+            <p className="empty__title">Nothing matches that</p>
+            <p className="empty__body">
+              {integer(lens.length)}
+              {lens.length === 1 ? ' release is' : ' releases are'} here, but none
+              match “{query}”.
+            </p>
+            <button
+              type="button"
+              className="btn pressable"
+              onClick={() => setQuery('')}
+            >
+              Clear the filter
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (groups.length === 0) {
     return (

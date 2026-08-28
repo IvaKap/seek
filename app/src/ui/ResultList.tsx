@@ -30,7 +30,7 @@ import { copiesOf } from '../domain/bestSources.ts';
 import { SourceRow, TrackRow, UserRow } from './rows.tsx';
 import { ReleaseCard } from './ReleaseCard.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
-import type { Density } from './ViewMenu.tsx';
+import type { SearchDensity } from './ViewMenu.tsx';
 import { IconArrowUp } from '../icons/index.tsx';
 import { integer } from '../domain/format.ts';
 import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
@@ -46,8 +46,8 @@ import type { LibrarySession } from '../data/libraryStore.ts';
  * rows until measurement catches up.
  */
 const H_SOURCE_REM = 34 / 16;
-const H_ROW_REM: Record<Density, number> = { comfortable: 52 / 16, compact: 44 / 16, table: 32 / 16 };
-const H_CARD_REM: Record<Density, number> = { comfortable: 108 / 16, compact: 64 / 16, table: 34 / 16 };
+const H_ROW_REM: Record<SearchDensity, number> = { comfortable: 52 / 16, compact: 44 / 16, table: 32 / 16 };
+const H_CARD_REM: Record<SearchDensity, number> = { comfortable: 108 / 16, compact: 64 / 16, table: 34 / 16 };
 
 /** The root font size in px, tracked live so text scaling re-measures the list. */
 function useRootFontSize(): number {
@@ -81,7 +81,7 @@ export function ResultList({
 }: {
   rows: Row[];
   currentTick: number;
-  density: Density;
+  density: SearchDensity;
   expanded: Set<string>;
   onToggle(id: string): void;
   onQueue(row: Row): void;
@@ -368,7 +368,7 @@ function renderRow(
   expanded: Set<string>,
   onToggle: (id: string) => void,
   onQueue: (row: Row) => void,
-  density: Density,
+  density: SearchDensity,
   onBrowse?: (username: string) => void,
   artwork?: ArtworkSession,
   peers?: PeerLookup,

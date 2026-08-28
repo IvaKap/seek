@@ -22,6 +22,7 @@ import type { ArtworkSession } from '../data/artworkStore.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
 import { Chip } from './controls.tsx';
 import { Placeholder } from './ReleaseCard.tsx';
+import { useNearViewport } from './useNearViewport.ts';
 import { IconCheck, IconEmpty, IconRelease, IconSearch } from '../icons/index.tsx';
 import { WatchButton } from './LabelsView.tsx';
 
@@ -29,35 +30,13 @@ import { WatchButton } from './LabelsView.tsx';
 const MAIN_ROLES = new Set(['Main', 'Producer', 'Remix', 'Co-producer', '']);
 
 /**
- * Ask for artwork only once a card is actually near the screen.
+ * One catalogue entry.
  *
- * `artworkStore` states the rule plainly: only releases in or near the viewport
- * are fetched, because a big list must not queue a lookup per row against a
- * volunteer-run service that permits one request a second. Hyperdub's
- * catalogue is 500 records — requesting all of them on mount would be eight
- * minutes of MusicBrainz traffic for a list the user is skimming.
+ * Its cover is requested only once the card is near the screen — see
+ * `useNearViewport`, which carries the reasoning: a 500-record catalogue that
+ * asked for every cover on mount would be eight minutes of MusicBrainz traffic
+ * for a list the user is skimming.
  */
-function useNearViewport(): [React.RefObject<HTMLDivElement | null>, boolean] {
-  const ref = useRef<HTMLDivElement>(null);
-  const [near, setNear] = useState(false);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node || near) return;
-    if (typeof IntersectionObserver !== 'function') {
-      setNear(true);
-      return;
-    }
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((e) => e.isIntersecting)) setNear(true);
-    }, { rootMargin: '400px' });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [near]);
-
-  return [ref, near];
-}
-
 function Card({
   entry, owned, artwork, onSearch, onWant, wanted,
 }: {

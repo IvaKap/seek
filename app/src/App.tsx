@@ -11,7 +11,7 @@ import type { SearchSession } from './data/searchStore.ts';
 import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
 import { SectionView } from './ui/views.tsx';
-import type { Density } from './ui/ViewMenu.tsx';
+import type { Density, SearchDensity } from './ui/ViewMenu.tsx';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
@@ -75,10 +75,18 @@ const DENSITY_KEY = 'seek.density';
  * choosing usually wants a dense table while watching them arrive. */
 const DL_DENSITY_KEY = 'seek.density.downloads';
 
+/* Grid is a Downloads layout only, so a stored 'grid' reaching the search list
+ * — from an older build, or a hand-edited localStorage — resolves to the
+ * roomiest thing search does have rather than to a layout it cannot render. */
+function searchDensity(d: Density): SearchDensity {
+  return d === 'grid' ? 'comfortable' : d;
+}
+
 function storedDensity(key: string, fallback: Density): Density {
   try {
     const raw = localStorage.getItem(key);
-    return raw === 'compact' || raw === 'table' || raw === 'comfortable' ? raw : fallback;
+    return raw === 'compact' || raw === 'table' || raw === 'comfortable' || raw === 'grid'
+      ? raw : fallback;
   } catch {
     return fallback;
   }
@@ -122,8 +130,8 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
 
 export default function App() {
   const [section, setSection] = useState<Section>('search');
-  const [density, setDensity] = useState<Density>(
-    () => storedDensity(DENSITY_KEY, 'comfortable'),
+  const [density, setDensity] = useState<SearchDensity>(
+    () => searchDensity(storedDensity(DENSITY_KEY, 'comfortable')),
   );
   /* Table by default here, unlike search. A transfer list is a status board:
      the question is "what is happening to all of it", and the card layout
@@ -374,7 +382,9 @@ export default function App() {
   }, [session.client, go]);
 
   const changeDensity = useCallback((d: Density) => {
-    setDensity(d);
+    // The search menu never offers Grid, so this narrowing is a formality —
+    // but it is the one place the two density spaces meet, so it is stated.
+    setDensity(searchDensity(d));
     try {
       localStorage.setItem(DENSITY_KEY, d);
     } catch {

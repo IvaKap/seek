@@ -14,7 +14,7 @@ import { integer } from '../domain/format.ts';
 import type { Row, SearchSession } from '../data/searchStore.ts';
 import { SegmentedControl, Select, Chip } from './controls.tsx';
 import { ViewMenu } from './ViewMenu.tsx';
-import type { Density } from './ViewMenu.tsx';
+import type { Density, SearchDensity } from './ViewMenu.tsx';
 import { FilterBar } from './FilterBar.tsx';
 import { ResultList } from './ResultList.tsx';
 import type { TransferSession } from '../data/transferStore.ts';
@@ -65,7 +65,7 @@ export function SearchView({
 }: {
   session: SearchSession;
   searchRef: React.RefObject<HTMLInputElement | null>;
-  density: Density;
+  density: SearchDensity;
   onDensity(d: Density): void;
   transfers: TransferSession;
   onBrowse?(username: string): void;

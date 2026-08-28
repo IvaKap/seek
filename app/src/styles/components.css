@@ -1303,6 +1303,28 @@
    textarea rather than a <pre>: it is selectable with one ⌘A, it scrolls
    instead of growing the settings pane by a screen of log, and a keyboard
    user can reach it. */
+/* The header's right-hand controls: a filter box and the view menu, kept on one
+   line so the heading keeps the whole left side. */
+/* The cover on a Completed or Failed row. Smaller than the search card's — it
+   identifies the release rather than selling it, and the row is one line. */
+.art--dl {
+  width: 2.25rem; height: 2.25rem; flex: none; position: relative;
+  border-radius: var(--radius-sm); overflow: hidden; margin-right: var(--sp-3);
+}
+/* The artist is the scannable half when triaging a failed batch, so it leads
+   and the release follows in the body colour. */
+.dl__artist { color: var(--text-secondary); }
+.dl__dash { color: var(--text-tertiary); }
+
+.dls__tools {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin-left: auto; min-width: 0;
+}
+.dls__tools .browse__filter { max-width: 16rem; }
+@container (max-width: 44em) {
+  .dls__tools .browse__filter { max-width: 9rem; }
+}
+
 .settings__copyfail {
   margin: var(--sp-3) 0 0;
   font-size: var(--fs-caption); color: var(--warn);
@@ -1728,6 +1750,43 @@
 .dls[data-density='compact'] { gap: var(--sp-2); }
 .dls[data-density='compact'] .dl__hit { padding: var(--sp-2) var(--sp-3); }
 .dls[data-density='compact'] .dl__actions { padding: 0 var(--sp-3) var(--sp-2); }
+
+/* GRID. Covers first, for triaging a pile — the Failed list after a peer has
+   gone offline mid-album, or a Completed list you are trying to find one record
+   in. Deliberately the same markup as the list: a second component would drift
+   from it, and everything here is a matter of arrangement rather than content.
+
+   An open card spans the full width instead of growing its own cell, because a
+   file list inside one column of a grid is unreadable and stretches every
+   sibling in the row to match. */
+.dls[data-density='grid'] {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  align-items: start; gap: var(--sp-3);
+}
+.dls[data-density='grid'] .dl[data-open] { grid-column: 1 / -1; }
+.dls[data-density='grid'] .dl__hit {
+  flex-direction: column; align-items: stretch; gap: var(--sp-2);
+}
+.dls[data-density='grid'] .dl[data-open] .dl__hit {
+  flex-direction: row; align-items: center;
+}
+/* Big enough to recognise a sleeve at a glance, which is the entire point. */
+.dls[data-density='grid'] .art--dl {
+  width: 100%; height: auto; aspect-ratio: 1; margin-right: 0;
+}
+.dls[data-density='grid'] .dl[data-open] .art--dl {
+  width: 2.25rem; height: 2.25rem; aspect-ratio: auto; margin-right: var(--sp-3);
+}
+/* The name wraps to two lines here rather than truncating: there is width for
+   it, and a grid of identically-clipped titles is a grid you cannot read. */
+.dls[data-density='grid'] .dl__title {
+  white-space: normal; overflow: visible;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.dls[data-density='grid'] .dl__pct { align-self: flex-start; }
+.dls[data-density='grid'] .dl__chev { display: none; }
+.dls[data-density='grid'] .dl[data-open] .dl__chev { display: block; }
 
 .dl {
   border: 1px solid var(--separator); border-radius: var(--radius-md);
