@@ -28,11 +28,7 @@ import { TIER_RANK } from '../domain/quality.ts';
 import { reliabilityFrom } from '../domain/score.ts';
 import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
-import { createMockSidecar } from './mockSidecar.ts';
-import {
-  createSidecarClient, isTauri, requestTauriEndpoint, resolveSidecarEndpoint,
-  sidecarStartupError,
-} from './sidecarClient.ts';
+import type { SidecarConnection } from './connectionStore.ts';
 import type { ConnectionPhase, SidecarClient } from './sidecarClient.ts';
 
 export const TICK_MS = 250;
@@ -170,66 +166,17 @@ export interface SearchSession {
   startupError: string | null;
 }
 
-export function useSearchSession(options: SearchSessionOptions = {}): SearchSession {
+export function useSearchSession(
+  /* The shared connection. Passed in rather than created here: one of these
+   * exists per TAB, and a hook that opened a socket would open one per tab —
+   * five tabs, five sign-ins, five copies of every event. See
+   * connectionStore.ts. */
+  conn: SidecarConnection,
+  options: SearchSessionOptions = {},
+): SearchSession {
   const grouper = useMemo(() => createGrouper(), []);
 
-  /* A real sidecar if one is advertised, the fixture replay otherwise. Both
-   * satisfy the same interface and emit the same wire frames, so nothing below
-   * this line knows which it is talking to.
-   *
-   * URL parameters resolve synchronously; the Tauri shell has to be asked over
-   * IPC, so the endpoint can arrive a tick after mount. Nothing auto-searches on
-   * mount, so briefly holding a mock that is never started costs nothing. */
-  const [endpoint, setEndpoint] = useState(() => resolveSidecarEndpoint());
-  const [startupError, setStartupError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (endpoint || !isTauri()) return;
-    let cancelled = false;
-    void (async () => {
-      const found = await requestTauriEndpoint();
-      if (cancelled) return;
-      if (found) setEndpoint(found);
-      else setStartupError(await sidecarStartupError());
-    })();
-    return () => { cancelled = true; };
-  }, [endpoint]);
-
-  const [client, sidecar] = useMemo(() => {
-    if (!endpoint) return [null, createMockSidecar()] as const;
-    const real = createSidecarClient(endpoint);
-    return [real, real] as const;
-  }, [endpoint]);
-
-  const [phase, setPhase] = useState<ConnectionPhase>(client ? 'connecting' : 'closed');
-  const [serverState, setServerState] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!client) return;
-    const offPhase = client.onPhase(setPhase);
-    // The socket being open says nothing about whether we are logged in to
-    // Soulseek — that is a separate state, and searching before it is ready
-    // returns `not_connected`. Track it so the UI can be honest.
-    const offState = client.on('connection.state', (data) => {
-      // The field is `status`, not `state` — see ConnectionState in the schema.
-      // Reading the wrong key here silently pinned this to null, which made the
-      // app report "Not signed in" forever even after a successful login.
-      const d = data as { status?: string };
-      setServerState(d.status ?? null);
-    });
-    return () => {
-      offPhase();
-      offState();
-    };
-  }, [client]);
-
-  // Open on mount, close on unmount. `open()` revives a closed client so
-  // StrictMode's mount/unmount/mount cycle reconnects instead of latching shut.
-  useEffect(() => {
-    if (!client) return;
-    client.open();
-    return () => client.close();
-  }, [client]);
+  const { client, sidecar, phase, serverState, startupError } = conn;
 
   const [query, setQuery] = useState('burial');
   const [running, setRunning] = useState(false);
