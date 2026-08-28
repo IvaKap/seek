@@ -1,0 +1,120 @@
+<!--
+  Seek — the plugin's networking half.
+  SPDX-License-Identifier: GPL-3.0-or-later
+
+  The sandbox that owns the `figma` API is a minimal JS environment with no
+  browser to speak of, so all HTTP happens HERE, in the iframe, which is a real
+  browser context. This file therefore does no design work at all: it long-polls
+  the bridge, hands each job across the postMessage boundary, and posts back
+  whatever comes out. Keeping the two halves strictly separate is what lets the
+  builder in code.js stay pure Plugin API.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 14px 16px;
+    font: 12px/1.45 ui-sans-serif, -apple-system, system-ui, sans-serif;
+    background: #17171a; color: rgba(235,235,245,0.6);
+  }
+  h1 { margin: 0 0 2px; font-size: 13px; font-weight: 590; color: #f4f4f7; }
+  .row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ffb340; flex: none; }
+  .dot[data-on='yes'] { background: #30d158; }
+  .dot[data-on='err'] { background: #ff6961; }
+  #log {
+    margin-top: 10px; max-height: 132px; overflow: auto;
+    font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: rgba(235,235,245,0.38); white-space: pre-wrap;
+  }
+</style>
+
+<h1>Seek design sync</h1>
+<div>Bridge on localhost:<span id="port"></span></div>
+<div class="row"><span class="dot" id="dot"></span><span id="state">connecting…</span></div>
+<div id="log"></div>
+
+<script>
+  const PORT = 8787;
+  const BASE = `http://localhost:${PORT}`;
+  document.getElementById('port').textContent = PORT;
+
+  const dot = document.getElementById('dot');
+  const state = document.getElementById('state');
+  const logEl = document.getElementById('log');
+  let lines = [];
+  let warned = false;
+  let polls = 0;
+  function log(msg) {
+    lines = [...lines.slice(-40), `${new Date().toLocaleTimeString()}  ${msg}`];
+    logEl.textContent = lines.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function setState(on, text) { dot.dataset.on = on; state.textContent = text; }
+
+  /* One job at a time, resolved when the sandbox reports back. Serialising is
+     deliberate — two builds mutating the same page concurrently would race on
+     the "delete the old frame first" step and lose one of them. */
+  let resolveJob = null;
+  onmessage = (e) => {
+    const m = e.data.pluginMessage;
+    if (!m) return;
+    if (m.type === 'result' && resolveJob) { resolveJob(m.result); resolveJob = null; }
+    if (m.type === 'log') log(m.message);
+  };
+
+  function runInSandbox(job) {
+    return new Promise((resolve) => {
+      resolveJob = resolve;
+      parent.postMessage({ pluginMessage: { type: 'job', job } }, '*');
+    });
+  }
+
+  async function loop() {
+    for (;;) {
+      let job = null;
+      try {
+        /* Optimistic, and BEFORE the await on purpose. This poll parks for 25
+           seconds, so setting the label after it resolves left the panel
+           showing state that was up to 25s stale — which reads as a connection
+           dropping in and out when nothing of the sort is happening. */
+        if (polls > 0) setState('yes', `connected — waiting for work (${polls})`);
+        const res = await fetch(`${BASE}/job`, { cache: 'no-store' });
+        polls += 1;
+        setState('yes', `connected — waiting for work (${polls})`);
+        if (res.status === 200) job = await res.json();
+      } catch (err) {
+        /* Report the ACTUAL failure. "Failed to fetch" from a refused
+           connection and "Failed to fetch" from a manifest that does not allow
+           the domain look identical in the panel but need opposite fixes, so
+           the raw text goes to the log where it can be read. */
+        setState('err', 'cannot reach the bridge');
+        polls = 0;
+        log(`✗ ${err.name}: ${err.message}`);
+        if (!warned) {
+          log('  → is `node design/bridge.mjs` running?');
+          log('  → does manifest allowedDomains list http://localhost:8787?');
+          warned = true;
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      if (!job) continue;
+
+      log(`▸ ${job.cmd}${job.screens ? ' ' + job.screens.join(', ') : ''}`);
+      setState('yes', `building ${job.cmd}…`);
+      const result = await runInSandbox(job);
+      log(result.ok ? `✓ ${result.note || 'done'}` : `✗ ${result.error}`);
+
+      try {
+        await fetch(`${BASE}/result`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ id: job.id, ...result }),
+        });
+      } catch (err) {
+        log(`✗ could not return the result: ${err.message}`);
+      }
+    }
+  }
+  loop();
+</script>

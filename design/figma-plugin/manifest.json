@@ -1,0 +1,13 @@
+{
+  "name": "Seek design sync",
+  "id": "seek-design-sync",
+  "api": "1.0.0",
+  "main": "code.js",
+  "ui": "ui.html",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page",
+  "networkAccess": {
+    "allowedDomains": ["http://localhost:8787"],
+    "reasoning": "Talks only to a loopback bridge on this machine, which relays build jobs from the local agent. This plugin is never published; nothing leaves the device."
+  }
+}
