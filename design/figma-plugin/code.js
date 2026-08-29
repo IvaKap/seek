@@ -69,7 +69,7 @@ const TYPE = {
    the current builder or a stale copy it loaded before the last edit. Without
    it, "I changed that" and "you are looking at an old build" are the same
    symptom, and there is no way to tell them apart from outside. */
-const BUILD = 'b2 — taller download rows, overwrite guard, 36 icons';
+const BUILD = 'b3 — svg export command, for icons added by hand in Figma';
 
 const WIN = { w: 1280, h: 840 };   // tauri.conf.json
 const SIDEBAR_W = 220;             // --sidebar-w
@@ -909,6 +909,24 @@ async function run(job) {
       kids: d > 0 && 'children' in n ? n.children.map((c) => walk(c, d - 1)) : undefined,
     });
     return { note: 'inspected', tree: walk(node, job.depth == null ? 2 : job.depth) };
+  }
+
+  if (job.cmd === 'svg') {
+    /* Pull real geometry back OUT of the file. Icons dropped into Figma by hand
+       are the one thing the builder cannot generate from the codebase, so this
+       is the return path: export them as SVG, and they can be pasted into the
+       ICONS table and rendered like any Lucide glyph. */
+    const out = {};
+    for (const id of job.ids || []) {
+      const n = await figma.getNodeByIdAsync(id);
+      if (!n) { out[id] = { error: 'no such node' }; continue; }
+      out[id] = {
+        name: n.name, type: n.type,
+        w: Math.round(n.width), h: Math.round(n.height),
+        svg: await n.exportAsync({ format: 'SVG_STRING' }),
+      };
+    }
+    return { note: `exported ${Object.keys(out).length}`, svg: out };
   }
 
   if (job.cmd === 'shoot') {
