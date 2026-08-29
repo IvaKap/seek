@@ -50,6 +50,34 @@ jobs:
       # it runs both test suites, freezes the engine, REFUSES to continue if the
       # freeze is stale or the four version declarations disagree, builds, and
       # fails if the bundle's signature does not verify.
+      # macOS keys a Downloads/Desktop/Documents permission grant to the app's
+      # CODE IDENTITY. Ad-hoc signing (`signingIdentity: "-"`) has no
+      # certificate to anchor that to, so the only identity is the content hash
+      # — which changes on every build, so every update asks for the folder
+      # again. A stable certificate, reused forever, is what makes successive
+      # builds look like the same app.
+      #
+      # Conditional ON PURPOSE. With no secret configured nothing is exported
+      # and the build is ad-hoc exactly as before, so this is safe to merge
+      # before the certificate exists. Tauri reads these three variables
+      # natively — verified in the CLI binary — and imports the .p12 itself.
+      - name: Use a signing certificate, if one is configured
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          if [ -n "$CERT" ] && [ -n "$IDENTITY" ]; then
+            {
+              echo "APPLE_CERTIFICATE=$CERT"
+              echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PASSWORD"
+              echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
+            } >> "$GITHUB_ENV"
+            echo "signing with the configured identity"
+          else
+            echo "no certificate configured — ad-hoc signing, as before"
+          fi
+
       - name: Build
         # The updater artifacts are signed during the BUNDLE step, so the key
         # has to be in the environment here rather than at packaging time.
