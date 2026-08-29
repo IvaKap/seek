@@ -94,6 +94,18 @@ YouTube lookup will fail with CERTIFICATE_VERIFY_FAILED on any machine but this
 one. Check that certifi is installed and that the spec collects its data files."
 printf '  trust store at %s\n' "${CACERT#sidecar/dist/seek-sidecar/}"
 
+# Clear the LAST build's updater artifacts before making this one.
+#
+# `--noconfirm` wipes the freeze, and cargo rebuilds the binary, but nothing
+# clears this directory — so a .sig from a previous release outlives a failed or
+# interrupted build and ends up sitting beside a fresh tarball it does not sign.
+# The check below would then pass it: same key, so the key ids match. Removing
+# them first means "the signature exists" and "the signature is from this build"
+# are the same statement.
+say "Clearing the last build's updater artifacts"
+rm -f app/src-tauri/target/release/bundle/macos/*.app.tar.gz \
+      app/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+
 say "Building the app"
 ( cd app && npm run tauri build ) || die "tauri build failed"
 
@@ -150,6 +162,18 @@ Set bundle.createUpdaterArtifacts to true in app/src-tauri/tauri.conf.json."
 [ -n "$UPD_SIG" ] || die "no updater signature was produced.
 Set TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD) before building. Without it the
 release installs fine by hand and can never self-update."
+
+# Belt and braces with the rm above, because the key-id check that follows
+# cannot tell a fresh signature from an old one — it compares which KEY signed,
+# never WHAT was signed. A signature older than the tarball is signing something
+# that no longer exists, and shipping that pair means every installed copy
+# downloads an update whose signature does not verify.
+sig_at=$(date -r "$UPD_SIG" +%s)
+tar_at=$(date -r "$UPD_TAR" +%s)
+[ "$sig_at" -ge "$tar_at" ] || die "the updater signature is OLDER than the tarball
+it is supposed to sign. It is left over from an earlier build. Delete
+$UPD_SIG and build again."
+printf '  signature is from this build\n'
 
 python3 - "$UPD_SIG" <<'KEYCHECK' || die "the updater signature does not match the
 public key in tauri.conf.json. Every installed copy would refuse this update.
