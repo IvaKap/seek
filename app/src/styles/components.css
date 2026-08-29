@@ -1421,6 +1421,17 @@
   background: var(--warn-soft);
   color: var(--text-primary);
 }
+/* A caution, not a failure: amber is this app's transcode warning and nothing
+   else, so the tint is borrowed but the left rule is what says "read this".
+   `strong` carries the condition, because the sentence only applies to people
+   whose files are already in Rekordbox and they should know that in the first
+   three words. */
+.settings__notice--warn {
+  background: var(--warn-soft);
+  color: var(--text-primary);
+  border-left: 2px solid var(--warn);
+}
+.settings__notice--warn strong { font-weight: var(--fw-semibold); }
 
 /* ------------------------------------------------------- folder settings */
 
