@@ -18,9 +18,14 @@ import { useState } from 'react';
 import type { LabelsSession, WatchedLabel } from '../data/labelStore.ts';
 import { describeProgress, describeRemaining, isStale, kindLabel } from '../domain/labels.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
+import { SegmentedControl } from './controls.tsx';
 import {
   IconBandcamp, IconClose, IconDiscogs, IconEmpty, IconRelease,
 } from '../icons/index.tsx';
+
+/** Which kinds the list is showing. `all` is not a kind, it is the absence of
+ *  the filter — kept in the same union so one piece of state says everything. */
+type WatchKind = 'all' | 'label' | 'artist';
 
 function ProviderIcon({ source }: { source: WatchedLabel['sourceKind'] }) {
   return source === 'bandcamp'
@@ -134,18 +139,45 @@ export function LabelsView({
   labels: LabelsSession;
   onOpen(label: WatchedLabel): void;
 }) {
-  const list = labels.labels;
+  /* Labels AND artists. Both have always been watchable — the sidecar accepts
+   * either kind and refuses everything else, and a row has always named which
+   * one it is — but every piece of text around them said "labels", so half of
+   * what this screen does was invisible unless you happened to try it. */
+  const [kind, setKind] = useState<WatchKind>('all');
+
+  const all = labels.labels;
+  const counts = {
+    label: all.filter((l) => l.kind === 'label').length,
+    artist: all.filter((l) => l.kind === 'artist').length,
+  };
+  const list = kind === 'all' ? all : all.filter((l) => l.kind === kind);
   const unread = list.filter((l) => l.lastSeenAt === null).length;
 
   return (
     <>
       <header className="header header--plain">
-        <h1 className="pane__title">Labels</h1>
+        <h1 className="pane__title">Labels &amp; Artists</h1>
         <p className="pane__subtitle">
           Catalogues you are working through. Nothing here is read until you
           open it — a catalogue costs several requests, so this list never
           refreshes itself.
         </p>
+        {/* Only once there is something to separate. A filter offering to hide
+            nothing is a control that has to be read and then ignored. */}
+        {counts.label > 0 && counts.artist > 0 && (
+          <div className="watches__filter">
+            <SegmentedControl<WatchKind>
+              label="Show"
+              value={kind}
+              onChange={setKind}
+              segments={[
+                { value: 'all', label: `All ${all.length}` },
+                { value: 'label', label: `Labels ${counts.label}` },
+                { value: 'artist', label: `Artists ${counts.artist}` },
+              ]}
+            />
+          </div>
+        )}
       </header>
 
       <div className="pane__scroll">
@@ -158,12 +190,34 @@ export function LabelsView({
         {list.length === 0 ? (
           <div className="empty empty--section">
             <span className="empty__icon"><IconEmpty size={28} painted={1.3} /></span>
-            <p className="empty__title">No catalogues watched</p>
-            <p className="empty__body">
-              Paste a Discogs or Bandcamp label or artist link into the search
-              field, open its catalogue, and press Watch. It will still be here
-              next month, with what you had of it when you last looked.
-            </p>
+            {/* Two different emptinesses. Saying "nothing watched" over a list
+                that holds four labels, because the filter is set to Artists,
+                is the confidently-wrong answer this app exists not to give —
+                the same mistake the Downloads lenses already had to fix. */}
+            {all.length === 0 ? (
+              <>
+                <p className="empty__title">Nothing watched yet</p>
+                <p className="empty__body">
+                  Paste a Discogs or Bandcamp label or artist link into the search
+                  field, open its catalogue, and press Watch. It will still be here
+                  next month, with what you had of it when you last looked.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="empty__title">
+                  No {kind === 'artist' ? 'artists' : 'labels'} watched
+                </p>
+                <p className="empty__body">
+                  {all.length} {all.length === 1 ? 'catalogue is' : 'catalogues are'} here,
+                  but none of them {all.length === 1 ? 'is' : 'are'} a
+                  {kind === 'artist' ? 'n artist' : ' label'}.
+                </p>
+                <button type="button" className="btn pressable" onClick={() => setKind('all')}>
+                  Show everything
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="watches">

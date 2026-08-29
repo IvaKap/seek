@@ -174,11 +174,11 @@ export function Sidebar({
           ? [{ id: 'sessions' as Section, label: 'Dig Sessions', icon: <IconRelease size={16} />, shortcut: '⌘9' }]
           : []),
         // Same rule as Dig Sessions above: it appears once you have earned it.
-        // A permanently empty "Labels" is dead chrome for anyone who never
+        // A permanently empty "Labels & Artists" is dead chrome for anyone who never
         // watches one, and the empty state is reachable from the catalogue
         // screen where watching actually happens.
         ...(hasLabels
-          ? [{ id: 'labels' as Section, label: 'Labels', icon: <IconLibrary size={16} /> }]
+          ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLibrary size={16} /> }]
           : []),
         { id: 'wishlist', label: 'Wishlist', icon: <IconSearch size={16} /> },
         { id: 'history', label: 'Search History', icon: <IconSearch size={16} /> },

@@ -69,7 +69,7 @@ const TYPE = {
    the current builder or a stale copy it loaded before the last edit. Without
    it, "I changed that" and "you are looking at an old build" are the same
    symptom, and there is no way to tell them apart from outside. */
-const BUILD = 'b3 — svg export command, for icons added by hand in Figma';
+const BUILD = 'b4 — Labels & Artists, matching the app';
 
 const WIN = { w: 1280, h: 840 };   // tauri.conf.json
 const SIDEBAR_W = 220;             // --sidebar-w
@@ -341,7 +341,7 @@ const NAV = [
     ['Library', 'library', null, null],
     ['Want List', 'star', '⌘8', 7],
     ['Dig Sessions', 'folder', '⌘9', null],
-    ['Labels', 'library', null, null],
+    ['Labels & Artists', 'library', null, null],
     ['Wishlist', 'search', null, null],
     ['Search History', 'search', null, null],
     ['Saved Searches', 'library', null, null],
@@ -662,7 +662,7 @@ const SCREENS = {};
 const SCREEN_NAMES = {
   search: 'Search', downloads: 'Downloads', completed: 'Completed', failed: 'Failed',
   uploads: 'Uploads', statistics: 'Statistics', library: 'Library', want: 'Want List',
-  sessions: 'Dig Sessions', labels: 'Labels', wishlist: 'Wishlist',
+  sessions: 'Dig Sessions', labels: 'Labels & Artists', wishlist: 'Wishlist',
   history: 'Search History', saved: 'Saved Searches', followed: 'Followed',
   chat: 'Chat rooms', messages: 'Private chats', browse: 'Browse',
   'settings-account': 'Settings — Account', 'settings-folders': 'Settings — Folders',
@@ -1291,8 +1291,8 @@ function watchRow(name, kind, facts, detail, unread) {
   });
 }
 
-SCREENS.labels = () => screen('Labels', 'Labels', [
-  paneHeader('Labels', 'Catalogues you are watching, and what has appeared since you last looked.', [
+SCREENS.labels = () => screen('Labels & Artists', 'Labels & Artists', [
+  paneHeader('Labels & Artists', 'Catalogues you are watching, and what has appeared since you last looked.', [
     btn('Watch a label', { icon: 'plus' }),
   ]),
   body([
