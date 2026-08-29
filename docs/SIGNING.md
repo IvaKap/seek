@@ -64,7 +64,21 @@ Keychain Access → **Certificate Assistant** → *Create a Certificate…*
 | Identity Type | Self Signed Root |
 | Certificate Type | **Code Signing** |
 
-Leave *Let me override defaults* unchecked. Give it a long expiry if offered.
+Leave *Let me override defaults* unchecked — that puts it in your **login**
+keychain, which is what you want.
+
+**Login, never System.** The login keychain is unlocked when you log in, so
+`codesign` running as you can reach the private key without prompting. System is
+machine-wide, needs admin, and would make the key usable by every admin account
+on the Mac for no benefit. It makes no difference to CI either way: Tauri
+imports the `.p12` into a temporary keychain on the runner, so the local copy
+only matters if you also build locally with `release.sh`.
+
+**If `codesign` later refuses with "no identity found"**, the certificate needs
+to be trusted for its purpose: Keychain Access → *My Certificates* → double-click
+*Seek Self Signed* → Trust → **Code Signing: Always Trust**. Check this before
+concluding the approach has failed — it is a local trust setting, not evidence
+about TCC.
 
 > **Never regenerate it.** A new certificate is a new identity, and every user is
 > back to being prompted on their next update — the exact problem this exists to
