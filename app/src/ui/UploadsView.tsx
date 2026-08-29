@@ -20,6 +20,7 @@
  * through upstream's UploadDenied, rather than dropping the socket in silence.
  */
 
+import { useMemo, useState } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed } from '../data/transferStore.ts';
 import { fileSize, integer, speed as fmtSpeed } from '../domain/format.ts';
@@ -27,6 +28,9 @@ import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
 import { PeerHistory } from './PeerHistory.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
 import { IconArrowUp, IconClose, IconEmpty } from '../icons/index.tsx';
+import { ViewMenu } from './ViewMenu.tsx';
+import { UPLOAD_SORT_LABELS, matchesQuery, sortGroups } from '../domain/transferOrder.ts';
+import type { SortKey } from '../domain/transferOrder.ts';
 
 function Row({
   group, peers, onCancel, onClear,
@@ -135,28 +139,93 @@ export function UploadsView({
    */
   sharing: boolean | null;
 }) {
-  const groups = session.uploadGroups;
+  /* Per-visit, like the transfer lenses: a filter box that remembered what you
+     typed last time is a list that looks empty for reasons you cannot see. */
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<SortKey>('default');
+  const [descending, setDescending] = useState(false);
+
+  const all = session.uploadGroups;
+  const groups = useMemo(
+    () => sortGroups(all.filter((g) => matchesQuery(g, query)), sort, descending),
+    [all, query, sort, descending],
+  );
+
   const active = groups.filter((g) => g.state === 'active' || g.state === 'queued');
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);
   const speed = groups.reduce((n, g) => n + g.speed, 0);
+  /* Counted off the FILTERED list so the subtitle describes what is on screen,
+     and what the filter is holding back is stated rather than left implied. */
+  const hidden = all.length - groups.length;
 
   const header = (
-    <header className="header header--plain">
-      <h1 className="pane__title">Uploads</h1>
-      {groups.length > 0 ? (
-        <p className="pane__subtitle tnum">
-          {integer(groups.length)} {groups.length === 1 ? 'release' : 'releases'}
-          {' · '}{fileSize(totalBytes)}
-          {speed > 0 && <> · {fmtSpeed(speed)}</>}
-          {active.length > 0 && <> · {integer(active.length)} in progress</>}
-        </p>
-      ) : (
-        <p className="pane__subtitle">
-          What other people are taking from you.
-        </p>
-      )}
+    <header className="header header--plain dls__header">
+      <div className="dls__heading">
+        <h1 className="pane__title">Uploads</h1>
+        {groups.length > 0 ? (
+          <p className="pane__subtitle tnum">
+            {integer(groups.length)} {groups.length === 1 ? 'release' : 'releases'}
+            {' · '}{fileSize(totalBytes)}
+            {speed > 0 && <> · {fmtSpeed(speed)}</>}
+            {active.length > 0 && <> · {integer(active.length)} in progress</>}
+            {hidden > 0 && <> · {integer(hidden)} hidden by the filter</>}
+          </p>
+        ) : (
+          <p className="pane__subtitle">
+            What other people are taking from you.
+          </p>
+        )}
+      </div>
+      <div className="dls__tools">
+        {(all.length > 0 || query) && (
+          <input
+            className="settings__input browse__filter"
+            value={query}
+            placeholder="Filter by release or peer…"
+            aria-label="Filter by release name or peer"
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+        {all.length > 0 && (
+          /* No density here. Uploads are one shape — who is taking what — and
+             there is no per-file detail to compress or covers to lay out. */
+          <ViewMenu
+            densities={[]}
+            sort={sort}
+            onSort={setSort}
+            descending={descending}
+            onDescending={setDescending}
+            sortLabels={UPLOAD_SORT_LABELS}
+          />
+        )}
+      </div>
     </header>
   );
+
+  /* A filter matching nothing is NOT an empty screen. Saying "nobody is
+     downloading from you" over eleven uploads is the confidently-wrong answer
+     this app exists not to give — the same split the transfer lenses needed. */
+  if (groups.length === 0 && all.length > 0) {
+    return (
+      <>
+        {header}
+        <div className="pane__scroll">
+          <div className="empty empty--section">
+            <span className="empty__icon"><IconEmpty size={28} painted={1.3} /></span>
+            <p className="empty__title">Nothing matches that</p>
+            <p className="empty__body">
+              {integer(all.length)}
+              {all.length === 1 ? ' release is' : ' releases are'} here, but none
+              match “{query}”.
+            </p>
+            <button type="button" className="btn pressable" onClick={() => setQuery('')}>
+              Clear the filter
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (groups.length === 0) {
     return (

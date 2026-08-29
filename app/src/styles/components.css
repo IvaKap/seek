@@ -661,14 +661,23 @@
   backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   box-shadow: var(--shadow-popover);
-  /* Origin at the trigger, not the centre — the popover grows out of the thing
-     that opened it. */
-  transform-origin: top right;
+  border: 0.5px solid var(--separator-strong);
   animation: popIn var(--dur-fast) var(--ease-out);
 }
+/*
+ * Opacity only — the scale was removed on purpose.
+ *
+ * Every element using this also carries `backdrop-filter`, and a transform on
+ * the same element defeats that filter in WKWebView. The symptom is not subtle:
+ * the View menu rendered at 80% opacity over the results list with NO blur, and
+ * the peer names behind it stayed perfectly legible through the menu.
+ *
+ * The scale was worth a few milliseconds of "grows out of the trigger". It was
+ * not worth a menu you cannot read.
+ */
 @keyframes popIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .viewmenu__section {
   padding: var(--sp-2) var(--sp-3) var(--sp-1);
@@ -1094,7 +1103,7 @@
   backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   box-shadow: var(--shadow-popover);
-  transform-origin: top left;
+  border: 0.5px solid var(--separator-strong);
   animation: popIn var(--dur-fast) var(--ease-out);
   white-space: normal;
 }
@@ -1489,7 +1498,7 @@
   backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(180%);
   box-shadow: var(--shadow-popover);
-  transform-origin: top left;
+  border: 0.5px solid var(--separator-strong);
   animation: popIn var(--dur-fast) var(--ease-out);
   white-space: normal;
 }
