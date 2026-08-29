@@ -522,7 +522,12 @@ export default function App() {
     // Only against recorded data. Firing a real Soulseek search for someone
     // else's demo query the instant the app opens would be presumptuous, and
     // it burns a search slot the user did not ask for.
-    if (sessionRef.current.isMock) sessionRef.current.run('burial');
+    if (!sessionRef.current.isMock) return;
+    /* Set the box as well as running it, the way every other caller of `run`
+     * does. The field no longer starts with a query in it, so without this the
+     * replay would show results for a search the box claims was never made. */
+    sessionRef.current.setQuery('burial');
+    sessionRef.current.run('burial');
   }, []);
 
   /* Actions, not a mirror of the navigation. Rebuilt whenever the state they

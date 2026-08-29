@@ -207,7 +207,12 @@ export function useSearchSession(
 
   const { client, sidecar, phase, serverState, startupError } = conn;
 
-  const [query, setQuery] = useState('burial');
+  /* Empty. This used to open with a demo query already typed in, which is
+   * convenient exactly once — while building the fixture — and thereafter is
+   * someone else's search sitting in your box every time you sign in, waiting
+   * to be deleted before you can type your own. The offline replay sets it
+   * explicitly when it starts (App.tsx), so the demo still reads correctly. */
+  const [query, setQuery] = useState('');
   const [running, setRunning] = useState(false);
   const [closedReason, setClosedReason] = useState<string | null>(null);
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
