@@ -624,7 +624,7 @@ def test_discogs_label_catalogue():
     """
     payload = json_fixture("discogs-label-hyperdub.json")
     payload = {**payload, "pagination": {**payload["pagination"], "pages": 1}}
-    name, label_id, releases, complete = discover.browse_discogs(
+    name, label_id, releases, complete, _img = discover.browse_discogs(
         "label", 25386, "Hyperdub", "a-token",
         fetch_json=lambda *a, **k: payload,
     )
@@ -654,7 +654,7 @@ def test_discogs_artist_catalogue_keeps_the_role():
              "type": "release", "role": "TrackAppearance"},
         ],
     }
-    _name, _id, releases, _complete = discover.browse_discogs(
+    _name, _id, releases, _complete, _img = discover.browse_discogs(
         "artist", 306157, "Burial", "a-token", fetch_json=lambda *a, **k: payload,
     )
     assert [r["role"] for r in releases] == ["Main", "TrackAppearance"]
@@ -670,7 +670,7 @@ def test_a_catalogue_too_big_to_finish_says_so():
     page = {"pagination": {"pages": 99}, "releases": [
         {"id": 1, "title": "T", "artist": "A"},
     ]}
-    _name, _id, releases, complete = discover.browse_discogs(
+    _name, _id, releases, complete, _img = discover.browse_discogs(
         "label", 1, "Big", "a-token", fetch_json=lambda *a, **k: page,
     )
     assert complete is False
@@ -679,7 +679,7 @@ def test_a_catalogue_too_big_to_finish_says_so():
 
 def test_a_catalogue_stops_at_the_last_page():
     page = {"pagination": {"pages": 2}, "releases": [{"id": 1, "title": "T", "artist": "A"}]}
-    _n, _i, releases, complete = discover.browse_discogs(
+    _n, _i, releases, complete, _img = discover.browse_discogs(
         "label", 1, "Small", "a-token", fetch_json=lambda *a, **k: page,
     )
     assert complete is True
@@ -695,7 +695,7 @@ def test_a_label_can_be_found_by_name(monkeypatch):
             return {"results": [{"id": 25386, "title": "Hyperdub"}]}
         return {"pagination": {"pages": 1}, "releases": []}
 
-    name, label_id, _releases, _complete = discover.browse_discogs(
+    name, label_id, _releases, _complete, _img = discover.browse_discogs(
         "label", None, "Hyperdub", "a-token", fetch_json=fake_json,
     )
     assert (name, label_id) == ("Hyperdub", 25386)
@@ -764,7 +764,7 @@ def test_a_bandcamp_catalogue_page_is_not_a_track(path):
 
 def test_bandcamp_label_catalogue():
     html = fixture("bandcamp-label-hyperdub.html")
-    name, releases = discover.browse_bandcamp(
+    name, releases, _img = discover.browse_bandcamp(
         "https://hyperdub.bandcamp.com/music", fetch_text=lambda _u: html,
     )
     # NOT "Music". The page titles itself `Music | Hyperdub`, and reading the

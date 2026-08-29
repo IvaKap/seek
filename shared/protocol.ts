@@ -1367,6 +1367,19 @@ export interface DiscoverCatalog {
 
   /** The catalogue's own page. */
   url: string | null;
+
+  /**
+   * The label's logo or the artist's photo, as a data: URI, fetched BY THE
+   * SIDECAR. Null when the provider has none.
+   *
+   * Inlined rather than linked, like every other image on the wire: a raw
+   * provider URL in the webview would leak the user's IP and reading habits to
+   * Discogs on every render. This is ONE image for the catalogue itself, which
+   * is why it can be fetched eagerly where a per-release thumbnail cannot —
+   * three hundred of those would be three hundred rate-limited requests, and
+   * that is what the artwork pipeline exists to avoid.
+   */
+  imageUri: string | null;
   releases: CatalogEntry[];
 
   /**
@@ -1710,13 +1723,22 @@ export interface TransferStats {
 /**
  * A label or artist whose catalogue the user is working through.
  *
- * NOT a new-release notifier, and the distinction is the whole design.
- * Discogs is a database rather than a release feed, so diffing it
- * reports records catalogued decades late as 'new'; Bandcamp has no API
- * to poll; and a brand-new release is precisely what Soulseek does not
- * have yet, so that notification's happy path ends in an empty search.
- * This is a bookmark with progress on it — back catalogue, which is
- * where both Soulseek and this app are strong.
+ * A bookmark with progress on it, and SINCE 0.2.7 also a new-release
+ * notifier — which reverses what this comment used to say. Two of the
+ * three objections were answered; the third was accepted:
+ *
+ *   Discogs is a database rather than a release feed, so diffing it
+ *   would report records catalogued decades late as 'new'. Answered:
+ *   a Discogs entry must be recent by its own year as well as unseen.
+ *
+ *   Bandcamp has no API to poll. Answered, and it is the cheaper half:
+ *   its whole catalogue is one HTML page, newest first.
+ *
+ *   A brand-new release is precisely what Soulseek does not have yet,
+ *   so the notification's happy path ends in an empty search. NOT
+ *   answered — still true, and accepted deliberately.
+ *
+ * Back catalogue remains what this is for.
  *
  * THE COUNTS ARE A SNAPSHOT, and unlike DigSession they are stored
  * rather than derived. DigSession omits its counts because the frontend
@@ -1771,6 +1793,37 @@ export interface WatchedLabel {
 
   /** The user's own note. Empty unless they wrote one. */
   note: string;
+
+  /**
+   * The logo or photo, as a data: URI. Captured when the catalogue is read, so
+   * it is null until the first reading.
+   */
+  imageUri: string | null;
+
+  /**
+   * When this catalogue was last checked FOR NEW RELEASES, which is not the
+   * same as when it was last read. A check is cheap for Bandcamp and expensive
+   * for Discogs; a read is neither.
+   */
+  lastCheckedAt: number | null;
+
+  /**
+   * Releases seen at the last check that were not there before, and that the
+   * user has not looked at yet. Zero is the ordinary state. Cleared by
+   * `labels.seen`, so opening the catalogue is what resolves it — the user
+   * never dismisses a count by hand.
+   */
+  newCount: number;
+
+  /**
+   * Release identifiers seen at the last check.
+   *
+   * Stored so 'new' means NEW SINCE WE LOOKED rather than 'recent', which is
+   * the only definition that survives contact with Discogs — it is a database,
+   * not a release feed, and a 1994 record catalogued last week is not a new
+   * release.
+   */
+  knownIds: string[];
 }
 
 export interface WatchedLabelList {
@@ -1810,6 +1863,23 @@ export interface LabelSeenParams {
   releaseCount: number;
   ownedCount: number;
   wantedCount: number;
+}
+
+/**
+ * Check watched catalogues for releases that were not there last time.
+ *
+ * NOT run on mount, and the cost is why. A Discogs catalogue is up to seven
+ * sequentially rate-limited requests, so checking a dozen watched entries the
+ * moment a screen appears would spend a minute and a half of someone else's
+ * API budget to render a list that was only glanced at. The user asks for
+ * this, or a schedule does.
+ */
+export interface LabelCheckParams {
+  /**
+   * Which to check. Empty means all of them, which is what the 'Check for new'
+   * button sends.
+   */
+  ids: string[];
 }
 
 export interface SessionIdParams {
@@ -2819,8 +2889,20 @@ export interface CommandParams {
   'labels.unwatch': LabelIdParams;
   /** Set the user's own note on a watched catalogue. */
   'labels.note': LabelNoteParams;
-  /** Record the counts from a catalogue read, with the time. */
+  /**
+   * Record the counts from a catalogue read, with the time. Also clears
+   * `newCount` — opening a catalogue is what resolves its badge.
+   */
   'labels.seen': LabelSeenParams;
+  /**
+   * Look for releases added since the last check, and set `newCount`.
+   *
+   * Bandcamp first and always: its whole catalogue is one page fetch, where
+   * Discogs paginates behind a one-per-second gate. A Discogs entry is
+   * additionally judged on its year, because Discogs is a database rather than
+   * a release feed and a record catalogued decades late is not news.
+   */
+  'labels.check': LabelCheckParams;
   /** The whole want list. */
   'want.list': Record<string, never>;
   /**
@@ -2975,6 +3057,7 @@ export interface CommandResult {
   'labels.unwatch': WatchedLabelList;
   'labels.note': WatchedLabelList;
   'labels.seen': WatchedLabelList;
+  'labels.check': WatchedLabelList;
   'want.list': WantList;
   'want.add': WantList;
   'want.remove': WantList;
@@ -3063,6 +3146,7 @@ export const COMMAND_NAMES = [
   'labels.unwatch',
   'labels.note',
   'labels.seen',
+  'labels.check',
   'want.list',
   'want.add',
   'want.remove',

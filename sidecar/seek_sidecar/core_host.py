@@ -80,6 +80,22 @@ BASE_COMPONENTS = {
 SHARES_COMPONENT = "shares"
 
 
+def _label_defaults(row):
+    """Fill fields added after this row was written.
+
+    `seek-state.json` outlives the schema — a watchlist saved by 0.2.6 has no
+    `imageUri`, `newCount` or `knownIds`, and the generated validator DROPS an
+    event whose shape is wrong rather than repairing it. Without this the whole
+    watchlist would silently stop arriving for anyone upgrading, which is the
+    hardest kind of failure to diagnose because nothing errors.
+    """
+    row.setdefault("imageUri", None)
+    row.setdefault("lastCheckedAt", None)
+    row.setdefault("newCount", 0)
+    row.setdefault("knownIds", [])
+    return row
+
+
 class CoreHost:
     """Owns the pynicotine core and the main-thread pump."""
 
@@ -1910,8 +1926,9 @@ class CoreHost:
 
     # -- watched labels -----------------------------------------------------
 
-    # A bookmark with progress on it, NOT a new-release notifier — see the
-    # WatchedLabel docstring in shared/schema.py for why that was argued down.
+    # A bookmark with progress on it, and since 0.2.7 a new-release notifier
+    # as well — see `_cmd_labels_check` below for which of the original
+    # objections that answered and which one it simply accepts.
     #
     # The stored counts are the one place this file keeps a derived number,
     # and it is deliberate: DigSession omits its counts because the frontend
@@ -1924,7 +1941,11 @@ class CoreHost:
 
     def _labels(self):
         stored = self._load_state().get("watched_labels")
-        return list(stored) if isinstance(stored, list) else []
+        if not isinstance(stored, list):
+            return []
+        # Migrated on the way OUT, so every reader sees a complete row whatever
+        # version wrote the file.
+        return [_label_defaults(dict(row)) for row in stored if isinstance(row, dict)]
 
     def _labels_state(self):
         return {"labels": self._labels()}
@@ -2023,6 +2044,14 @@ class CoreHost:
             "ownedCount": None,
             "wantedCount": None,
             "note": "",
+            # Captured when the catalogue is first read, not now: watching is a
+            # decision and should not cost an HTTP request.
+            "imageUri": None,
+            # Never checked for new releases, which is distinct from checked and
+            # found none.
+            "lastCheckedAt": None,
+            "newCount": 0,
+            "knownIds": [],
         })
         return self._labels_publish(labels)
 
@@ -2048,7 +2077,113 @@ class CoreHost:
         label["releaseCount"] = max(0, int(params.get("releaseCount") or 0))
         label["ownedCount"] = max(0, int(params.get("ownedCount") or 0))
         label["wantedCount"] = max(0, int(params.get("wantedCount") or 0))
+        # Opening the catalogue IS the acknowledgement. There is no dismiss
+        # button, because a badge you can clear without looking is a badge that
+        # stops meaning anything.
+        label["newCount"] = 0
         return self._labels_publish(labels)
+
+    # -- checking for new releases -----------------------------------------
+    #
+    # This feature was argued against in this file, and the argument still
+    # holds in one respect: a brand-new release is the one thing Soulseek does
+    # not have yet, so some of these notifications will lead to an empty
+    # search. Iva asked for it anyway, knowing that. What the design CAN fix is
+    # the other two objections, and it does:
+    #
+    #   Discogs is a database, not a release feed. A record catalogued decades
+    #   late would otherwise report as new, so a Discogs entry additionally has
+    #   to be recent by its own YEAR before it counts.
+    #
+    #   Bandcamp has no API to poll. True, and it does not need one: its whole
+    #   catalogue is a single HTML page, newest first, which makes it by far
+    #   the cheaper half of this.
+    #
+    # NEVER called on mount. A Discogs catalogue is up to seven sequentially
+    # rate-limited requests, so a dozen watched entries checked the instant a
+    # screen appeared would be about ninety seconds of someone else's API
+    # budget, spent without being asked.
+
+    #: How recent a Discogs release must be to count as new, in years.
+    NEW_RELEASE_YEARS = 1
+
+    @staticmethod
+    def _release_key(entry):
+        """What identifies a release ACROSS checks.
+
+        The Discogs id when there is one, and the URL otherwise — Bandcamp has
+        no ids. Never the title: labels reissue, and a repress arriving under
+        the same name is not a new record.
+        """
+        discogs_id = entry.get("discogsId") or 0
+        return f"d{discogs_id}" if discogs_id else str(entry.get("url") or "")
+
+    def _cmd_labels_check(self, params):
+        wanted = [str(i) for i in (params.get("ids") or [])]
+        labels = self._labels()
+        targets = [row for row in labels if not wanted or row.get("id") in wanted]
+        if not targets:
+            return self._labels_state()
+        # Bandcamp first: one request each, so the cheap answers arrive before
+        # the expensive ones even if the user closes the screen halfway.
+        targets.sort(key=lambda row: 0 if row.get("sourceKind") == "bandcamp" else 1)
+        self._discover_pool.submit(self._run_label_check, [row["id"] for row in targets])
+        return self._labels_state()
+
+    def _run_label_check(self, ids):
+        for label_id in ids:
+            try:
+                self._check_one_label(label_id)
+            except Exception:                          # noqa: BLE001 - worker
+                # One unreachable catalogue must not stop the rest. The row
+                # simply keeps its old counts and its old lastCheckedAt, which
+                # is what "we could not look" honestly looks like.
+                continue
+
+    def _check_one_label(self, label_id):
+        labels = self._labels()
+        label = self._find_label(labels, label_id)
+        payload = discover_mod.browse(
+            label.get("sourceKind") or "",
+            label.get("kind") or "",
+            entity_id=label.get("entityId"),
+            name=label.get("name"),
+            url=label.get("url"),
+            discogs_token=self._discogs_token(),
+            # Fetched once and kept. A logo does not change, and this is the
+            # only place that pays for one.
+            want_image=not label.get("imageUri"),
+        )
+        releases = payload.get("releases") or []
+        seen = {self._release_key(r) for r in releases if self._release_key(r)}
+
+        known = set(label.get("knownIds") or [])
+        fresh = seen - known
+
+        if label.get("sourceKind") == "discogs":
+            # Recent by its own year, as well as unseen. Without this the first
+            # check of any catalogue reports its entire back catalogue as new,
+            # and every later one reports whatever a volunteer happened to
+            # catalogue that week.
+            this_year = time.gmtime().tm_year
+            recent = {
+                self._release_key(r) for r in releases
+                if isinstance(r.get("year"), int)
+                and r["year"] >= this_year - self.NEW_RELEASE_YEARS
+            }
+            fresh &= recent
+
+        labels = self._labels()
+        label = self._find_label(labels, label_id)
+        label["lastCheckedAt"] = time.time()
+        label["knownIds"] = sorted(seen)
+        if payload.get("imageUri"):
+            label["imageUri"] = payload["imageUri"]
+        # A FIRST check teaches the baseline and announces nothing. Reporting
+        # three hundred "new" releases the first time you press the button
+        # would be true and useless.
+        label["newCount"] = 0 if not known else label.get("newCount", 0) + len(fresh)
+        self._labels_publish(labels)
 
     def _cmd_session_list(self, _params):
         sessions = self._sessions()

@@ -3182,3 +3182,70 @@
 /* --------------------------------------------- labels & artists filter --- */
 
 .watches__filter { margin-top: var(--sp-3); }
+
+/* ============================================== labels & artists, by view == */
+
+/* The label's logo or the artist's photo. Sized by the component, like the
+   collection's covers, because the row wants 44px and the grid wants 132 and a
+   CSS-only size would need a second class per call site.
+
+   No viewport gating here, unlike a shelf of covers: this is ONE image per
+   watched catalogue, already inlined by the sidecar and already in the payload.
+   There is nothing left to fetch, so there is nothing to defer. */
+.watch__face {
+  position: relative; flex: none; overflow: hidden;
+  border-radius: var(--radius-md); background: var(--bg-sunken);
+}
+
+/* A count, not a dot — see the note in LabelsView. Accent rather than red:
+   this is something good arriving, not a fault. */
+.watch__new,
+.watchgrid__new {
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent); color: var(--text-on-accent);
+  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
+  line-height: 1.45; flex: none;
+}
+
+.watches__tools { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+
+/* ------------------------------------------------------------------- grid */
+
+.watchgrid {
+  display: grid; gap: var(--sp-4); padding: var(--sp-2) 0;
+  /* auto-fill, not auto-fit: four watched labels should stay four cards, not
+     stretch to fill a wide window. Same reasoning as the collection grid. */
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+}
+.watchgrid__card {
+  position: relative;
+  display: flex; flex-direction: column; gap: 2px;
+  border: none; background: transparent; padding: 0;
+  font: inherit; color: inherit; text-align: left; cursor: default;
+  min-width: 0;
+}
+.watchgrid__card .watch__face {
+  width: 100% !important; height: auto !important; aspect-ratio: 1;
+  margin-bottom: var(--sp-2);
+}
+/* The same quiet left edge the rows use for "never opened", turned into a ring
+   — a card has no left edge to speak of. */
+.watchgrid__card[data-unread='true'] .watch__face {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.watchgrid__new { position: absolute; top: var(--sp-2); right: var(--sp-2); }
+.watchgrid__name {
+  font-size: var(--fs-secondary); letter-spacing: var(--tr-secondary);
+  color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.watchgrid__kind {
+  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
+  text-transform: uppercase; color: var(--text-quaternary);
+}
+.watchgrid__facts {
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

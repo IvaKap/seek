@@ -134,7 +134,8 @@ describe('sameCatalogue', () => {
       id: 'l1', sourceKind: 'discogs', kind: 'label', name: 'Hyperdub',
       url: 'https://www.discogs.com/label/1119', entityId: 1119,
       addedAt: NOW, lastSeenAt: null, releaseCount: null,
-      ownedCount: null, wantedCount: null, note: '', ...over,
+      ownedCount: null, wantedCount: null, note: '',
+      imageUri: null, lastCheckedAt: null, newCount: 0, knownIds: [], ...over,
     };
   }
 
