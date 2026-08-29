@@ -533,6 +533,30 @@ export function SettingsView({
               </Group>
 
               <Group title="After downloading">
+                {/* Stated where the switches are, not on a screen you visit
+                    afterwards. Everything in this group changes files on disk,
+                    and Rekordbox remembers a track by its PATH — so the danger
+                    is specific rather than vague, and worth naming precisely:
+                    `autoOrganise` MOVES and therefore breaks the reference,
+                    `embedArtwork` rewrites in place and does not, and
+                    `writeCoverJpg` only adds a sibling file.
+
+                    This is a warning, not a solution, and it should not stay
+                    one. The fix that would remove it without ever writing to
+                    the Rekordbox database — a non-negotiable, and rightly, since
+                    that file is held open, encrypted since 6, and a half-written
+                    row costs someone their library — is to read the collection
+                    XML Rekordbox EXPORTS, and refuse to move the files already
+                    in it. That turns this paragraph into a guarantee. */}
+                <p className="settings__notice settings__notice--warn">
+                  <strong>If these files are already in Rekordbox:</strong> moving
+                  a track makes Rekordbox show it as missing, because it remembers
+                  where the file was, not what it is. Rewriting tags in place does
+                  not lose the track, but Rekordbox keeps its own copy of the
+                  metadata and will not pick the change up. Seek never touches the
+                  Rekordbox database itself. Organise files before you import them,
+                  or leave these off for a collection Rekordbox already knows.
+                </p>
                 <Row
                   label="Organise completed downloads"
                   hint="Move finished files into Artist/Year - Album/ using the MusicBrainz match. Never overwrites, never leaves the download folder."
