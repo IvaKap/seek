@@ -3070,3 +3070,95 @@
   .updbar__fill[data-indeterminate='true'] { animation: none; width: 100%; opacity: 0.4; }
   .updbar__fill { transition: none; }
 }
+
+/* ================================================= the collection, by view == */
+
+/* Size comes from the component, because the grid card and the table row want
+   the same artwork at very different scales and a CSS-only size would need a
+   second class per call site. Everything else is shared with .art. */
+.art--lib { position: relative; }
+.libgrid .art--lib { border-radius: var(--radius-md); }
+
+/* Comfortable and compact are one row at two paddings — see LibraryView. */
+.wish[data-density='compact'] .wish__row { padding-top: var(--sp-1); padding-bottom: var(--sp-1); }
+
+/* ------------------------------------------------------------------ table */
+
+/* One template shared by the header and every row, so a column cannot drift
+   out of line with its own heading. Name takes the slack; the rest are fixed
+   because they hold numbers that should sit in a column, not wander. */
+.libtable {
+  display: flex; flex-direction: column;
+  --libtable-cols: minmax(10rem, 1fr) minmax(8rem, 0.7fr) 4.5rem 5.5rem 6rem 4rem;
+}
+.libtable__head,
+.libtable__row {
+  display: grid; grid-template-columns: var(--libtable-cols);
+  gap: var(--sp-3); align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+  text-align: left;
+}
+.libtable__head {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--material-header);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--separator);
+  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+/* Every column but the name holds a number or a short token, and those read
+   as a column only when they share an edge. */
+.libtable__head span:not(:first-child) { text-align: right; }
+.libtable__row {
+  border: none; background: transparent; font: inherit; color: inherit;
+  border-bottom: 0.5px solid var(--separator);
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .libtable__row:hover { background: var(--bg-hover); }
+}
+.libtable__name { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.libtable__title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-secondary); letter-spacing: var(--tr-secondary);
+}
+.libtable__cell {
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- grid */
+
+.libgrid {
+  display: grid; gap: var(--sp-4); padding: var(--sp-4);
+  /* auto-fill, not auto-fit: a shelf of three records should stay three
+     record-sized cards, not stretch them across the whole window. */
+  grid-template-columns: repeat(auto-fill, minmax(9.25rem, 1fr));
+}
+.libgrid__card {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  border: none; background: transparent; padding: 0;
+  font: inherit; color: inherit; text-align: left; cursor: default;
+  min-width: 0;
+}
+.libgrid__card .art--lib {
+  width: 100% !important; height: auto !important; aspect-ratio: 1;
+  margin-bottom: var(--sp-1);
+}
+.libgrid__title {
+  font-size: var(--fs-secondary); letter-spacing: var(--tr-secondary);
+  color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.libgrid__artist,
+.libgrid__facts {
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.libgrid__artist { color: var(--text-secondary); }
+.libgrid__facts { color: var(--text-tertiary); }
+
+/* --------------------------------------------- labels & artists filter --- */
+
+.watches__filter { margin-top: var(--sp-3); }

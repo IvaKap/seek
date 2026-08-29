@@ -272,6 +272,16 @@ export function useSearchSession(
       const text = (q ?? query).trim();
       if (!text) return;
 
+      /* The box always shows the search that is running.
+       *
+       * Callers used to pair `setQuery(q)` with `run(q)` by hand, and most did
+       * — but a few only called `run`, which was invisible while the field
+       * happened to hold a demo query and became a plain contradiction once it
+       * started empty: results on screen and a box denying any search was made.
+       * Doing it here makes the pairing impossible to forget; the callers that
+       * already set it are setting it to the same string. */
+      if (q !== undefined) setQuery(text);
+
       // Record it before running. Fire-and-forget: a history write that fails
       // must never stop a search, which is the thing the user actually asked
       // for. Only real searches count — replaying the fixture is not history.

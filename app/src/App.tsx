@@ -78,6 +78,10 @@ const DENSITY_KEY = 'seek.density';
  * have already decided on — and a collector who wants roomy release cards while
  * choosing usually wants a dense table while watching them arrive. */
 const DL_DENSITY_KEY = 'seek.density.downloads';
+/* And the collection keeps its own, for the same reason again: picking through
+ * records wants covers, auditing what you own wants a table, and neither
+ * answer should be imposed by what you last chose on a different screen. */
+const LIB_DENSITY_KEY = 'seek.density.library';
 /* The table's columns. Local, like density, and for the same reason: it is a
    view preference about this machine's window, not an account setting the
    sidecar has any use for. */
@@ -166,6 +170,10 @@ export default function App() {
 
   const [dlDensity, setDlDensity] = useState<Density>(
     () => storedDensity(DL_DENSITY_KEY, 'table'),
+  );
+  /* Grid by default: the collection is the one list here you read by cover. */
+  const [libDensity, setLibDensity] = useState<Density>(
+    () => storedDensity(LIB_DENSITY_KEY, 'grid'),
   );
   const searchRef = useRef<HTMLInputElement>(null);
   /* Prefs first: the search session scores sources using real transfer
@@ -435,6 +443,15 @@ export default function App() {
     }
   }, []);
 
+  const changeLibDensity = useCallback((d: Density) => {
+    setLibDensity(d);
+    try {
+      localStorage.setItem(LIB_DENSITY_KEY, d);
+    } catch {
+      /* nothing to do — density simply won't be remembered */
+    }
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -556,7 +573,7 @@ export default function App() {
       /* Only where there is something to go to, matching the sidebar — a
          palette entry that lands on an empty state is a dead end. */
       ...(labels.labels.length > 0
-        ? [{ id: 'go.labels', group: 'Go', label: 'Labels', run: go2('labels') }]
+        ? [{ id: 'go.labels', group: 'Go', label: 'Labels & Artists', run: go2('labels') }]
         : []),
       { id: 'go.followed', group: 'Go', label: 'Followed', run: go2('followed') },
       { id: 'go.browse', group: 'Go', label: 'Browse a user', run: go2('browsing') },
@@ -812,6 +829,9 @@ export default function App() {
         ) : section === 'collections' ? (
           <LibraryView
             library={library}
+            artwork={artwork}
+            density={libDensity}
+            onDensity={changeLibDensity}
             onSearch={(q) => { setSection('search'); session.run(q); }}
           />
         ) : section === 'want' ? (

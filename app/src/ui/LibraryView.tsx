@@ -19,11 +19,116 @@ import type { LibraryRelease } from '../data/libraryStore.ts';
 import { StatsView } from './StatsView.tsx';
 import { SegmentedControl } from './controls.tsx';
 import type { Segment } from './controls.tsx';
+import { ViewMenu } from './ViewMenu.tsx';
+import type { Density } from './ViewMenu.tsx';
+import type { ArtworkSession } from '../data/artworkStore.ts';
+import { useNearViewport } from './useNearViewport.ts';
+import { Placeholder } from './ReleaseCard.tsx';
+import { IconRelease } from '../icons/index.tsx';
 
 const TABS: Segment<'releases' | 'stats'>[] = [
   { value: 'releases', label: 'Releases' },
   { value: 'stats', label: 'Statistics' },
 ];
+
+/**
+ * A cover, or the coloured placeholder that stands in for one.
+ *
+ * Same pipeline the transfer lists use: viewport-gated and batched, because a
+ * collection is thousands of releases and asking for every cover on mount
+ * would queue thousands of rate-limited lookups to draw twenty of them.
+ */
+function Cover({ r, artwork, px }: { r: LibraryRelease; artwork?: ArtworkSession; px: number }) {
+  const key = `lib:${r.key}`;
+  const [ref, near] = useNearViewport();
+
+  // In an effect rather than in render: React double-invokes render in
+  // development, and a network request is not a thing to fire while deciding
+  // what to draw.
+  useEffect(() => {
+    if (near) artwork?.want(key, r.artist, r.release);
+  }, [near, artwork, key, r.artist, r.release]);
+
+  const art = artwork?.get(key);
+  return (
+    <span className="art art--lib" ref={ref} style={{ width: px, height: px }} aria-hidden>
+      <Placeholder seed={`${r.artist}${r.release}`} />
+      <IconRelease size={Math.round(px * 0.32)} painted={1.3} className="art__fallback" />
+      {art?.state === 'ready' && (
+        <img className="art__img" src={art.dataUri} alt="" loading="lazy" />
+      )}
+    </span>
+  );
+}
+
+/** The column order the table shows. Kept here so the header and the rows
+ *  cannot drift apart — they read the same list. */
+const TABLE_COLUMNS = ['Release', 'Artist', 'Tracks', 'Size', 'Format', 'Year'] as const;
+
+function LibraryTable({
+  rows, artwork, onSearch,
+}: {
+  rows: LibraryRelease[];
+  artwork?: ArtworkSession;
+  onSearch(query: string): void;
+}) {
+  return (
+    <div className="libtable">
+      <div className="libtable__head" aria-hidden>
+        {TABLE_COLUMNS.map((c) => <span key={c}>{c}</span>)}
+      </div>
+      {rows.map((r) => (
+        <button
+          type="button"
+          key={r.key}
+          className="libtable__row pressable"
+          title={r.folder}
+          onClick={() => onSearch(`${r.artist} ${r.release}`.trim())}
+        >
+          <span className="libtable__name">
+            <Cover r={r} artwork={artwork} px={22} />
+            <span className="libtable__title">{r.release || r.folder}</span>
+          </span>
+          <span className="libtable__cell">{r.artist || '—'}</span>
+          <span className="libtable__cell tnum">{r.trackCount}</span>
+          <span className="libtable__cell tnum">{fileSize(r.bytes)}</span>
+          <span className="libtable__cell">{r.formats || '—'}</span>
+          <span className="libtable__cell tnum">{r.year || '—'}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LibraryGrid({
+  rows, artwork, onSearch,
+}: {
+  rows: LibraryRelease[];
+  artwork?: ArtworkSession;
+  onSearch(query: string): void;
+}) {
+  return (
+    <div className="libgrid">
+      {rows.map((r) => (
+        <button
+          type="button"
+          key={r.key}
+          className="libgrid__card pressable"
+          title={r.folder}
+          onClick={() => onSearch(`${r.artist} ${r.release}`.trim())}
+        >
+          <Cover r={r} artwork={artwork} px={148} />
+          <span className="libgrid__title">{r.release || r.folder}</span>
+          <span className="libgrid__artist">{r.artist || '—'}</span>
+          <span className="libgrid__facts tnum">
+            {r.trackCount} · {fileSize(r.bytes)}
+            {r.formats && <> · {r.formats}</>}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function when(seconds: number): string {
   if (!seconds) return 'never';
@@ -123,10 +228,16 @@ function ReleaseRow({
 }
 
 export function LibraryView({
-  library, onSearch,
+  library, onSearch, density, onDensity, artwork,
 }: {
   library: LibrarySession;
   onSearch(query: string): void;
+  /* The collection has its OWN density, for the same reason Downloads does:
+   * the question you ask a shelf is not the question you ask a transfer list.
+   * Picking through records wants covers; auditing what you own wants a table. */
+  density: Density;
+  onDensity(d: Density): void;
+  artwork?: ArtworkSession;
 }) {
   const [filter, setFilter] = useState('');
   const [readTags, setReadTags] = useState(true);
@@ -254,6 +365,15 @@ export function LibraryView({
               onChange={(e) => setFilter(e.target.value)}
             />
           )}
+          {releases.length > 0 && tab === 'releases' && (
+            /* Grid is not in the default set — it exists for lists you pick
+               through by eye, and a shelf is exactly that. */
+            <ViewMenu
+              density={density}
+              onDensity={onDensity}
+              densities={['comfortable', 'compact', 'table', 'grid']}
+            />
+          )}
         </div>
       </header>
 
@@ -302,11 +422,21 @@ export function LibraryView({
               )}
             </div>
 
-            <ul className="wish">
-              {shown.slice(0, 500).map((r) => (
-                <ReleaseRow key={r.key} r={r} library={library} onSearch={onSearch} />
-              ))}
-            </ul>
+            {density === 'grid' ? (
+              <LibraryGrid rows={shown.slice(0, 500)} artwork={artwork} onSearch={onSearch} />
+            ) : density === 'table' ? (
+              <LibraryTable rows={shown.slice(0, 500)} artwork={artwork} onSearch={onSearch} />
+            ) : (
+              /* Comfortable and compact are the SAME rows at two paddings — the
+                 row already carries the gap-finding and the MusicBrainz match,
+                 and a second copy of that at a tighter spacing would be two
+                 things to keep in step for no gain. CSS does the difference. */
+              <ul className="wish" data-density={density}>
+                {shown.slice(0, 500).map((r) => (
+                  <ReleaseRow key={r.key} r={r} library={library} onSearch={onSearch} />
+                ))}
+              </ul>
+            )}
             {shown.length > 500 && (
               <p className="settings__hint">
                 Showing the first 500. Use the filter to narrow it down.
