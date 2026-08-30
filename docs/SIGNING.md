@@ -64,8 +64,14 @@ Keychain Access → **Certificate Assistant** → *Create a Certificate…*
 | Identity Type | Self Signed Root |
 | Certificate Type | **Code Signing** |
 
-Leave *Let me override defaults* unchecked — that puts it in your **login**
-keychain, which is what you want.
+**Do tick *Let me override defaults*.** The defaults are wrong in two ways that
+are cheap to fix now and expensive later — a **365-day validity** (see below)
+and an **email address pre-filled from your Apple ID**, which is then embedded
+in the certificate and readable by anyone who runs `codesign -dvvv` on a
+shipped build. Clear the email field; set the validity to several thousand days.
+
+Keep the keychain as **login** while overriding — that is the one default worth
+keeping.
 
 **Login, never System.** The login keychain is unlocked when you log in, so
 `codesign` running as you can reach the private key without prompting. System is
@@ -74,11 +80,40 @@ on the Mac for no benefit. It makes no difference to CI either way: Tauri
 imports the `.p12` into a temporary keychain on the runner, so the local copy
 only matters if you also build locally with `release.sh`.
 
-**If `codesign` later refuses with "no identity found"**, the certificate needs
-to be trusted for its purpose: Keychain Access → *My Certificates* → double-click
-*Seek Self Signed* → Trust → **Code Signing: Always Trust**. Check this before
-concluding the approach has failed — it is a local trust setting, not evidence
-about TCC.
+**A fresh certificate is untrusted, and this WILL look like failure.** Right
+after creating it:
+
+```
+$ security find-identity -v -p codesigning
+     0 valid identities found
+```
+
+Drop the `-v` — which filters to *valid* identities — and the truth appears:
+
+```
+$ security find-identity -p codesigning
+  1) 0F29EF42… "Seek Self Signed" (CSSMERR_TP_NOT_TRUSTED)
+```
+
+The certificate is fine; nothing is trusted until you say so. Keychain Access →
+*My Certificates* → double-click *Seek Self Signed* → Trust → **Code Signing:
+Always Trust**. Then `-v` lists it.
+
+Two things this does **not** mean. It is a local keychain setting, so it says
+nothing about whether TCC matching works — only the two-build test settles that.
+And it is not needed on CI: importing the `.p12` into a fresh keychain yields a
+*valid* identity with no trust step, verified by the round-trip in step 2.
+
+Also use `-p codesigning`. Without it the default X.509 Basic policy reports
+`0 valid identities found` for a perfectly good code-signing certificate.
+
+> **It expires — check the date.** Certificate Assistant defaults to **365
+> days**; the one in use runs to **2027-08-30**. `codesign` refuses an expired
+> certificate, and replacing it is a new identity, which is the one thing this
+> file says never to do. The free moment to widen it is **before the first
+> signed release** — after that, every user pays a re-prompt for the change.
+> Recreate it with *Let me override defaults* and a validity of several
+> thousand days, or accept a dated reset and write the date down.
 
 > **Never regenerate it.** A new certificate is a new identity, and every user is
 > back to being prompted on their next update — the exact problem this exists to
@@ -88,13 +123,53 @@ about TCC.
 ## 2. Export it
 
 Keychain Access → **My Certificates** → right-click *Seek Self Signed* →
-*Export…* → `.p12`, with a password.
-
-Then, in a terminal:
+*Export…* → `.p12`, with a password. Or from a terminal, which is what was done:
 
 ```bash
-base64 -i ~/Desktop/seek-signing.p12 | pbcopy
+security export -k ~/Library/Keychains/login.keychain-db \
+  -t identities -f pkcs12 -P "$PASS" -o ~/Desktop/seek-signing.p12
 ```
+
+`-t identities` exports **every** identity in the keychain, so confirm there is
+only the one first — `security find-identity -p codesigning` — or the bundle
+carries unrelated private keys into a repository secret.
+
+Verify it before trusting it, because a bad `.p12` fails on CI with nothing
+useful in the log:
+
+```bash
+openssl pkcs12 -legacy -in ~/Desktop/seek-signing.p12 -passin pass:"$PASS" \
+  -nokeys | openssl x509 -noout -subject -dates -purpose
+```
+
+**`-legacy` is not optional.** `security export` writes PKCS#12 encrypted with
+`RC2-40-CBC`, which OpenSSL 3 refuses by default:
+
+```
+error:0308010C:digital envelope routines:…:unsupported,
+Algorithm (RC2-40-CBC : 0)
+```
+
+That is the algorithm, not a corrupt file. Apple's own `security import` reads
+it without complaint, which is what Tauri calls on the runner — so the faithful
+check is the round-trip:
+
+```bash
+security create-keychain -p "$KCPASS" "$KC"
+security unlock-keychain -p "$KCPASS" "$KC"
+security import ~/Desktop/seek-signing.p12 -k "$KC" -P "$PASS" -T /usr/bin/codesign -f pkcs12
+security find-identity -p codesigning "$KC"   # expect 1 VALID identity
+security delete-keychain "$KC"
+```
+
+Then base64 it:
+
+```bash
+base64 -i ~/Desktop/seek-signing.p12 | tr -d '\n' | pbcopy
+```
+
+**`tr -d '\n'` matters** — the Rust base64 decoder on the other end rejects
+embedded newlines.
 
 That is now on your clipboard. **Do not paste it into a chat, an issue, or a
 commit** — it is the private key.
@@ -110,9 +185,30 @@ repository secret*:
 | `APPLE_CERTIFICATE_PASSWORD` | the password you set on the `.p12` |
 | `APPLE_SIGNING_IDENTITY` | `Seek Self Signed` |
 
+Set the password with no trailing newline — `printf '%s' "$PASS" | gh secret
+set APPLE_CERTIFICATE_PASSWORD` — rather than relying on whatever the tool
+trims. A password with a stray `\n` fails the import on CI and says only that
+the import failed.
+
 Tauri's CLI reads all three natively — confirmed in the shipped binary — and
 imports the certificate into a temporary keychain itself. No manual `security`
 commands are needed.
+
+**`tauri.conf.json` still says `"signingIdentity": "-"`, and that is correct.**
+The environment variable wins; the config is the fallback. From the CLI source
+at the pinned version, `crates/tauri-cli/src/interface/rust.rs:1467`:
+
+```rust
+let signing_identity = match std::env::var_os("APPLE_SIGNING_IDENTITY") {
+  Some(signing_identity) => Some(…),
+  None => config.macos.signing_identity,
+};
+```
+
+So the secrets alone flip the build to signed, and a checkout with no secrets —
+anyone building locally — stays ad-hoc exactly as before. Do not "fix" the `-`
+to the certificate name: that would sign every local build with an identity the
+machine does not have, and break the build for everyone else.
 
 **The workflow already handles this.** `.github/workflows/release.yml` has a
 conditional step that exports these only when they are present, so builds keep
