@@ -296,6 +296,17 @@ const ICONS = {
   'info': "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 16v-4\"/><path d=\"M12 8h.01\"/>",
   'disc-3': "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M6 12c0-1.7.7-3.2 1.8-4.2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M18 12c0 1.7-.7 3.2-1.8 4.2\"/>",
   'circle': "<circle cx=\"12\" cy=\"12\" r=\"10\"/>",
+  // The six sidebar glyphs, same geometry as app/src/icons/supplied/*.svg.
+  // Four of these are VENDORED in the app because lucide-react 0.487.0 either
+  // lacks them or draws them differently — see the comment in
+  // app/src/icons/index.tsx. Keeping them here by hand is the same reason
+  // add-icon.mjs cannot fetch them from node_modules.
+  'folder-check': "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/><path d=\"m9 13 2 2 4-4\"/>",
+  'globe-off': "<path d=\"M10.114 4.462A14.5 14.5 0 0 1 12 2a10 10 0 0 1 9.313 13.643\"/><path d=\"M15.557 15.556A14.5 14.5 0 0 1 12 22 10 10 0 0 1 4.929 4.929\"/><path d=\"M15.892 10.234A14.5 14.5 0 0 0 12 2a10 10 0 0 0-3.643.687\"/><path d=\"M17.656 12H22\"/><path d=\"M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45\"/><path d=\"M2 12h10\"/><path d=\"m2 2 20 20\"/>",
+  'contact-round': "<path d=\"M16 2v2\"/><path d=\"M17.915 21a6 6 0 10-12 0\"/><path d=\"M8 2v2\"/><circle cx=\"12\" cy=\"11\" r=\"4\"/><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/>",
+  'mails': "<path d=\"M17 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 1-1.732\"/><path d=\"m22 5.5-6.419 4.179a2 2 0 0 1-2.162 0L7 5.5\"/><rect x=\"7\" y=\"3\" width=\"15\" height=\"12\" rx=\"2\"/>",
+  'clover': "<path d=\"M16.17 7.83 2 22\"/><path d=\"M4.02 12a2.827 2.827 0 1 1 3.81-4.17A2.827 2.827 0 1 1 12 4.02a2.827 2.827 0 1 1 4.17 3.81A2.827 2.827 0 1 1 19.98 12a2.827 2.827 0 1 1-3.81 4.17A2.827 2.827 0 1 1 12 19.98a2.827 2.827 0 1 1-4.17-3.81A1 1 0 1 1 4 12\"/><path d=\"m7.83 7.83 8.34 8.34\"/>",
+  'list-clock': "<path d=\"M16 13v2.2l1.6 1\"/><path d=\"M3 12h3.458\"/><path d=\"M3 19h3.832\"/><path d=\"M3 5h18\"/><circle cx=\"16\" cy=\"15\" r=\"6\"/>",
 };
 
 /** One icon, as a frame of vectors at the app's painted stroke weight. */
@@ -332,24 +343,24 @@ const NAV = [
   ]],
   ['Library', [
     ['Downloads', 'download', '⌘2', 3],
-    ['Completed', 'library', '⌘3', null],
-    ['Failed', 'folder', null, null],
+    ['Completed', 'folder-check', '⌘3', null],
+    ['Failed', 'globe-off', null, null],
     ['Uploads', 'arrow-up', null, 2],
     ['Statistics', 'arrow-down-up', null, null],
   ]],
   ['Discovery', [
     ['Library', 'library', null, null],
-    ['Want List', 'star', '⌘8', 7],
+    ['Want List', 'clover', '⌘8', 7],
     ['Dig Sessions', 'folder', '⌘9', null],
     ['Labels & Artists', 'library', null, null],
     ['Wishlist', 'search', null, null],
-    ['Search History', 'search', null, null],
+    ['Search History', 'list-clock', null, null],
     ['Saved Searches', 'library', null, null],
   ]],
   ['Users', [
-    ['Followed', 'users', null, null],
+    ['Followed', 'contact-round', null, null],
     ['Chat rooms', 'message-square', '⌘5', 4],
-    ['Private chats', 'users', '⌘6', 1],
+    ['Private chats', 'mails', '⌘6', 1],
     ['Browse', 'user', null, null],
   ]],
 ];
