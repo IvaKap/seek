@@ -15,6 +15,7 @@ import {
   IconChat, IconChevronDown, IconDownload, IconLibrary, IconRelease, IconSearch,
   IconArrowUp, IconSettings, IconTransfers, IconUser,
   IconCompleted, IconFailed, IconFollowed, IconMessages, IconWant, IconHistory,
+  IconLabels,
 } from '../icons/index.tsx';
 import { speed } from '../domain/format.ts';
 import type { Throughput } from '../data/throughputStore.ts';
@@ -179,7 +180,7 @@ export function Sidebar({
         // watches one, and the empty state is reachable from the catalogue
         // screen where watching actually happens.
         ...(hasLabels
-          ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLibrary size={16} /> }]
+          ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLabels size={16} /> }]
           : []),
         { id: 'wishlist', label: 'Wishlist', icon: <IconSearch size={16} /> },
         { id: 'history', label: 'Search History', icon: <IconHistory size={16} /> },

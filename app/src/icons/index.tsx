@@ -71,7 +71,7 @@ function wrap(Component: LucideIcon, displayName: string) {
 }
 
 /*
- * FOUR ICONS TAKEN AS GEOMETRY RATHER THAN AS IMPORTS, for two reasons.
+ * FIVE ICONS TAKEN AS GEOMETRY RATHER THAN AS IMPORTS, for two reasons.
  *
  * `globe-off` and `list-clock` DO NOT EXIST in lucide-react 0.487.0 — they were
  * added upstream later. Bumping the package was the alternative, and the icon
@@ -79,11 +79,13 @@ function wrap(Component: LucideIcon, displayName: string) {
  * `triangle-alert`, and this file imports `AlertTriangle`), so a bump is a diff
  * to read rather than a number to change. Two paths is the duller risk.
  *
- * `contact-round` and `mails` DO exist in 0.487.0 and ARE DRAWN DIFFERENTLY
+ * `contact-round`, `mails` and `heart-handshake` DO exist in 0.487.0 and ARE
+ * DRAWN DIFFERENTLY
  * there. Checked, not assumed: 0.487.0's contact-round sweeps its shoulder arc
- * the other way (`large-arc` 0 against 1, starting a unit lower), and its mails
- * is a different drawing altogether. These six glyphs were chosen by eye, so
- * rendering a near-miss because of a version pin would quietly discard the
+ * the other way (`large-arc` 0 against 1, starting a unit lower), its mails is a
+ * different drawing altogether, and its heart-handshake is FOUR subpaths where
+ * the supplied one is a single combined path. These glyphs were chosen by eye,
+ * so rendering a near-miss because of a version pin would quietly discard the
  * choice.
  *
  * `folder-check` and `clover` are byte-identical in 0.487.0 and are imported
@@ -129,6 +131,12 @@ const GlobeOff = vendored('GlobeOff', (
     <path d="M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45" />
     <path d="M2 12h10" />
     <path d="m2 2 20 20" />
+  </>
+));
+
+const HeartHandshake = vendored('HeartHandshake', (
+  <>
+    <path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762" />
   </>
 ));
 
@@ -214,3 +222,4 @@ export const IconFollowed = wrap(ContactRound, 'Followed');
 export const IconMessages = wrap(Mails, 'Messages');
 export const IconWant = wrap(Clover, 'Want');
 export const IconHistory = wrap(ListClock, 'History');
+export const IconLabels = wrap(HeartHandshake, 'Labels');

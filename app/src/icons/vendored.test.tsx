@@ -25,7 +25,7 @@ import { describe, expect, it, afterEach } from 'vitest';
 import { cleanup, render } from '@testing-library/react';
 import {
   IconCompleted, IconFailed, IconFollowed, IconMessages, IconWant, IconHistory,
-  strokeFor,
+  IconLabels, strokeFor,
 } from './index.tsx';
 
 /* `?raw` rather than `node:fs`. Reading the file at runtime would drag
@@ -39,6 +39,7 @@ import contactRoundSvg from './supplied/contact-round.svg?raw';
 import mailsSvg from './supplied/mails.svg?raw';
 import cloverSvg from './supplied/clover.svg?raw';
 import listClockSvg from './supplied/list-clock.svg?raw';
+import heartHandshakeSvg from './supplied/heart-handshake.svg?raw';
 
 afterEach(cleanup);
 
@@ -74,6 +75,7 @@ const ICONS: Array<[string, string, () => ReactElement]> = [
   ['mails', mailsSvg, () => <IconMessages />],
   ['clover', cloverSvg, () => <IconWant />],
   ['list-clock', listClockSvg, () => <IconHistory />],
+  ['heart-handshake', heartHandshakeSvg, () => <IconLabels />],
 ];
 
 describe('every sidebar icon renders the glyph that was supplied', () => {
