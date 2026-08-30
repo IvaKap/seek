@@ -781,7 +781,8 @@ const ORDER = [
   'sessions', 'labels', 'wishlist', 'history',
   'saved', 'followed', 'chat', 'messages',
   'browse', 'settings-account', 'settings-folders', 'settings-downloads',
-  'settings-network', 'settings-lookups', 'settings-about',
+  'settings-network', 'settings-lookups', 'settings-about', 'dig',
+  'dig-album', 'catalogue',
 ];
 const COLS = 4;
 const GAP_X = 120;
@@ -800,6 +801,8 @@ const SCREEN_NAMES = {
   'settings-account': 'Settings — Account', 'settings-folders': 'Settings — Folders',
   'settings-downloads': 'Settings — Downloads', 'settings-network': 'Settings — Network',
   'settings-lookups': 'Settings — Lookups', 'settings-about': 'Settings — About',
+  dig: 'Dig Bar', 'dig-album': 'Dig Bar — release', catalogue: 'Catalogue',
+  readme: 'README — for review',
 };
 
 
@@ -1142,6 +1145,104 @@ SCREENS.catalogue = () => screen('Catalogue', 'Search', [
   ]),
 ]);
 
+// --- the README, as a card to read before it ships --------------------------
+
+/* Iva reviews copy in Figma, so the README goes there BEFORE it goes in the
+   file. This is a document, not an app screen: no sidebar, no window chrome,
+   one column at a readable measure. It renders what the README actually says,
+   so approving the card approves the text. */
+
+const DOC_W = 900;
+const DOC_TEXT = DOC_W - SP[6] * 2;
+
+function h(level, text) {
+  return T(text, level === 1 ? 'title' : level === 2 ? 'section' : 'sec',
+    { w: level === 3 ? 'm' : undefined });
+}
+
+function para(text, tone = 'text/secondary') {
+  return T(text, 'cap', { c: tone, width: DOC_TEXT });
+}
+
+/** Where a picture goes, and which file it is. */
+function shotSlot(caption, file) {
+  return F(`shot/${file}`, {
+    g: SP[1], p: SP[3], w: DOC_TEXT, r: RAD.sm, bg: 'bg/sunken',
+    st: 'line/separator', sw: 1,
+    kids: [
+      F('r', {
+        dir: 'h', g: SP[2], align: 'CENTER',
+        kids: [I('folder-open', 13, 'text/tertiary', 1.4),
+               T(file, 'micro', { c: 'text/tertiary' })],
+      }),
+      T(caption, 'micro', { c: 'text/quaternary', width: DOC_TEXT - SP[3] * 2 }),
+    ],
+  });
+}
+
+/** A section that is new or rewritten, so the eye goes to it first. */
+function changed(kind) {
+  return F('tag', {
+    p: [1, 7, 1, 7], r: RAD.pill,
+    bg: kind === 'new' ? 'accent/base' : 'bg/sunken',
+    kids: [T(kind === 'new' ? 'NEW SECTION' : 'REWRITTEN', 'micro',
+      { c: kind === 'new' ? 'text/primary' : 'text/tertiary', upper: true })],
+  });
+}
+
+function headWithTag(text, kind) {
+  return F('hd', {
+    dir: 'h', g: SP[2], align: 'CENTER', w: DOC_TEXT,
+    kids: [h(2, text), kind && changed(kind)],
+  });
+}
+
+SCREENS.readme = () => F('README — for review', {
+  g: SP[4], p: SP[6], w: DOC_W, bg: 'bg/content', r: RAD.lg,
+  st: 'line/separator', sw: 1,
+  kids: [
+    h(1, 'README — what changed'),
+    para('Everything below is the text as written. The unchanged sections (Install, API keys, Build from source, Licence) are not repeated here.', 'text/tertiary'),
+
+    headWithTag('The pictures note', 'new'),
+    para('Sits directly under the hero image, before the "Unofficial" note.'),
+    para('“About the pictures. The interface shots on this page are rendered from Seek\u2019s design file, which is built from the same tokens, type scale and icon set the app ships \u2014 so they show the real layout with sample records in it. The spectrogram below is a real measurement from a real file, and the install screenshots are real macOS dialogs; neither is a mock-up, because both are evidence rather than illustration.”', 'text/primary'),
+    shotSlot('Hero \u2014 Search, with three tabs open', 'docs/screenshots/search.png'),
+
+    headWithTag('A watchlist of labels and artists', 'rewritten'),
+    para('Was “A watchlist of labels”. Adds artists, the faces, the grid, and the new-release check \u2014 and states the cost honestly.'),
+    para('\u2022 Artists count as catalogues too. They always did \u2014 the engine accepted either \u2014 but everything on screen said “labels”, so half of what this screen does was invisible unless you happened to try it.'),
+    para('\u2022 Each row carries the catalogue\u2019s own logo, pulled from Discogs or off the Bandcamp page and stored inside Seek, never hot-linked. Switch to Grid and the screen becomes a shelf of them.'),
+    para('\u2022 Check for new looks for releases added since the last time you looked, and badges the row with a count \u2014 four new is worth crossing the room for and one new is worth knowing about later, which is why it is a number and not a dot.'),
+    para('\u2022 Warning kept in: “A brand-new release is, by definition, the one thing Soulseek is least likely to have yet. Some of these notifications will lead to an empty search.”'),
+    shotSlot('The label and artist watchlist', 'docs/screenshots/watchlist.png'),
+
+    headWithTag('Several searches at once', 'new'),
+    para('Every search opens its own tab. Going back to one restores it exactly \u2014 its results, its filters, its grouping, what you had expanded. \u2318T for a new one, \u2318W to close it, or the + above the field.'),
+    para('A tab is a search put away, not a second engine. Soulseek allows one search at a time, so leaving a tab whose search is still streaming stops it \u2014 that tab keeps the results it had and says it was stopped, rather than quietly losing the rest. Tabs you queued a download from tidy themselves up after 45 minutes; the one you\u2019re reading never disappears under you.'),
+
+    headWithTag('Your collection, four ways', 'new'),
+    para('Comfortable, compact, table, or grid. Covers are how you pick through a shelf; the table gives you release, artist, tracks, size, format and year in aligned columns for auditing what you own.'),
+    para('Artwork is fetched only for what\u2019s on screen, so a collection of thousands doesn\u2019t queue thousands of lookups to draw twenty. Where no artwork exists \u2014 and for most underground releases none ever will \u2014 you get a mark derived from the release name, the same one every time.'),
+    shotSlot('The library as a grid of covers', 'docs/screenshots/library.png'),
+
+    headWithTag('Sharing, shown honestly', 'new'),
+    para('Soulseek is reciprocal, and Seek treats that as the point rather than an afterthought. You can see what you\u2019re uploading, to whom, and what your ratio actually is \u2014 filtered and sorted the same way your downloads are, because it is the same list going the other way.'),
+    para('It will also tell you plainly when a slow queue is the consequence of sharing nothing. That is usually the answer, and no other client says it.'),
+    shotSlot('Uploads, with filters and sorting', 'docs/screenshots/uploads.png'),
+
+    headWithTag('Smaller wording fixes', null),
+    para('\u2022 Label link section now says Seek offers to “browse its entire catalogue, start watching it, or add the lot to your want list” \u2014 it did not mention watching.'),
+    para('\u2022 Catalogue section no longer claims “500 releases”, which was tied to the old screenshot.'),
+    shotSlot('Dig Bar \u2014 a pasted label link', 'docs/screenshots/link-discogs-label.png'),
+    shotSlot('Dig Bar \u2014 a pasted release link', 'docs/screenshots/link-discogs-album.png'),
+    shotSlot('The catalogue browser', 'docs/screenshots/catalogue.png'),
+
+    headWithTag('Kept as real captures, deliberately', null),
+    para('The spectrogram (docs/screenshots/analysis.png) and the three install dialogs are NOT replaced with renders. A mock-up of a measurement would be a fabricated finding, and the install steps have to match what macOS actually shows.', 'text/primary'),
+  ],
+});
+
 // ===========================================================================
 // the page, and putting things on it
 // ===========================================================================
@@ -1190,6 +1291,13 @@ function signature(node) {
 
 /** Where a screen lives, decided by its slot in ORDER rather than by run order. */
 function placeAt(frame, key) {
+  /* Not an app screen and not the app's shape, so it does not belong in the
+     grid — it would sit on top of whatever is below it. */
+  if (key === 'readme') {
+    frame.x = 0;
+    frame.y = Math.ceil(ORDER.length / COLS) * (WIN.h + GAP_Y) + GAP_Y;
+    return;
+  }
   const i = ORDER.indexOf(key);
   const slot = i < 0 ? ORDER.length : i;
   frame.x = (slot % COLS) * (WIN.w + GAP_X);
