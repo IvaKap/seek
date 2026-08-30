@@ -56,116 +56,164 @@ foot of `.github/workflows/release.yml`.
 
 ## 1. Create the certificate — once, ever
 
-Keychain Access → **Certificate Assistant** → *Create a Certificate…*
+**The one in use was made with `openssl`, not Certificate Assistant.** The GUI
+is fine, but two of its defaults are wrong and one of them cannot be undone
+later, so the exact recipe is recorded here instead of a click path:
 
-| Field | Value |
+```bash
+cat > req.cnf <<'CNF'
+[req]
+distinguished_name = dn
+prompt = no
+x509_extensions = v3_codesign
+
+[dn]
+CN = Seek Self Signed
+C  = GE
+
+[v3_codesign]
+keyUsage             = critical, digitalSignature
+extendedKeyUsage     = critical, codeSigning
+subjectKeyIdentifier = hash
+CNF
+
+openssl req -x509 -newkey rsa:2048 -sha256 -days 7300 -noenc \
+  -keyout key.pem -out cert.pem -config req.cnf
+```
+
+Those three extensions — and the absence of `basicConstraints` — are exactly
+what Certificate Assistant's *Self Signed Root* + *Code Signing* template
+produces, confirmed by dumping the certificate it made before replacing it.
+
+**What the defaults get wrong**, if you use the GUI anyway (tick *Let me
+override defaults*):
+
+| Default | Why it matters |
 | --- | --- |
-| Name | `Seek Self Signed` |
-| Identity Type | Self Signed Root |
-| Certificate Type | **Code Signing** |
+| **365-day validity** | `codesign` refuses an expired certificate, and replacing it is a NEW IDENTITY — the one thing this file exists to avoid. `-days 7300` is 20 years |
+| **Email pre-filled from your Apple ID** | It lands in the certificate subject and ships inside every build, readable by anyone running `codesign -dvvv` on Seek.app |
 
-**Do tick *Let me override defaults*.** The defaults are wrong in two ways that
-are cheap to fix now and expensive later — a **365-day validity** (see below)
-and an **email address pre-filled from your Apple ID**, which is then embedded
-in the certificate and readable by anyone who runs `codesign -dvvv` on a
-shipped build. Clear the email field; set the validity to several thousand days.
-
-Keep the keychain as **login** while overriding — that is the one default worth
-keeping.
-
-**Login, never System.** The login keychain is unlocked when you log in, so
-`codesign` running as you can reach the private key without prompting. System is
-machine-wide, needs admin, and would make the key usable by every admin account
-on the Mac for no benefit. It makes no difference to CI either way: Tauri
-imports the `.p12` into a temporary keychain on the runner, so the local copy
-only matters if you also build locally with `release.sh`.
-
-**A fresh certificate is untrusted, and this WILL look like failure.** Right
-after creating it:
+The current certificate:
 
 ```
-$ security find-identity -v -p codesigning
-     0 valid identities found
+subject=CN=Seek Self Signed, C=GE          (no email)
+notBefore=Aug 30 13:31:13 2026 GMT
+notAfter =Aug 25 13:31:13 2046 GMT
+sha1     =DA:F5:A5:4F:5E:BD:AD:2F:FC:60:FF:11:B9:C4:1F:8F:20:98:70:D9
 ```
-
-Drop the `-v` — which filters to *valid* identities — and the truth appears:
-
-```
-$ security find-identity -p codesigning
-  1) 0F29EF42… "Seek Self Signed" (CSSMERR_TP_NOT_TRUSTED)
-```
-
-The certificate is fine; nothing is trusted until you say so. Keychain Access →
-*My Certificates* → double-click *Seek Self Signed* → Trust → **Code Signing:
-Always Trust**. Then `-v` lists it.
-
-Two things this does **not** mean. It is a local keychain setting, so it says
-nothing about whether TCC matching works — only the two-build test settles that.
-And it is not needed on CI: importing the `.p12` into a fresh keychain yields a
-*valid* identity with no trust step, verified by the round-trip in step 2.
-
-Also use `-p codesigning`. Without it the default X.509 Basic policy reports
-`0 valid identities found` for a perfectly good code-signing certificate.
-
-> **It expires — check the date.** Certificate Assistant defaults to **365
-> days**; the one in use runs to **2027-08-30**. `codesign` refuses an expired
-> certificate, and replacing it is a new identity, which is the one thing this
-> file says never to do. The free moment to widen it is **before the first
-> signed release** — after that, every user pays a re-prompt for the change.
-> Recreate it with *Let me override defaults* and a validity of several
-> thousand days, or accept a dated reset and write the date down.
 
 > **Never regenerate it.** A new certificate is a new identity, and every user is
 > back to being prompted on their next update — the exact problem this exists to
 > fix. If it is ever lost, that is a real cost, so export a backup now and keep
 > it somewhere you will still have in two years.
 
-## 2. Export it
+### Trust: not required, and the check that says otherwise is lying
 
-Keychain Access → **My Certificates** → right-click *Seek Self Signed* →
-*Export…* → `.p12`, with a password. Or from a terminal, which is what was done:
+A self-signed certificate is untrusted until you say so, and every obvious probe
+reports that as failure:
+
+```
+$ security find-identity -v -p codesigning
+     0 valid identities found
+```
+
+Drop `-v` — which filters to *valid* identities — and it appears, with the
+reason:
+
+```
+$ security find-identity -p codesigning
+  1) DA:F5:A5… "Seek Self Signed" (CSSMERR_TP_NOT_TRUSTED)
+```
+
+**`codesign` signs with it regardless.** Measured, not assumed: a certificate
+freshly imported into a keychain with no trust settings anywhere signed a binary
+non-interactively, producing `Authority=Seek Self Signed`. Trust gates
+*verification*, not the ability to sign — so **CI needs no trust step**, and
+neither does `release.sh`.
+
+Trust it locally only if you want `-v` to stop lying to you: Keychain Access →
+*My Certificates* → *Seek Self Signed* → Trust → **Code Signing: Always Trust**.
+It is a local keychain setting and says nothing about whether TCC matching
+works; only the two-build test settles that.
+
+Also always pass `-p codesigning`. Without it the default X.509 Basic policy
+reports `0 valid identities found` for a perfectly good code-signing
+certificate, for a second unrelated reason.
+
+### Only ever one identity by this name
+
+`APPLE_SIGNING_IDENTITY` is matched **by name**. While the superseded
+certificate was still installed, a signing test "succeeded" against the wrong
+one and reported a plausible `Authority=Seek Self Signed` — the result looked
+like a pass and meant nothing. Delete the old one before testing a new one:
 
 ```bash
-security export -k ~/Library/Keychains/login.keychain-db \
-  -t identities -f pkcs12 -P "$PASS" -o ~/Desktop/seek-signing.p12
+security delete-identity -Z <sha1> ~/Library/Keychains/login.keychain-db
 ```
 
-`-t identities` exports **every** identity in the keychain, so confirm there is
-only the one first — `security find-identity -p codesigning` — or the bundle
-carries unrelated private keys into a repository secret.
+## 2. Package it as a .p12
 
-Verify it before trusting it, because a bad `.p12` fails on CI with nothing
-useful in the log:
+The certificate has to reach CI as a base64 `.p12` in a repository secret.
 
 ```bash
-openssl pkcs12 -legacy -in ~/Desktop/seek-signing.p12 -passin pass:"$PASS" \
-  -nokeys | openssl x509 -noout -subject -dates -purpose
+openssl pkcs12 -export -legacy -macalg sha1 \
+  -inkey key.pem -in cert.pem -name "Seek Self Signed" \
+  -out seek-signing.p12 -passout pass:"$PASS"
 ```
 
-**`-legacy` is not optional.** `security export` writes PKCS#12 encrypted with
-`RC2-40-CBC`, which OpenSSL 3 refuses by default:
+**`-legacy -macalg sha1` is load-bearing, and getting it wrong wastes an
+afternoon.** OpenSSL 3 defaults the PKCS#12 MAC to SHA-256, which Apple's
+`security import` cannot read. It fails like this:
 
 ```
-error:0308010C:digital envelope routines:…:unsupported,
-Algorithm (RC2-40-CBC : 0)
+security: SecKeychainItemImport: MAC verification failed during PKCS12 import
+(wrong password?)
 ```
 
-That is the algorithm, not a corrupt file. Apple's own `security import` reads
-it without complaint, which is what Tauri calls on the runner — so the faithful
-check is the round-trip:
+The password is **not** wrong. It is the MAC algorithm, and the error names the
+one thing that is fine. Passing `-f pkcs12` to `security import` masks it —
+which is exactly why it has to be right here: **Tauri does not pass `-f`**
+(`crates/tauri-macos-sign/src/keychain.rs`), so a p12 that imports by hand can
+still fail on CI.
+
+If you exported from Keychain Access instead, you get Apple's own format, which
+is fine but encrypted with `RC2-40-CBC` — so plain OpenSSL 3 refuses to read it
+back and needs `-legacy` to inspect it. That too is the algorithm, not a corrupt
+file.
+
+### Verify before trusting it
+
+A bad `.p12` fails on CI with nothing useful in the log, so prove it locally
+first. The faithful check is Tauri's own sequence — note the keychain must be
+added to the **search list**, or `codesign` cannot reach the private key and
+blocks on a GUI prompt that never comes on a runner:
 
 ```bash
+KC="$HOME/Library/Keychains/probe.keychain-db"
 security create-keychain -p "$KCPASS" "$KC"
 security unlock-keychain -p "$KCPASS" "$KC"
-security import ~/Desktop/seek-signing.p12 -k "$KC" -P "$PASS" -T /usr/bin/codesign -f pkcs12
-security find-identity -p codesigning "$KC"   # expect 1 VALID identity
+security import seek-signing.p12 -P "$PASS" -T /usr/bin/codesign -k "$KC"
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC"
+security list-keychain -d user -s ~/Library/Keychains/login.keychain-db "$KC"
+
+cp /bin/echo probe-bin
+codesign -f -s "Seek Self Signed" --keychain "$KC" --timestamp=none probe-bin
+codesign -d --extract-certificates=xc probe-bin
+openssl x509 -inform der -in xc0 -noout -subject -dates -fingerprint -sha1
+
+security list-keychain -d user -s ~/Library/Keychains/login.keychain-db   # RESTORE
 security delete-keychain "$KC"
 ```
+
+**Check the fingerprint, not just that it signed** — see "only ever one identity
+by this name" above. And restore the search list unconditionally; leaving a
+deleted keychain in it breaks signing on the machine in a way that is hard to
+spot.
 
 Then base64 it:
 
 ```bash
-base64 -i ~/Desktop/seek-signing.p12 | tr -d '\n' | pbcopy
+base64 -i seek-signing.p12 | tr -d '\n' | pbcopy
 ```
 
 **`tr -d '\n'` matters** — the Rust base64 decoder on the other end rejects
