@@ -25,9 +25,9 @@ die() { printf '\n\033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 say "Submodule pinned at $(git -C upstream rev-parse --short HEAD)"
 
-# The version is declared in four places that have no way of checking each
+# The version is declared in five places that have no way of checking each
 # other: the npm package (which the About screen now reads), the Tauri bundle,
-# the Rust crate, and the sidecar's hello reply. A build whose About screen and
+# the Rust crate, the sidecar's hello reply, and the Python package attribute. A build whose About screen and
 # filename disagree is a build nobody can identify afterwards — which matters
 # most when someone is trying to say which one is broken.
 say "Checking the version is consistent"
@@ -35,10 +35,13 @@ V_NPM=$(node -p "require('./app/package.json').version")
 V_TAURI=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
 V_CARGO=$(grep -m1 '^version = ' app/src-tauri/Cargo.toml | sed 's/.*"\(.*\)"/\1/')
 V_SIDECAR=$(grep -m1 '^SIDECAR_VERSION' sidecar/seek_sidecar/core_host.py | sed 's/.*"\(.*\)"/\1/')
-for pair in "tauri:$V_TAURI" "cargo:$V_CARGO" "sidecar:$V_SIDECAR"; do
+# The package attribute. Nothing reads it, which is exactly why it drifted:
+# it sat at 0.2.5 for the whole of 0.2.6 and no check noticed.
+V_DUNDER=$(grep -m1 '^__version__' sidecar/seek_sidecar/__init__.py | sed 's/.*"\(.*\)"/\1/')
+for pair in "tauri:$V_TAURI" "cargo:$V_CARGO" "sidecar:$V_SIDECAR" "__init__:$V_DUNDER"; do
   [ "${pair#*:}" = "$V_NPM" ] || die "version drift: package.json is $V_NPM but ${pair%%:*} is ${pair#*:}"
 done
-printf '  all four agree on %s\n' "$V_NPM"
+printf '  all five agree on %s\n' "$V_NPM"
 
 say "Engine tests"
 ( cd sidecar && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../upstream:. \
