@@ -2136,9 +2136,16 @@ class CoreHost:
                 self._check_one_label(label_id)
             except Exception:                          # noqa: BLE001 - worker
                 # One unreachable catalogue must not stop the rest. The row
-                # simply keeps its old counts and its old lastCheckedAt, which
-                # is what "we could not look" honestly looks like.
-                continue
+                # keeps its old counts and its old lastCheckedAt, which is what
+                # "we could not look" honestly looks like.
+                #
+                # BUT IT MUST BE SAID SOMEWHERE. This ran on a worker with a
+                # bare `continue` and no log line, and the result was a button
+                # that could be pressed forever with nothing changing and no
+                # error anywhere — not in the UI, not in the log, not in the
+                # state file. Undiagnosable from the outside, and the exact
+                # "silently does nothing" answer labelStore.ts argues against.
+                log.exception("could not check catalogue %s", label_id)
 
     def _check_one_label(self, label_id):
         labels = self._labels()
