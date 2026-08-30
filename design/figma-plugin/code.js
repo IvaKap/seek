@@ -69,7 +69,7 @@ const TYPE = {
    the current builder or a stale copy it loaded before the last edit. Without
    it, "I changed that" and "you are looking at an old build" are the same
    symptom, and there is no way to tell them apart from outside. */
-const BUILD = 'b4 — Labels & Artists, matching the app';
+const BUILD = 'b5 — seeded cover art, Labels & Artists faces, heart-handshake';
 
 const WIN = { w: 1280, h: 840 };   // tauri.conf.json
 const SIDEBAR_W = 220;             // --sidebar-w
@@ -294,8 +294,21 @@ const ICONS = {
   'hard-drive': "<line x1=\"22\" x2=\"2\" y1=\"12\" y2=\"12\"/><path d=\"M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z\"/><line x1=\"6\" x2=\"6.01\" y1=\"16\" y2=\"16\"/><line x1=\"10\" x2=\"10.01\" y1=\"16\" y2=\"16\"/>",
   'music-4': "<path d=\"M9 18V5l12-2v13\"/><path d=\"m9 9 12-2\"/><circle cx=\"6\" cy=\"18\" r=\"3\"/><circle cx=\"18\" cy=\"16\" r=\"3\"/>",
   'info': "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M12 16v-4\"/><path d=\"M12 8h.01\"/>",
+  'store': "<path d=\"m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7\"/><path d=\"M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8\"/><path d=\"M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4\"/><path d=\"M2 7h20\"/><path d=\"M22 7v3a2 2 0 0 1-2 2a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 16 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 12 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 8 12a2.7 2.7 0 0 1-1.59-.63.7.7 0 0 0-.82 0A2.7 2.7 0 0 1 4 12a2 2 0 0 1-2-2V7\"/>",
   'disc-3': "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"M6 12c0-1.7.7-3.2 1.8-4.2\"/><circle cx=\"12\" cy=\"12\" r=\"2\"/><path d=\"M18 12c0 1.7-.7 3.2-1.8 4.2\"/>",
   'circle': "<circle cx=\"12\" cy=\"12\" r=\"10\"/>",
+  // The six sidebar glyphs, same geometry as app/src/icons/supplied/*.svg.
+  // Four of these are VENDORED in the app because lucide-react 0.487.0 either
+  // lacks them or draws them differently — see the comment in
+  // app/src/icons/index.tsx. Keeping them here by hand is the same reason
+  // add-icon.mjs cannot fetch them from node_modules.
+  'folder-check': "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/><path d=\"m9 13 2 2 4-4\"/>",
+  'globe-off': "<path d=\"M10.114 4.462A14.5 14.5 0 0 1 12 2a10 10 0 0 1 9.313 13.643\"/><path d=\"M15.557 15.556A14.5 14.5 0 0 1 12 22 10 10 0 0 1 4.929 4.929\"/><path d=\"M15.892 10.234A14.5 14.5 0 0 0 12 2a10 10 0 0 0-3.643.687\"/><path d=\"M17.656 12H22\"/><path d=\"M19.071 19.071A10 10 0 0 1 12 22 14.5 14.5 0 0 1 8.44 8.45\"/><path d=\"M2 12h10\"/><path d=\"m2 2 20 20\"/>",
+  'contact-round': "<path d=\"M16 2v2\"/><path d=\"M17.915 21a6 6 0 10-12 0\"/><path d=\"M8 2v2\"/><circle cx=\"12\" cy=\"11\" r=\"4\"/><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/>",
+  'mails': "<path d=\"M17 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 1-1.732\"/><path d=\"m22 5.5-6.419 4.179a2 2 0 0 1-2.162 0L7 5.5\"/><rect x=\"7\" y=\"3\" width=\"15\" height=\"12\" rx=\"2\"/>",
+  'clover': "<path d=\"M16.17 7.83 2 22\"/><path d=\"M4.02 12a2.827 2.827 0 1 1 3.81-4.17A2.827 2.827 0 1 1 12 4.02a2.827 2.827 0 1 1 4.17 3.81A2.827 2.827 0 1 1 19.98 12a2.827 2.827 0 1 1-3.81 4.17A2.827 2.827 0 1 1 12 19.98a2.827 2.827 0 1 1-4.17-3.81A1 1 0 1 1 4 12\"/><path d=\"m7.83 7.83 8.34 8.34\"/>",
+  'list-clock': "<path d=\"M16 13v2.2l1.6 1\"/><path d=\"M3 12h3.458\"/><path d=\"M3 19h3.832\"/><path d=\"M3 5h18\"/><circle cx=\"16\" cy=\"15\" r=\"6\"/>",
+  'heart-handshake': "<path d=\"M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762\"/>",
 };
 
 /** One icon, as a frame of vectors at the app's painted stroke weight. */
@@ -332,24 +345,24 @@ const NAV = [
   ]],
   ['Library', [
     ['Downloads', 'download', '⌘2', 3],
-    ['Completed', 'library', '⌘3', null],
-    ['Failed', 'folder', null, null],
+    ['Completed', 'folder-check', '⌘3', null],
+    ['Failed', 'globe-off', null, null],
     ['Uploads', 'arrow-up', null, 2],
     ['Statistics', 'arrow-down-up', null, null],
   ]],
   ['Discovery', [
     ['Library', 'library', null, null],
-    ['Want List', 'star', '⌘8', 7],
+    ['Want List', 'clover', '⌘8', 7],
     ['Dig Sessions', 'folder', '⌘9', null],
-    ['Labels & Artists', 'library', null, null],
+    ['Labels & Artists', 'heart-handshake', null, null],
     ['Wishlist', 'search', null, null],
-    ['Search History', 'search', null, null],
+    ['Search History', 'list-clock', null, null],
     ['Saved Searches', 'library', null, null],
   ]],
   ['Users', [
-    ['Followed', 'users', null, null],
+    ['Followed', 'contact-round', null, null],
     ['Chat rooms', 'message-square', '⌘5', 4],
-    ['Private chats', 'users', '⌘6', 1],
+    ['Private chats', 'mails', '⌘6', 1],
     ['Browse', 'user', null, null],
   ]],
 ];
@@ -472,10 +485,18 @@ function selectNav(instance, label) {
 
 /** `.header--plain` — a title, an optional subtitle, and tools on the right. */
 function paneHeader(title, subtitle, tools) {
+  /* A long subtitle has to WRAP, and Figma only wraps text with a fixed width
+     — otherwise the node grows past the frame and the render simply clips it
+     mid-sentence, which is how "so this list never ref" shipped. Short ones
+     keep auto-width so nothing that already looked right moves. */
+  const wide = subtitle && subtitle.length > 70;
   const heading = F('heading', {
     g: 0, kids: [
       T(title, 'title'),
-      subtitle && T(subtitle, 'sec', { c: 'text/secondary' }),
+      subtitle && T(subtitle, 'sec', {
+        c: 'text/secondary',
+        width: wide ? (tools ? INNER - 220 : INNER) : undefined,
+      }),
     ],
   });
   return F('Header', {
@@ -535,10 +556,121 @@ function emptyState(iconName, title, body, action) {
 }
 
 /** A square of cover art, or the placeholder that stands in for one. */
-function art(px, radius = RAD.sm) {
-  return F('art', {
-    w: px, h: px, r: radius, bg: 'bg/sunken', align: 'CENTER', just: 'CENTER',
-    kids: [I('disc-3', Math.round(px * 0.42), 'text/quaternary', 1.3)],
+/** HSL to hex. Figma's SVG importer wants a colour literal, not a CSS function. */
+function hsl(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  const hex = (v) => ('0' + Math.round(v * 255).toString(16)).slice(-2);
+  return '#' + hex(f(0)) + hex(f(8)) + hex(f(4));
+}
+
+/**
+ * The seed for a release's mark.
+ *
+ * The app hashes `artist + title` with no separator (`LabelBrowserView.tsx`),
+ * so this matches it — and it normalises the OTHER convention in this file,
+ * where some rows carry a single combined "Artist — Title" string. Without
+ * that, the same record drew one colour on Search and a different one in the
+ * Library, which is exactly what a deterministic mark exists to prevent.
+ */
+function relSeed(a, b) {
+  const joined = b == null ? String(a) : String(a) + String(b);
+  return joined.replace(/\s*—\s*/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Cover art.
+ *
+ * WITH A SEED this is the app's own Placeholder, ported exactly — the same
+ * `h * 31 + charCode` hash, the same `hue = h % 360`, the same four variants,
+ * and the dark theme's `hsl(h 20% 22%)` / `hsl(h 30% 52%)` from
+ * components.css:1141. Same seed in, same mark out, so the mockup shows what
+ * the app draws rather than an impression of it.
+ *
+ * That matters more than it sounds. Most underground releases never get
+ * artwork, so this mark IS the picture for the majority of rows — a mockup
+ * full of identical grey discs was not a neutral simplification, it was
+ * showing a screen the app never renders.
+ *
+ * WITHOUT a seed the old grey disc stands, for the genuinely unknown.
+ */
+function art(px, seed, radius = RAD.sm) {
+  if (!seed) {
+    return F('art', {
+      w: px, h: px, r: radius, bg: 'bg/sunken', align: 'CENTER', just: 'CENTER',
+      kids: [I('disc-3', Math.round(px * 0.42), 'text/quaternary', 1.3)],
+    });
+  }
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  const hue = h % 360;
+  const variant = h % 4;
+  const bg = hsl(hue, 20, 22);
+  const fg = hsl(hue, 30, 52);
+  const shape =
+    variant === 0 ? `<circle cx="24" cy="24" r="11" fill="${fg}"/>`
+    : variant === 1 ? `<rect x="13" y="13" width="22" height="22" fill="${fg}"/>`
+    : variant === 2 ? `<path d="M24 11 L37 35 L11 35 Z" fill="${fg}"/>`
+    : `<rect x="9" y="9" width="14" height="14" fill="${fg}"/>`
+      + `<rect x="25" y="25" width="14" height="14" fill="${fg}"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}"`
+    + ` viewBox="0 0 48 48"><rect width="48" height="48" fill="${bg}"/>${shape}</svg>`;
+  const node = figma.createNodeFromSvg(svg);
+  node.name = 'art/' + seed;
+  node.cornerRadius = radius;
+  node.clipsContent = true;
+  return node;
+}
+
+/**
+ * Search tabs.
+ *
+ * A tab is a search PUT AWAY, not a second engine — the transport allows one
+ * running search, so leaving a tab stops it and returns to it restores the
+ * snapshot. In 0.2.7 every search opens one of these, and ⌘W closes it, which
+ * needed a Rust change because Tauri's default macOS menu owned that key.
+ */
+function tabBar(tabs, activeIndex) {
+  return F('tabs', {
+    dir: 'h', g: SP[2], align: 'CENTER', w: INNER,
+    kids: tabs.map((label, i) => F(`tab/${label}`, {
+      dir: 'h', g: SP[2], p: [SP[1], SP[3], SP[1], SP[3]], r: RAD.sm, align: 'CENTER',
+      bg: i === activeIndex ? 'bg/raised' : 'bg/sunken',
+      st: i === activeIndex ? 'line/border-control' : null, sw: 1,
+      kids: [
+        T(label, 'cap', { c: i === activeIndex ? 'text/primary' : 'text/secondary' }),
+        I('x', 11, 'text/quaternary', 1.5),
+      ],
+    })).concat([
+      F('tab/new', {
+        p: [SP[1], SP[2], SP[1], SP[2]], r: RAD.sm, bg: 'bg/sunken', align: 'CENTER',
+        kids: [I('plus', 13, 'text/tertiary', 1.5)],
+      }),
+    ]),
+  });
+}
+
+/**
+ * A grid of covers — the Library's default density since 0.2.6.
+ *
+ * Covers are how you pick through a shelf; a table is how you audit one. The
+ * app opens on this and remembers what you chose, so a mockup showing only the
+ * table was showing the screen nobody starts on.
+ */
+function coverGrid(items, px = 132) {
+  return F('grid', {
+    dir: 'h', g: SP[4], wrap: true, w: INNER,
+    kids: items.map(([artist, title, facts]) => F(`card/${title}`, {
+      g: SP[2], w: px,
+      kids: [
+        art(px, relSeed(artist, title), RAD.md),
+        T(title, 'cap', { w: 'm' }),
+        T(artist, 'micro', { c: 'text/tertiary' }),
+        facts && T(facts, 'micro', { c: 'text/quaternary' }),
+      ],
+    })),
   });
 }
 
@@ -579,7 +711,7 @@ function dlRow(o) {
            comment "make this row taller". */
         dir: 'h', g: SP[3], p: SP[4], align: 'CENTER',
         kids: [
-          art(48),
+          art(48, relSeed(o.title)),
           {
             n: F('main', {
               g: SP[1],
@@ -649,7 +781,8 @@ const ORDER = [
   'sessions', 'labels', 'wishlist', 'history',
   'saved', 'followed', 'chat', 'messages',
   'browse', 'settings-account', 'settings-folders', 'settings-downloads',
-  'settings-network', 'settings-lookups', 'settings-about',
+  'settings-network', 'settings-lookups', 'settings-about', 'dig',
+  'dig-album', 'catalogue',
 ];
 const COLS = 4;
 const GAP_X = 120;
@@ -668,6 +801,8 @@ const SCREEN_NAMES = {
   'settings-account': 'Settings — Account', 'settings-folders': 'Settings — Folders',
   'settings-downloads': 'Settings — Downloads', 'settings-network': 'Settings — Network',
   'settings-lookups': 'Settings — Lookups', 'settings-about': 'Settings — About',
+  dig: 'Dig Bar', 'dig-album': 'Dig Bar — release', catalogue: 'Catalogue',
+  readme: 'README — for review',
 };
 
 
@@ -728,8 +863,9 @@ function failedCard(title, who, reason, w) {
   return F(`card/${title}`, {
     g: 0, w, r: RAD.md, bg: 'bg/raised', st: 'line/separator', sw: 1, clip: true,
     kids: [
-      F('cover', { w, h: w, bg: 'bg/sunken', align: 'CENTER', just: 'CENTER',
-        kids: [I('disc-3', Math.round(w * 0.3), 'text/quaternary', 1.3)] }),
+      /* A full-bleed cover, not a grey box with a disc in it. Radius 0 because
+         the card already clips; the corners come from the card. */
+      art(w, relSeed(title), 0),
       F('foot', {
         g: SP[1], p: SP[3], w,
         kids: [
@@ -774,6 +910,11 @@ function upCard(who, title, facts, files) {
       F('head', {
         dir: 'h', g: SP[2], align: 'CENTER', w: w - SP[3] * 2,
         kids: [
+          /* An upload is a release going the other way, so it gets the same
+             cover a download does. The peer keeps a plain glyph: the app has no
+             avatar for a Soulseek user and inventing one here would show a
+             screen it does not render. */
+          art(28, relSeed(title)),
           I('user', 14, 'text/secondary'),
           T(who, 'sec', { w: 'm' }),
           { n: T(title, 'sec', { c: 'text/secondary' }), grow: 1 },
@@ -795,6 +936,18 @@ function upCard(who, title, facts, files) {
 SCREENS.uploads = () => screen('Uploads', 'Uploads', [
   paneHeader('Uploads', '3 peers · 5 files · 214 MB sent', null),
   body([
+    /* Added in 0.2.7. Uploads already worked on the same TransferGroup as
+       Downloads, so sorting and filtering applied directly — the only real
+       change was wording: the sort said "Who it is from", which is backwards
+       here, where it is who is taking it. */
+    F('tools', {
+      dir: 'h', g: SP[3], align: 'CENTER', w: INNER,
+      kids: [
+        input('Filter uploads…', 260),
+        { n: F('sp', { w: 1, h: 1 }), grow: 1 },
+        btn('View', { icon: 'sliders-horizontal' }),
+      ],
+    }),
     upCard('a-peer', 'Basic Channel — BCD', '↑ 1.1 MB/s', [
       ['01 Phylyps Trak.flac', '38 MB', 'sent'],
       ['02 Q 1.1.flac', '41 MB', '62%'],
@@ -808,6 +961,287 @@ SCREENS.uploads = () => screen('Uploads', 'Uploads', [
     ]),
   ]),
 ]);
+
+// --- README screens ---------------------------------------------------------
+
+/* Two screens the app has and the mockup did not, because the README leans on
+   both and was illustrating them with real screenshots that are now several
+   versions old. They are ordinary screens, not a special export path — the
+   README just happens to be what they are for. */
+
+SCREENS.dig = () => screen('Dig Bar', 'Search', [
+  F('Header', {
+    g: SP[3], p: [SP[6], SP[6], SP[4], SP[6]], w: PANE_W,
+    kids: [
+      tabBar(['burial', 'shackleton'], 1),
+      F('search-field', {
+        dir: 'h', g: SP[3], p: [0, SP[4], 0, SP[4]], r: RAD.md, align: 'CENTER',
+        h: 44, w: INNER, bg: 'bg/sunken', st: 'accent/base', sw: 1,
+        kids: [
+          I('link-2', 18, 'accent/base'),
+          { n: T('https://www.discogs.com/label/1119-Metroplex', 'bodyLg'), grow: 1 },
+          T('⌘↵', 'micro', { c: 'text/quaternary' }),
+        ],
+      }),
+    ],
+  }),
+  body([
+    /* A pasted link becomes a CARD, not a query. The card states what the
+       provider said and nothing more — Bandcamp and Discogs name their fields,
+       so those are used verbatim and the card claims full confidence. A
+       YouTube title has to be PARSED into artist and title, and a parse never
+       claims that. */
+    F('preview', {
+      g: SP[3], p: SP[4], w: INNER, r: RAD.md, bg: 'bg/raised', st: 'accent/base', sw: 1,
+      kids: [
+        F('row', {
+          dir: 'h', g: SP[4], align: 'CENTER', w: INNER - SP[4] * 2,
+          kids: [
+            art(64, 'Metroplex', RAD.md),
+            {
+              n: F('t', {
+                g: SP[1],
+                kids: [
+                  F('h', {
+                    dir: 'h', g: SP[2], align: 'CENTER',
+                    kids: [
+                      T('Metroplex', 'section'),
+                      F('src', {
+                        dir: 'h', g: 5, align: 'CENTER',
+                        kids: [I('disc-3', 13, 'text/tertiary', 1.4),
+                               T('Discogs label', 'micro', { c: 'text/tertiary' })],
+                      }),
+                    ],
+                  }),
+                  T('Detroit · founded 1985 · 48 releases catalogued', 'cap', { c: 'text/secondary' }),
+                  T('Read from the page. Nothing guessed.', 'micro', { c: 'text/quaternary' }),
+                ],
+              }),
+              grow: 1,
+            },
+          ],
+        }),
+        F('acts', {
+          dir: 'h', g: SP[2], align: 'CENTER',
+          kids: [
+            btn('Browse the catalogue', { icon: 'library', primary: true }),
+            btn('Watch this label', { icon: 'heart-handshake' }),
+            btn('Add all to want list', { icon: 'star' }),
+          ],
+        }),
+      ],
+    }),
+  ]),
+]);
+
+SCREENS['dig-album'] = () => screen('Dig Bar — release', 'Search', [
+  F('Header', {
+    g: SP[3], p: [SP[6], SP[6], SP[4], SP[6]], w: PANE_W,
+    kids: [
+      tabBar(['burial', 'model 500'], 1),
+      F('search-field', {
+        dir: 'h', g: SP[3], p: [0, SP[4], 0, SP[4]], r: RAD.md, align: 'CENTER',
+        h: 44, w: INNER, bg: 'bg/sunken', st: 'accent/base', sw: 1,
+        kids: [
+          I('link-2', 18, 'accent/base'),
+          { n: T('https://www.discogs.com/release/23099-Model-500-Night-Drive', 'bodyLg'), grow: 1 },
+          T('⌘↵', 'micro', { c: 'text/quaternary' }),
+        ],
+      }),
+    ],
+  }),
+  body([
+    F('preview', {
+      g: SP[3], p: SP[4], w: INNER, r: RAD.md, bg: 'bg/raised', st: 'accent/base', sw: 1,
+      kids: [
+        F('row', {
+          dir: 'h', g: SP[4], align: 'CENTER', w: INNER - SP[4] * 2,
+          kids: [
+            art(64, relSeed('Model 500', 'Night Drive'), RAD.md),
+            {
+              n: F('t', {
+                g: SP[1],
+                kids: [
+                  F('h', {
+                    dir: 'h', g: SP[2], align: 'CENTER',
+                    kids: [
+                      releaseName('Model 500', 'Night Drive (Thru-A-Brooklyn Night)'),
+                      F('src', {
+                        dir: 'h', g: 5, align: 'CENTER',
+                        kids: [I('disc-3', 13, 'text/tertiary', 1.4),
+                               T('Discogs release', 'micro', { c: 'text/tertiary' })],
+                      }),
+                    ],
+                  }),
+                  T('Metroplex · 1985 · 12" · 4 tracks', 'cap', { c: 'text/secondary' }),
+                  /* The distinction the whole card exists to make: Discogs and
+                     Bandcamp STATE their fields, so they are used verbatim and
+                     the card claims full confidence. A YouTube title has to be
+                     parsed into an artist and a title, and a parse never does. */
+                  T('Artist and title read from the page, not parsed out of a filename.',
+                    'micro', { c: 'text/quaternary' }),
+                ],
+              }),
+              grow: 1,
+            },
+          ],
+        }),
+        F('tracks', {
+          g: SP[1], w: INNER - SP[4] * 2,
+          kids: [
+            T('A1  Night Drive (Thru-A-Brooklyn Night)', 'cap', { c: 'text/secondary' }),
+            T('A2  Night Drive (Time, Space, Transmat)', 'cap', { c: 'text/secondary' }),
+            T('B1  Interference', 'cap', { c: 'text/secondary' }),
+            T('B2  Electric Night', 'cap', { c: 'text/secondary' }),
+          ],
+        }),
+        F('acts', {
+          dir: 'h', g: SP[2], align: 'CENTER',
+          kids: [
+            btn('Search Soulseek for this', { icon: 'search', primary: true }),
+            btn('Add to want list', { icon: 'star' }),
+          ],
+        }),
+      ],
+    }),
+  ]),
+]);
+
+SCREENS.catalogue = () => screen('Catalogue', 'Search', [
+  paneHeader('Metroplex',
+    'The whole catalogue, with what you already have marked. Read once when you opened it — never refreshed behind your back.', [
+    btn('Watching', { icon: 'heart-handshake' }),
+  ]),
+  body([
+    F('tools', {
+      dir: 'h', g: SP[3], align: 'CENTER', w: INNER,
+      kids: [
+        segmented(['All 48', 'Not in my library 17', 'Already yours 31'], 1),
+        { n: F('sp', { w: 1, h: 1 }), grow: 1 },
+        btn('View', { icon: 'sliders-horizontal' }),
+      ],
+    }),
+    ...[
+      ['Model 500', 'No UFO\u2019s', '1985 · 12" · MPLX-001', false],
+      ['Cybotron', 'Clear', '1990 · 12" · MPLX-004', false],
+      ['Model 500', 'Night Drive', '1985 · 12" · MPLX-002', true],
+      ['Drexciya', 'Aquatic Invasion', '1995 · 12" · MPLX-021', false],
+      ['Model 500', 'The Chase', '1989 · 12" · MPLX-008', false],
+      ['Underground Resistance', 'Sonic Destroyer', '1991 · 12" · MPLX-012', true],
+    ].map(([artist, title, facts, owned]) => F(`cat/${title}`, {
+      dir: 'h', g: SP[3], p: SP[3], align: 'CENTER', w: INNER,
+      r: RAD.md, bg: 'bg/raised', st: 'line/separator', sw: 1,
+      kids: [
+        art(40, relSeed(artist, title)),
+        { n: F('b', { g: 2, kids: [releaseName(artist, title), T(facts, 'cap', { c: 'text/secondary' })] }), grow: 1 },
+        owned
+          ? T('already yours', 'cap', { c: 'state/success' })
+          : F('acts', {
+              dir: 'h', g: SP[2], align: 'CENTER',
+              kids: [btn('Search', { icon: 'search', primary: true }), btn('Want', { icon: 'star' })],
+            }),
+      ],
+    })),
+  ]),
+]);
+
+// --- the README, as a card to read before it ships --------------------------
+
+/* Iva reviews copy in Figma, so the README goes there BEFORE it goes in the
+   file. This is a document, not an app screen: no sidebar, no window chrome,
+   one column at a readable measure. It renders what the README actually says,
+   so approving the card approves the text. */
+
+const DOC_W = 900;
+const DOC_TEXT = DOC_W - SP[6] * 2;
+
+function h(level, text) {
+  return T(text, level === 1 ? 'title' : level === 2 ? 'section' : 'sec',
+    { w: level === 3 ? 'm' : undefined });
+}
+
+function para(text, tone = 'text/secondary') {
+  return T(text, 'cap', { c: tone, width: DOC_TEXT });
+}
+
+/** Where a picture goes, and which file it is. */
+function shotSlot(caption, file) {
+  return F(`shot/${file}`, {
+    g: SP[1], p: SP[3], w: DOC_TEXT, r: RAD.sm, bg: 'bg/sunken',
+    st: 'line/separator', sw: 1,
+    kids: [
+      F('r', {
+        dir: 'h', g: SP[2], align: 'CENTER',
+        kids: [I('folder-open', 13, 'text/tertiary', 1.4),
+               T(file, 'micro', { c: 'text/tertiary' })],
+      }),
+      T(caption, 'micro', { c: 'text/quaternary', width: DOC_TEXT - SP[3] * 2 }),
+    ],
+  });
+}
+
+/** A section that is new or rewritten, so the eye goes to it first. */
+function changed(kind) {
+  return F('tag', {
+    p: [1, 7, 1, 7], r: RAD.pill,
+    bg: kind === 'new' ? 'accent/base' : 'bg/sunken',
+    kids: [T(kind === 'new' ? 'NEW SECTION' : 'REWRITTEN', 'micro',
+      { c: kind === 'new' ? 'text/primary' : 'text/tertiary', upper: true })],
+  });
+}
+
+function headWithTag(text, kind) {
+  return F('hd', {
+    dir: 'h', g: SP[2], align: 'CENTER', w: DOC_TEXT,
+    kids: [h(2, text), kind && changed(kind)],
+  });
+}
+
+SCREENS.readme = () => F('README — for review', {
+  g: SP[4], p: SP[6], w: DOC_W, bg: 'bg/content', r: RAD.lg,
+  st: 'line/separator', sw: 1,
+  kids: [
+    h(1, 'README — what changed'),
+    para('Everything below is the text as written. The unchanged sections (Install, API keys, Build from source, Licence) are not repeated here.', 'text/tertiary'),
+
+    headWithTag('The pictures note', 'new'),
+    para('Sits directly under the hero image, before the "Unofficial" note.'),
+    para('“About the pictures. The interface shots on this page are rendered from Seek\u2019s design file, which is built from the same tokens, type scale and icon set the app ships \u2014 so they show the real layout with sample records in it. The spectrogram below is a real measurement from a real file, and the install screenshots are real macOS dialogs; neither is a mock-up, because both are evidence rather than illustration.”', 'text/primary'),
+    shotSlot('Hero \u2014 Search, with three tabs open', 'docs/screenshots/search.png'),
+
+    headWithTag('A watchlist of labels and artists', 'rewritten'),
+    para('Was “A watchlist of labels”. Adds artists, the faces, the grid, and the new-release check \u2014 and states the cost honestly.'),
+    para('\u2022 Artists count as catalogues too. They always did \u2014 the engine accepted either \u2014 but everything on screen said “labels”, so half of what this screen does was invisible unless you happened to try it.'),
+    para('\u2022 Each row carries the catalogue\u2019s own logo, pulled from Discogs or off the Bandcamp page and stored inside Seek, never hot-linked. Switch to Grid and the screen becomes a shelf of them.'),
+    para('\u2022 Check for new looks for releases added since the last time you looked, and badges the row with a count \u2014 four new is worth crossing the room for and one new is worth knowing about later, which is why it is a number and not a dot.'),
+    para('\u2022 Warning kept in: “A brand-new release is, by definition, the one thing Soulseek is least likely to have yet. Some of these notifications will lead to an empty search.”'),
+    shotSlot('The label and artist watchlist', 'docs/screenshots/watchlist.png'),
+
+    headWithTag('Several searches at once', 'new'),
+    para('Every search opens its own tab. Going back to one restores it exactly \u2014 its results, its filters, its grouping, what you had expanded. \u2318T for a new one, \u2318W to close it, or the + above the field.'),
+    para('A tab is a search put away, not a second engine. Soulseek allows one search at a time, so leaving a tab whose search is still streaming stops it \u2014 that tab keeps the results it had and says it was stopped, rather than quietly losing the rest. Tabs you queued a download from tidy themselves up after 45 minutes; the one you\u2019re reading never disappears under you.'),
+
+    headWithTag('Your collection, four ways', 'new'),
+    para('Comfortable, compact, table, or grid. Covers are how you pick through a shelf; the table gives you release, artist, tracks, size, format and year in aligned columns for auditing what you own.'),
+    para('Artwork is fetched only for what\u2019s on screen, so a collection of thousands doesn\u2019t queue thousands of lookups to draw twenty. Where no artwork exists \u2014 and for most underground releases none ever will \u2014 you get a mark derived from the release name, the same one every time.'),
+    shotSlot('The library as a grid of covers', 'docs/screenshots/library.png'),
+
+    headWithTag('Sharing, shown honestly', 'new'),
+    para('Soulseek is reciprocal, and Seek treats that as the point rather than an afterthought. You can see what you\u2019re uploading, to whom, and what your ratio actually is \u2014 filtered and sorted the same way your downloads are, because it is the same list going the other way.'),
+    para('It will also tell you plainly when a slow queue is the consequence of sharing nothing. That is usually the answer, and no other client says it.'),
+    shotSlot('Uploads, with filters and sorting', 'docs/screenshots/uploads.png'),
+
+    headWithTag('Smaller wording fixes', null),
+    para('\u2022 Label link section now says Seek offers to “browse its entire catalogue, start watching it, or add the lot to your want list” \u2014 it did not mention watching.'),
+    para('\u2022 Catalogue section no longer claims “500 releases”, which was tied to the old screenshot.'),
+    shotSlot('Dig Bar \u2014 a pasted label link', 'docs/screenshots/link-discogs-label.png'),
+    shotSlot('Dig Bar \u2014 a pasted release link', 'docs/screenshots/link-discogs-album.png'),
+    shotSlot('The catalogue browser', 'docs/screenshots/catalogue.png'),
+
+    headWithTag('Kept as real captures, deliberately', null),
+    para('The spectrogram (docs/screenshots/analysis.png) and the three install dialogs are NOT replaced with renders. A mock-up of a measurement would be a fabricated finding, and the install steps have to match what macOS actually shows.', 'text/primary'),
+  ],
+});
 
 // ===========================================================================
 // the page, and putting things on it
@@ -857,6 +1291,13 @@ function signature(node) {
 
 /** Where a screen lives, decided by its slot in ORDER rather than by run order. */
 function placeAt(frame, key) {
+  /* Not an app screen and not the app's shape, so it does not belong in the
+     grid — it would sit on top of whatever is below it. */
+  if (key === 'readme') {
+    frame.x = 0;
+    frame.y = Math.ceil(ORDER.length / COLS) * (WIN.h + GAP_Y) + GAP_Y;
+    return;
+  }
   const i = ORDER.indexOf(key);
   const slot = i < 0 ? ORDER.length : i;
   frame.x = (slot % COLS) * (WIN.w + GAP_X);
@@ -1141,34 +1582,28 @@ SCREENS.library = () => screen('Library', 'Library', [
       kids: [
         input('Filter releases…', 260),
         { n: F('sp', { w: 1, h: 1 }), grow: 1 },
-        T('Read tags — slower, much more accurate', 'cap', { c: 'text/secondary' }),
+        /* FOUR densities since 0.2.6, and it opens on Grid. Covers are how you
+           pick through a shelf; the table is how you audit one. Cover art is
+           fetched only for what is on screen, so a collection of thousands
+           does not queue thousands of lookups to draw twenty. */
+        segmented(['Comfortable', 'Compact', 'Table', 'Grid'], 3),
+        btn('View', { icon: 'sliders-horizontal' }),
       ],
     }),
-    listRow(releaseName('Basic Channel', 'BCD'), [
-      T('10 tracks', 'cap', { c: 'text/tertiary' }),
-      T('620 MB', 'cap', { c: 'text/tertiary' }),
-      T('matched', 'cap', { c: 'state/success' }),
-    ], { lead: I('folder', 14, 'text/tertiary') }),
-    listRow(releaseName('Rhythm & Sound', 'w/ The Artists'), [
-      T('12 tracks', 'cap', { c: 'text/tertiary' }),
-      T('710 MB', 'cap', { c: 'text/tertiary' }),
-      T('matched', 'cap', { c: 'state/success' }),
-    ], { lead: I('folder', 14, 'text/tertiary') }),
-    listRow(releaseName('Theo Parrish', 'Sound Sculptures Vol. 1'), [
-      T('9 tracks', 'cap', { c: 'text/tertiary' }),
-      T('502 MB', 'cap', { c: 'text/tertiary' }),
-      T('2 tracks missing', 'cap', { c: 'state/warn' }),
-    ], { lead: I('folder', 14, 'text/tertiary') }),
-    listRow(releaseName('Moodymann', 'Silentintroduction'), [
-      T('11 tracks', 'cap', { c: 'text/tertiary' }),
-      T('588 MB', 'cap', { c: 'text/tertiary' }),
-      T('Checking…', 'cap', { c: 'text/secondary' }),
-    ], { lead: I('folder', 14, 'text/tertiary') }),
-    listRow(releaseName('Various', 'Chain Reaction Compilation'), [
-      T('18 tracks', 'cap', { c: 'text/tertiary' }),
-      T('1.1 GB', 'cap', { c: 'text/tertiary' }),
-      T('no confident match', 'cap', { c: 'text/tertiary' }),
-    ], { lead: I('folder', 14, 'text/tertiary') }),
+    coverGrid([
+      ['Basic Channel', 'BCD', '10 tracks · FLAC'],
+      ['Rhythm & Sound', 'w/ The Artists', '12 tracks · FLAC'],
+      ['Theo Parrish', 'Sound Sculptures Vol. 1', '9 tracks · WAV'],
+      ['Moodymann', 'Silentintroduction', '11 tracks · FLAC'],
+      ['Various', 'Chain Reaction Compilation', '18 tracks · FLAC'],
+      ['Porter Ricks', 'Biokinetics', '9 tracks · WAV'],
+      ['Maurizio', 'M-Series', '8 tracks · FLAC'],
+      ['Drexciya', 'Neptune\u2019s Lair', '14 tracks · FLAC'],
+      ['Shackleton', 'Blood On My Hands', '4 tracks · FLAC'],
+      ['Burial', 'Untrue', '13 tracks · FLAC'],
+      ['Loraine James', 'Reflection', '12 tracks · FLAC'],
+      ['Actress', 'R.I.P.', '15 tracks · FLAC'],
+    ]),
   ]),
 ]);
 
@@ -1179,7 +1614,7 @@ function wantRow(artist, title, meta1, status, statusTone) {
     dir: 'h', g: SP[3], p: SP[3], align: 'CENTER', w: INNER,
     r: RAD.md, bg: 'bg/raised', st: 'line/separator', sw: 1,
     kids: [
-      art(44),
+      art(44, relSeed(artist, title)),
       {
         n: F('body', {
           g: 2,
@@ -1267,18 +1702,44 @@ SCREENS.sessions = () => screen('Dig Sessions', 'Dig Sessions', [
 
 // --- Labels ----------------------------------------------------------------
 
-function watchRow(name, kind, facts, detail, unread) {
+/**
+ * A watched catalogue.
+ *
+ * The FACE is not decoration. 0.2.7 threads a label's logo through from
+ * Discogs `images[0]` and Bandcamp's og:image and inlines it as a data URI, so
+ * a row without one showed a screen the app stopped rendering. Seeded art
+ * stands in here for the same reason it does everywhere else: it is what the
+ * app draws before a catalogue has been read.
+ *
+ * The COUNT is a count, not a dot. "Four new" is worth crossing the room for
+ * and "one new" is worth knowing about later, and a dot says neither.
+ */
+function watchRow(name, provider, kind, facts, detail, newCount) {
   return F(`watch/${name}`, {
     dir: 'h', g: SP[3], p: SP[3], align: 'CENTER', w: INNER,
-    r: RAD.md, bg: 'bg/raised', st: unread ? 'accent/base' : 'line/separator', sw: 1,
+    r: RAD.md, bg: 'bg/raised', st: newCount ? 'accent/base' : 'line/separator', sw: 1,
     kids: [
+      art(44, name, RAD.md),
       {
         n: F('body', {
           g: 2,
           kids: [
             F('head', {
               dir: 'h', g: SP[2], align: 'CENTER',
-              kids: [T(name, 'sec', { w: 'm' }), T(kind, 'micro', { c: 'text/tertiary', upper: true })],
+              kids: [
+                T(name, 'sec', { w: 'm' }),
+                newCount && F('new', {
+                  p: [1, 7, 1, 7], r: RAD.pill, bg: 'accent/base',
+                  kids: [T(`${newCount} new`, 'micro', { c: 'text/primary' })],
+                }),
+                F('kind', {
+                  dir: 'h', g: 5, align: 'CENTER',
+                  kids: [
+                    I(provider === 'Bandcamp' ? 'store' : 'disc-3', 13, 'text/tertiary', 1.4),
+                    T(`${provider} ${kind}`, 'micro', { c: 'text/tertiary' }),
+                  ],
+                }),
+              ],
             }),
             T(facts, 'cap', { c: 'text/secondary' }),
             detail && T(detail, 'cap', { c: 'text/tertiary' }),
@@ -1287,19 +1748,42 @@ function watchRow(name, kind, facts, detail, unread) {
         grow: 1,
       },
       btn('Open', { primary: true }),
+      btn('Stop watching', { icon: 'x' }),
     ],
   });
 }
 
 SCREENS.labels = () => screen('Labels & Artists', 'Labels & Artists', [
-  paneHeader('Labels & Artists', 'Catalogues you are watching, and what has appeared since you last looked.', [
-    btn('Watch a label', { icon: 'plus' }),
+  /* The subtitle is the app's, verbatim, because it is doing work: it is the
+     one place that says the list never refreshes itself, which is why there is
+     a button rather than a spinner. */
+  paneHeader('Labels & Artists',
+    'Catalogues you are working through. Nothing here is read until you open it — a catalogue costs several requests, so this list never refreshes itself.', [
+    btn('Check for new'),
+    btn('View', { icon: 'sliders-horizontal' }),
   ]),
   body([
-    watchRow('Metroplex', 'label', '48 in the catalogue · 31 in your library · read 2 days ago', '4 new since you last looked', true),
-    watchRow('Chain Reaction', 'label', '62 in the catalogue · 44 in your library · read last week', '2 new since you last looked', true),
-    watchRow('Hyperdub', 'label', '210 in the catalogue · 38 in your library · read today', null, false),
-    watchRow('Tresor', 'label', '380 in the catalogue · 52 in your library · read 3 weeks ago', 'your library has probably moved on since this reading', false),
+    /* ARTISTS AS WELL AS LABELS. Both were always watchable — the sidecar
+       accepts either kind and refuses everything else — but every piece of
+       text around them said "labels", so half of what this screen does was
+       invisible unless you happened to try it. A mockup showing only labels
+       kept that mistake alive. */
+    segmented(['All 6', 'Labels 4', 'Artists 2'], 0),
+    watchRow('Metroplex', 'Discogs', 'label',
+      '48 in the catalogue · 31 in your library · read 2 days ago',
+      '17 you do not have yet', 4),
+    watchRow('Zero Tolerance Recordings', 'Bandcamp', 'label',
+      '28 in the catalogue · 9 in your library · read 4 days ago',
+      '19 you do not have yet', 2),
+    watchRow('Chain Reaction', 'Discogs', 'label',
+      '62 in the catalogue · 44 in your library · read last week', null, 0),
+    watchRow('Shackleton', 'Discogs', 'artist',
+      '54 in the catalogue · 21 in your library · read yesterday', null, 1),
+    watchRow('Hyperdub', 'Discogs', 'label',
+      '210 in the catalogue · 38 in your library · read today', null, 0),
+    watchRow('Loraine James', 'Bandcamp', 'artist',
+      '31 in the catalogue · 12 in your library · read 3 weeks ago',
+      'your library has probably moved on since this reading', 0),
   ]),
 ]);
 
@@ -1487,7 +1971,7 @@ SCREENS.browse = () => screen('Browse', 'Browse', [
       dir: 'h', g: SP[3], p: SP[3], align: 'CENTER', w: INNER,
       r: RAD.md, bg: 'bg/raised', st: 'line/separator', sw: 1,
       kids: [
-        art(40),
+        art(40, relSeed(artist, title)),
         { n: F('b', { g: 2, kids: [releaseName(artist, title), T(facts, 'cap', { c: 'text/secondary' })] }), grow: 1 },
         have && T('already yours', 'cap', { c: 'state/warn' }),
         btn('Download', { icon: 'download', primary: true }),
@@ -1690,7 +2174,7 @@ function resultRow(o) {
     dir: 'h', g: SP[3], p: SP[3], align: 'CENTER', w: INNER,
     r: RAD.md, bg: 'bg/raised', st: 'line/separator', sw: 1,
     kids: [
-      art(40),
+      art(40, relSeed(o.artist, o.title)),
       {
         n: F('main', {
           g: 2,
@@ -1732,6 +2216,7 @@ SCREENS.search = () => screen('Search', 'Search', [
   F('Header', {
     g: SP[3], p: [SP[6], SP[6], SP[4], SP[6]], w: PANE_W,
     kids: [
+      tabBar(['burial', 'shackleton', 'chain reaction'], 0),
       F('search-field', {
         dir: 'h', g: SP[3], p: [0, SP[4], 0, SP[4]], r: RAD.md, align: 'CENTER',
         h: 44, w: INNER, bg: 'bg/sunken', st: 'line/border-control', sw: 1,

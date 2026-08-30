@@ -49,9 +49,13 @@ const DEFAULT_DENSITIES: Density[] = ['comfortable', 'compact', 'table'];
 export function ViewMenu({
   density, onDensity, densities = DEFAULT_DENSITIES,
   sort, onSort, descending, onDescending, columns, onColumns,
+  sortLabels = SORT_LABELS,
 }: {
-  density: Density;
-  onDensity(d: Density): void;
+  /* Optional: a list with only one shape offers no density at all. Uploads is
+     that list — one row per peer, no per-file detail to compress and no covers
+     to lay out — and it still wants the sort half of this menu. */
+  density?: Density;
+  onDensity?(d: Density): void;
   /** Which densities this list offers. Defaults to everything but Grid. */
   densities?: Density[];
   sort?: SortKey;
@@ -61,6 +65,8 @@ export function ViewMenu({
   /** Chosen table columns, in order. Only meaningful at `table` density. */
   columns?: ColumnId[];
   onColumns?(next: ColumnId[]): void;
+  /** Wording for the sort keys. Uploads reverse the sense of `peer`. */
+  sortLabels?: Record<SortKey, string>;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -103,9 +109,13 @@ export function ViewMenu({
       </button>
 
       {open && (
-        <div className="viewmenu__pop" id={id} role="menu" aria-label="Density">
-          <div className="viewmenu__section">Density</div>
-          {OPTIONS.filter((o) => densities.includes(o.value)).map((o) => (
+        <div className="viewmenu__pop" id={id} role="menu" aria-label="View options">
+          {/* A section heading with nothing under it is worse than no section:
+              it reads as a list that failed to load. */}
+          {density && onDensity && densities.length > 0 && (
+            <div className="viewmenu__section">Density</div>
+          )}
+          {density && onDensity && OPTIONS.filter((o) => densities.includes(o.value)).map((o) => (
             <button
               key={o.value}
               type="button"
@@ -183,7 +193,7 @@ export function ViewMenu({
           {sort && onSort && (
             <>
               <div className="viewmenu__section">Sort by</div>
-              {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+              {(Object.keys(sortLabels) as SortKey[]).map((key) => (
                 <button
                   key={key}
                   type="button"
@@ -206,7 +216,7 @@ export function ViewMenu({
                     {sort === key && <IconCheck size={13} painted={1.9} />}
                   </span>
                   <span className="viewmenu__text">
-                    <span className="viewmenu__item-label">{SORT_LABELS[key]}</span>
+                    <span className="viewmenu__item-label">{sortLabels[key]}</span>
                     {sort === key && (
                       <span className="viewmenu__item-hint">
                         {descending ? 'Highest first — click to reverse'

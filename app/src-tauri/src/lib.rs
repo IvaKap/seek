@@ -193,6 +193,37 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        // ⌘W has to reach the WEBVIEW, and by default it never does.
+        //
+        // Tauri installs the standard macOS menu, whose Window → Close owns
+        // ⌘W — so the key is swallowed by AppKit before any JavaScript sees it,
+        // and pressing it closed the whole app while the frontend's handler sat
+        // there doing nothing. No amount of `preventDefault` can win that; the
+        // menu item itself has to go.
+        //
+        // So: the default menu, minus that one item. Everything else is kept
+        // deliberately — removing the menu wholesale would take Edit → Copy and
+        // Paste with it, and a Soulseek client where ⌘C does nothing is a far
+        // worse bug than the one being fixed.
+        //
+        // The frontend then decides what ⌘W means: close the tab, or, when
+        // there is only one left, let the window close — which is Safari's
+        // behaviour and the one the muscle memory expects.
+        .menu(|handle| {
+            let menu = tauri::menu::Menu::default(handle)?;
+            // Found by ID and POSITION, never by title. Tauri builds the Window
+            // submenu as [minimize, maximize, separator, close_window], so the
+            // close item is its last entry — and matching on the string "Close"
+            // would quietly stop working for anyone running macOS in another
+            // language, which is the kind of bug nobody here would ever see.
+            if let Some(item) = menu.get(tauri::menu::WINDOW_SUBMENU_ID) {
+                if let Some(window_menu) = item.as_submenu() {
+                    let last = window_menu.items()?.len().saturating_sub(1);
+                    window_menu.remove_at(last)?;
+                }
+            }
+            Ok(menu)
+        })
         // Native notifications for finished and failed downloads. macOS only
         // shows these when the app is in the background, which is exactly when
         // they are wanted.

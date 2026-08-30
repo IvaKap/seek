@@ -1110,6 +1110,16 @@ class DiscoverCatalog(TypedDict):
     id: int
     # The catalogue's own page.
     url: Optional[str]
+    # The label's logo or the artist's photo, as a data: URI, fetched BY THE
+    # SIDECAR. Null when the provider has none.
+    #
+    # Inlined rather than linked, like every other image on the wire: a raw
+    # provider URL in the webview would leak the user's IP and reading habits
+    # to Discogs on every render. This is ONE image for the catalogue itself,
+    # which is why it can be fetched eagerly where a per-release thumbnail
+    # cannot — three hundred of those would be three hundred rate-limited
+    # requests, and that is what the artwork pipeline exists to avoid.
+    imageUri: Optional[str]
     releases: List["CatalogEntry"]
     # False when the sidecar stopped paginating before the end. A truncated
     # list that claims to be whole is worse than one that admits it, because
@@ -1376,13 +1386,22 @@ class WatchedLabel(TypedDict):
     """
     A label or artist whose catalogue the user is working through.
 
-    NOT a new-release notifier, and the distinction is the whole design.
-    Discogs is a database rather than a release feed, so diffing it
-    reports records catalogued decades late as 'new'; Bandcamp has no API
-    to poll; and a brand-new release is precisely what Soulseek does not
-    have yet, so that notification's happy path ends in an empty search.
-    This is a bookmark with progress on it — back catalogue, which is
-    where both Soulseek and this app are strong.
+    A bookmark with progress on it, and SINCE 0.2.7 also a new-release
+    notifier — which reverses what this comment used to say. Two of the
+    three objections were answered; the third was accepted:
+
+      Discogs is a database rather than a release feed, so diffing it
+      would report records catalogued decades late as 'new'. Answered:
+      a Discogs entry must be recent by its own year as well as unseen.
+
+      Bandcamp has no API to poll. Answered, and it is the cheaper half:
+      its whole catalogue is one HTML page, newest first.
+
+      A brand-new release is precisely what Soulseek does not have yet,
+      so the notification's happy path ends in an empty search. NOT
+      answered — still true, and accepted deliberately.
+
+    Back catalogue remains what this is for.
 
     THE COUNTS ARE A SNAPSHOT, and unlike DigSession they are stored
     rather than derived. DigSession omits its counts because the frontend
@@ -1419,6 +1438,25 @@ class WatchedLabel(TypedDict):
     wantedCount: Optional[int]
     # The user's own note. Empty unless they wrote one.
     note: str
+    # The logo or photo, as a data: URI. Captured when the catalogue is read,
+    # so it is null until the first reading.
+    imageUri: Optional[str]
+    # When this catalogue was last checked FOR NEW RELEASES, which is not the
+    # same as when it was last read. A check is cheap for Bandcamp and
+    # expensive for Discogs; a read is neither.
+    lastCheckedAt: Optional[float]
+    # Releases seen at the last check that were not there before, and that the
+    # user has not looked at yet. Zero is the ordinary state. Cleared by
+    # `labels.seen`, so opening the catalogue is what resolves it — the user
+    # never dismisses a count by hand.
+    newCount: int
+    # Release identifiers seen at the last check.
+    #
+    # Stored so 'new' means NEW SINCE WE LOOKED rather than 'recent', which is
+    # the only definition that survives contact with Discogs — it is a
+    # database, not a release feed, and a 1994 record catalogued last week is
+    # not a new release.
+    knownIds: List[str]
 
 
 class WatchedLabelList(TypedDict):
@@ -1458,6 +1496,21 @@ class LabelSeenParams(TypedDict):
     releaseCount: int
     ownedCount: int
     wantedCount: int
+
+
+class LabelCheckParams(TypedDict):
+    """
+    Check watched catalogues for releases that were not there last time.
+
+    NOT run on mount, and the cost is why. A Discogs catalogue is up to
+    seven sequentially rate-limited requests, so checking a dozen watched
+    entries the moment a screen appears would spend a minute and a half of
+    someone else's API budget to render a list that was only glanced at. The
+    user asks for this, or a schedule does.
+    """
+    # Which to check. Empty means all of them, which is what the 'Check for
+    # new' button sends.
+    ids: List[str]
 
 
 class SessionIdParams(TypedDict):
@@ -2497,6 +2550,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("name", "str", False, False),
         ("id", "int", False, False),
         ("url", "str", False, True),
+        ("imageUri", "str", False, True),
         ("releases", "CatalogEntry", True, False),
         ("complete", "bool", False, False),
     ),
@@ -2601,6 +2655,10 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("ownedCount", "int", False, True),
         ("wantedCount", "int", False, True),
         ("note", "str", False, False),
+        ("imageUri", "str", False, True),
+        ("lastCheckedAt", "float", False, True),
+        ("newCount", "int", False, False),
+        ("knownIds", "str", True, False),
     ),
     "WatchedLabelList": (
         ("labels", "WatchedLabel", True, False),
@@ -2624,6 +2682,9 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("releaseCount", "int", False, False),
         ("ownedCount", "int", False, False),
         ("wantedCount", "int", False, False),
+    ),
+    "LabelCheckParams": (
+        ("ids", "str", True, False),
     ),
     "SessionIdParams": (
         ("id", "str", False, False),
@@ -2966,6 +3027,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "labels.unwatch": ("LabelIdParams", "WatchedLabelList"),
     "labels.note": ("LabelNoteParams", "WatchedLabelList"),
     "labels.seen": ("LabelSeenParams", "WatchedLabelList"),
+    "labels.check": ("LabelCheckParams", "WatchedLabelList"),
     "want.list": (None, "WantList"),
     "want.add": ("WantAddParams", "WantList"),
     "want.remove": ("WantRemoveParams", "WantList"),

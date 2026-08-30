@@ -13,7 +13,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   IconChat, IconChevronDown, IconDownload, IconLibrary, IconRelease, IconSearch,
-  IconArrowUp, IconSettings, IconStar, IconTransfers, IconUser, IconUsers,
+  IconArrowUp, IconSettings, IconTransfers, IconUser,
+  IconCompleted, IconFailed, IconFollowed, IconMessages, IconWant, IconHistory,
+  IconLabels,
 } from '../icons/index.tsx';
 import { speed } from '../domain/format.ts';
 import type { Throughput } from '../data/throughputStore.ts';
@@ -140,8 +142,8 @@ export function Sidebar({
       title: 'Library',
       items: [
         { id: 'downloads', label: 'Downloads', icon: <IconDownload size={16} />, shortcut: '⌘2', badge: downloadCount || undefined },
-        { id: 'completed', label: 'Completed', icon: <IconLibrary size={16} />, shortcut: '⌘3' },
-        { id: 'failed', label: 'Failed', icon: <IconRelease size={16} /> },
+        { id: 'completed', label: 'Completed', icon: <IconCompleted size={16} />, shortcut: '⌘3' },
+        { id: 'failed', label: 'Failed', icon: <IconFailed size={16} /> },
         // AFTER the three download lenses, not between them. Downloads,
         // Completed and Failed are one list read three ways (CLAUDE.md);
         // dropping Uploads into the middle of that split a set that belongs
@@ -166,7 +168,7 @@ export function Sidebar({
         // The badge counts entries not yet looked for, and DISAPPEARS at zero
         // rather than showing 0 — a nav item permanently wearing a "0" is
         // noise that trains you to stop reading badges.
-        { id: 'want', label: 'Want List', icon: <IconStar size={16} />, shortcut: '⌘8', badge: wantPending || undefined },
+        { id: 'want', label: 'Want List', icon: <IconWant size={16} />, shortcut: '⌘8', badge: wantPending || undefined },
         // Only once one exists, for the same reason as `browsing` above: a nav
         // item that is empty until you happen to earn it is dead chrome, and
         // sessions are earned rather than created in the ordinary case.
@@ -178,10 +180,10 @@ export function Sidebar({
         // watches one, and the empty state is reachable from the catalogue
         // screen where watching actually happens.
         ...(hasLabels
-          ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLibrary size={16} /> }]
+          ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLabels size={16} /> }]
           : []),
         { id: 'wishlist', label: 'Wishlist', icon: <IconSearch size={16} /> },
-        { id: 'history', label: 'Search History', icon: <IconSearch size={16} /> },
+        { id: 'history', label: 'Search History', icon: <IconHistory size={16} /> },
         { id: 'saved', label: 'Saved Searches', icon: <IconLibrary size={16} /> },
       ],
     },
@@ -189,9 +191,9 @@ export function Sidebar({
       id: 'users',
       title: 'Users',
       items: [
-        { id: 'followed', label: 'Followed', icon: <IconUsers size={16} /> },
+        { id: 'followed', label: 'Followed', icon: <IconFollowed size={16} /> },
         { id: 'chat', label: 'Chat rooms', icon: <IconChat size={16} />, shortcut: '⌘5', badge: roomUnread || undefined },
-        { id: 'messages', label: 'Private chats', icon: <IconUsers size={16} />, shortcut: '⌘6', badge: privateUnread || undefined },
+        { id: 'messages', label: 'Private chats', icon: <IconMessages size={16} />, shortcut: '⌘6', badge: privateUnread || undefined },
         // Always reachable — it is a place you go, not only a state you are
         // already in — but it names whoever is open so the nav reflects reality.
         {

@@ -413,6 +413,7 @@ def _event_samples():
             "name": "Hyperdub", "id": 25386,
             "url": "https://www.discogs.com/label/25386",
             "complete": True,
+            "imageUri": None,
             "releases": [{
                 "discogsId": 1125103, "title": "Untrue", "artist": "Burial",
                 "year": 2007, "format": "CD, Album", "catno": "HDBCD002",
@@ -480,6 +481,10 @@ def _event_samples():
                 "ownedCount": None,
                 "wantedCount": None,
                 "note": "",
+                "imageUri": None,
+                "lastCheckedAt": None,
+                "newCount": 0,
+                "knownIds": [],
             }],
         },
         "discover.wantlistItems": {

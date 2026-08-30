@@ -8,12 +8,23 @@
  * the first — which is right for the Dig Bar and is precisely the losing this
  * fixes.
  *
- * NOT A NEW-RELEASE NOTIFIER, and that was argued down rather than skipped:
- * Discogs is a database rather than a release feed, so diffing it reports
- * records catalogued decades late as "new"; Bandcamp has no API to poll; and a
- * brand-new release is the one thing Soulseek does not have yet, so that
- * notification's happy path ends in an empty search. Back catalogue is where
- * both Soulseek and this app are strong.
+ * IT IS NOW ALSO A NEW-RELEASE NOTIFIER, and that reverses an argument this
+ * file used to make. Worth recording why, because two of the three original
+ * objections were answered and one was simply accepted:
+ *
+ *   "Discogs is a database, not a release feed, so diffing it reports records
+ *   catalogued decades late as new." Answered: a Discogs entry has to be
+ *   recent by its own YEAR as well as unseen.
+ *
+ *   "Bandcamp has no API to poll." Answered, and it turned out to be the
+ *   cheaper half — its whole catalogue is one HTML page, newest first.
+ *
+ *   "A brand-new release is the one thing Soulseek does not have yet, so the
+ *   notification's happy path ends in an empty search." NOT answered. This is
+ *   still true. Iva asked for the feature knowing it.
+ *
+ * Back catalogue is still what this is FOR. The notifier is an addition to a
+ * bookmark, not a replacement for one.
  *
  * THE COUNTS ARE A SNAPSHOT. `sessionStore` deliberately derives its counts
  * from the want list rather than storing them, because storing a number twice
@@ -49,6 +60,14 @@ export interface WatchedLabel {
   ownedCount: number | null;
   wantedCount: number | null;
   note: string;
+  /** The logo or photo, inlined by the sidecar. Null until first read. */
+  imageUri: string | null;
+  /** When it was last checked FOR NEW RELEASES — not the same as read. */
+  lastCheckedAt: number | null;
+  /** Unseen releases found at the last check. Cleared by opening it. */
+  newCount: number;
+  /** What the last check saw, so "new" means new SINCE we looked. */
+  knownIds: string[];
 }
 
 export interface WatchRequest {
@@ -64,8 +83,19 @@ export interface LabelsSession {
   watch(request: WatchRequest): void;
   unwatch(id: string): void;
   note(id: string, note: string): void;
-  /** Record what a catalogue read found, with the time. */
+  /** Record what a catalogue read found, with the time. Clears `newCount`. */
   seen(id: string, counts: { releaseCount: number; ownedCount: number; wantedCount: number }): void;
+  /**
+   * Look for releases added since the last check.
+   *
+   * Never called on mount. A Discogs catalogue is up to seven sequentially
+   * rate-limited requests, so a dozen watched entries checked the moment this
+   * screen appeared would be a minute and a half of someone else's API budget,
+   * spent without being asked. The user presses this.
+   */
+  check(ids?: string[]): void;
+  /** True while a check is in flight, so the button can say so. */
+  checking: boolean;
   /** The watched entry matching a catalogue, or null. */
   find(request: Partial<WatchRequest>): WatchedLabel | null;
   /** Why the last command failed, for the one-line notice. Null when fine. */
@@ -97,6 +127,7 @@ export function sameCatalogue(a: Partial<WatchRequest>, b: WatchedLabel): boolea
 export function useLabels(client: SidecarClient | null): LabelsSession {
   const [labels, setLabels] = useState<WatchedLabel[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     if (!client) {
@@ -134,6 +165,21 @@ export function useLabels(client: SidecarClient | null): LabelsSession {
       entityId: request.entityId ?? null,
     }), [send]),
     unwatch: useCallback((id: string) => send('labels.unwatch', { id }), [send]),
+    checking,
+    /* The command returns immediately and the WORK happens on the sidecar's
+     * discovery pool, arriving later as `labels.changed`. So `checking` is
+     * cleared on the acknowledgement rather than on a result: it says "the
+     * request got through", which is all the button can honestly promise. A
+     * spinner that waited for every catalogue would sit there for a minute. */
+    check: useCallback((ids?: string[]) => {
+      if (!client) return;
+      setChecking(true);
+      setError(null);
+      void client.request<{ labels: WatchedLabel[] }>('labels.check', { ids: ids ?? [] })
+        .then((r) => setLabels(r.labels ?? []))
+        .catch((e: Error) => setError(e.message.replace(/^[a-z_]+: /, '')))
+        .finally(() => setChecking(false));
+    }, [client]),
     note: useCallback((id: string, note: string) => send('labels.note', { id, note }), [send]),
     seen: useCallback((id, counts) => send('labels.seen', { id, ...counts }), [send]),
     find: useCallback(

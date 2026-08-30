@@ -152,8 +152,11 @@ export function SearchView({
 
   const queueRelease = useCallback((release: Release) => {
     setRefused(null);
+    /* This tab has done its job. Stamped rather than closed — you often take a
+       second record from the same results — and swept 45 minutes later. */
+    tabs?.markUsed();
     void transfers.enqueueFolder(release.user, release.folderPath);
-  }, [transfers]);
+  }, [transfers, tabs]);
 
   /* Queue whatever the row represents. A release queues the whole remote
    * folder in one command — the two-phase folder dance lives in the sidecar
@@ -162,6 +165,7 @@ export function SearchView({
     ?? { preferLossless: false, minBitrate: 0, rejectTranscodes: false };
 
   const onQueue = useCallback((row: Row) => {
+    tabs?.markUsed();
     switch (row.kind) {
       case 'track': {
         // Which source to take is a preference, not a fixed rule: the default
@@ -196,7 +200,7 @@ export function SearchView({
         // A user header is a grouping, not a thing to download.
         break;
     }
-  }, [transfers, rules, queueRelease]);
+  }, [transfers, rules, queueRelease, tabs]);
 
   const active = filtersActive(session.filters);
   const available = new Set(session.availableFormats);
@@ -208,10 +212,11 @@ export function SearchView({
     if (!discover) return;
     const q = discover.query();
     if (!q) return;
-    session.setQuery(q);
-    session.run(q);
+    // `run` sets the box itself now, so the pairing is no longer manual.
+    if (tabs) tabs.openWith(q);
+    else session.run(q);
     discover.dismiss();
-  }, [discover, session]);
+  }, [discover, session, tabs]);
 
   const onSearchKey = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Escape' && discover?.preview) {
@@ -240,8 +245,12 @@ export function SearchView({
     // Typed rather than pasted: a URL in the field is a link to look up, not a
     // phrase to search Soulseek for.
     if (discover?.inspect(session.query)) return;
-    session.run();
-  }, [discover, runFromPreview, session, onWant, onBrowseCatalog]);
+    /* Every search gets its own tab, so the last one is never destroyed.
+       `openWith` decides whether that means a NEW tab — a fresh tab and a
+       re-run of the same text both stay where they are. */
+    if (tabs) tabs.openWith(session.query);
+    else session.run();
+  }, [discover, runFromPreview, session, onWant, onBrowseCatalog, tabs]);
 
   return (
     <>

@@ -2,8 +2,9 @@
 Seek — the label watchlist.
 SPDX-License-Identifier: GPL-3.0-or-later
 
-A bookmark with progress on it, deliberately NOT a new-release notifier — the
-reasoning is on `WatchedLabel` in shared/schema.py.
+A bookmark with progress on it, and since 0.2.7 a new-release notifier too —
+the reasoning, including the one objection that was accepted rather than
+answered, is on `WatchedLabel` in shared/schema.py.
 
 The two behaviours worth pinning here are both about not losing things:
 
@@ -38,6 +39,9 @@ class _Host:
     def broadcast(self, name, payload):
         self.broadcasts.append((name, payload))
 
+    def _discogs_token(self):
+        return ''
+
     def _load_state(self):
         return dict(self.state)
 
@@ -56,6 +60,9 @@ class _Host:
     _cmd_labels_unwatch = CoreHost._cmd_labels_unwatch
     _cmd_labels_note = CoreHost._cmd_labels_note
     _cmd_labels_seen = CoreHost._cmd_labels_seen
+    NEW_RELEASE_YEARS = CoreHost.NEW_RELEASE_YEARS
+    _release_key = staticmethod(CoreHost._release_key)
+    _check_one_label = CoreHost._check_one_label
 
 
 @pytest.fixture
@@ -326,3 +333,131 @@ def test_the_list_is_capped(host):
     # Newest kept, oldest dropped.
     assert host._cmd_labels_list({})["labels"][0]["name"] == \
         f"Label {CoreHost.LABEL_CAP + 9}"
+
+
+# ------------------------------------------------- checking for new releases
+#
+# The two rules that had to be argued for before this feature could exist at
+# all. Both are about what "new" MEANS, and getting either wrong turns the
+# badge into noise — which is precisely why the codebase had refused to build
+# this until now.
+
+
+def _stub_browse(monkeypatch, releases, image=None):
+    """Stand in for the provider, so no test here touches the network."""
+    from seek_sidecar import core_host as module
+
+    def fake_browse(*_args, **_kwargs):
+        return {"releases": releases, "imageUri": image}
+
+    monkeypatch.setattr(module.discover_mod, "browse", fake_browse)
+
+
+def _release(key, year):
+    return {"discogsId": key, "url": f"https://x/{key}", "title": "t",
+            "artist": "a", "year": year, "format": "", "catno": "", "role": ""}
+
+
+def test_the_first_check_announces_nothing(host, monkeypatch):
+    """It learns the baseline instead.
+
+    Reporting three hundred 'new' releases the first time the button is pressed
+    would be perfectly true and completely useless.
+    """
+    import time
+    watch(host)
+    label_id = host._labels()[0]["id"]
+    _stub_browse(monkeypatch, [_release(1, time.gmtime().tm_year)])
+
+    host._check_one_label(label_id)
+    row = host._labels()[0]
+    assert row["newCount"] == 0
+    assert row["knownIds"] == ["d1"]
+    assert row["lastCheckedAt"] is not None
+
+
+def test_a_release_added_since_the_last_check_counts(host, monkeypatch):
+    import time
+    year = time.gmtime().tm_year
+    watch(host)
+    label_id = host._labels()[0]["id"]
+
+    _stub_browse(monkeypatch, [_release(1, year)])
+    host._check_one_label(label_id)                  # baseline
+
+    _stub_browse(monkeypatch, [_release(1, year), _release(2, year)])
+    host._check_one_label(label_id)
+    assert host._labels()[0]["newCount"] == 1
+
+
+def test_a_record_catalogued_late_is_not_a_new_release(host, monkeypatch):
+    """The objection this feature had to answer.
+
+    Discogs is a database, not a release feed. A 1994 record catalogued last
+    week is genuinely absent from the previous check and is genuinely not news,
+    so being unseen is necessary but not sufficient.
+    """
+    import time
+    year = time.gmtime().tm_year
+    watch(host)
+    label_id = host._labels()[0]["id"]
+
+    _stub_browse(monkeypatch, [_release(1, year)])
+    host._check_one_label(label_id)
+
+    _stub_browse(monkeypatch, [_release(1, year), _release(2, 1994)])
+    host._check_one_label(label_id)
+    row = host._labels()[0]
+    assert row["newCount"] == 0
+    # Still remembered, so it never reports as new later either.
+    assert "d2" in row["knownIds"]
+
+
+def test_bandcamp_is_not_judged_on_year(host, monkeypatch):
+    """It has none. `browse_bandcamp` sends year=None because Bandcamp does not
+    publish one on the catalogue page, so filtering on it there would reject
+    every release forever."""
+    watch(host, sourceKind="bandcamp", url="https://x.bandcamp.com", entityId=None)
+    label_id = host._labels()[0]["id"]
+
+    _stub_browse(monkeypatch, [{"discogsId": 0, "url": "https://x/1", "year": None}])
+    host._check_one_label(label_id)
+
+    _stub_browse(monkeypatch, [
+        {"discogsId": 0, "url": "https://x/1", "year": None},
+        {"discogsId": 0, "url": "https://x/2", "year": None},
+    ])
+    host._check_one_label(label_id)
+    assert host._labels()[0]["newCount"] == 1
+
+
+def test_opening_the_catalogue_clears_the_badge(host, monkeypatch):
+    import time
+    year = time.gmtime().tm_year
+    watch(host)
+    label_id = host._labels()[0]["id"]
+    _stub_browse(monkeypatch, [_release(1, year)])
+    host._check_one_label(label_id)
+    _stub_browse(monkeypatch, [_release(1, year), _release(2, year)])
+    host._check_one_label(label_id)
+    assert host._labels()[0]["newCount"] == 1
+
+    host._cmd_labels_seen({"id": label_id, "releaseCount": 2,
+                           "ownedCount": 0, "wantedCount": 0})
+    assert host._labels()[0]["newCount"] == 0
+
+
+def test_the_logo_is_captured_once(host, monkeypatch):
+    """Fetched on the first check and then left alone — a logo does not change,
+    and every fetch is a rate-limited request."""
+    import time
+    watch(host)
+    label_id = host._labels()[0]["id"]
+    _stub_browse(monkeypatch, [_release(1, time.gmtime().tm_year)], image="data:image/png;base64,AAA")
+    host._check_one_label(label_id)
+    assert host._labels()[0]["imageUri"] == "data:image/png;base64,AAA"
+
+    # A later check that returns none must not blank it.
+    _stub_browse(monkeypatch, [_release(1, time.gmtime().tm_year)], image=None)
+    host._check_one_label(label_id)
+    assert host._labels()[0]["imageUri"] == "data:image/png;base64,AAA"

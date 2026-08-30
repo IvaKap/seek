@@ -43,6 +43,20 @@ export const SORT_LABELS: Record<SortKey, string> = {
   recent: 'Most recently finished',
 };
 
+/**
+ * The same orders, worded for the other direction of traffic.
+ *
+ * Only `peer` actually differs, and it differs completely: on a download the
+ * peer is who it is coming FROM, and on an upload it is who is taking it. One
+ * shared string would have been wrong on one of the two screens, and wrong in a
+ * way that reads as a bug rather than as a translation slip.
+ */
+export const UPLOAD_SORT_LABELS: Record<SortKey, string> = {
+  ...SORT_LABELS,
+  peer: 'Who is taking it',
+  recent: 'Most recently sent',
+};
+
 /** The order each key reads best in, before the user flips it. */
 const NATURAL_DESC: Record<SortKey, boolean> = {
   default: false, name: false, peer: false, size: true, progress: true, recent: true,

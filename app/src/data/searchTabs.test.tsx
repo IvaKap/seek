@@ -17,8 +17,8 @@
  */
 
 import { StrictMode, useCallback, useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { EMPTY_FILTERS } from '../domain/types.ts';
 import type { Filters, GroupBy, SortKey, SourceFile } from '../domain/types.ts';
 import { useSearchTabs } from './searchTabs.ts';
@@ -66,8 +66,16 @@ function useFakeSession(): SearchSession {
     setFiles(Array.from({ length: n }, (_, i) => file(`${q}${i}`)));
   }, []);
 
+  /* `openWith` calls this, so it has to actually search — a no-op `run` would
+     let every tab rule pass while the search never happened. */
+  const run = useCallback((q?: string) => {
+    if (q) runSearch(q, 3);
+  }, [runSearch]);
+
   return {
-    query, files, filters, groupBy, sort, running: false, snapshot, restore, runSearch,
+    query, files, filters, groupBy, sort, running: false,
+    totalFiles: files.length,
+    snapshot, restore, runSearch, run,
   } as unknown as SearchSession & { files: SourceFile[]; runSearch(q: string, n: number): void };
 }
 
@@ -87,6 +95,10 @@ function Harness() {
       <p data-testid="lossless">{String(session.filters.losslessOnly)}</p>
       <button type="button" onClick={() => tabs.open()}>open</button>
       <button type="button" onClick={() => session.runSearch('shackleton', 5)}>search</button>
+      <button type="button" onClick={() => tabs.openWith('one')}>find:one</button>
+      <button type="button" onClick={() => tabs.openWith('two')}>find:two</button>
+      <button type="button" onClick={() => tabs.markUsed()}>used</button>
+      <p data-testid="count">{tabs.tabs.length}</p>
       {tabs.tabs.map((t) => (
         <span key={t.id}>
           <button type="button" onClick={() => tabs.select(t.id)}>{`select:${t.id}`}</button>
@@ -171,5 +183,92 @@ describe('useSearchTabs', () => {
     expect(read('active')).toBe(only);
     expect(read('query')).toBe('burial');
     expect(read('files')).toBe('3');
+  });
+});
+
+describe('a search opens its own tab', () => {
+  it('runs in place the first time, because a fresh tab IS the new one', () => {
+    mount();
+    expect(read('count')).toBe('1');
+    click('find:one');
+    /* Opening a tab here would leave a blank one beside the results on the
+       very first search anyone ever makes. */
+    expect(read('count')).toBe('1');
+    expect(read('query')).toBe('one');
+  });
+
+  it('opens a tab for a DIFFERENT search', () => {
+    mount();
+    click('find:one');
+    click('find:two');
+    expect(read('count')).toBe('2');
+    expect(read('query')).toBe('two');
+    expect(read('labels')).toBe('one | two');
+  });
+
+  it('re-runs in place when the search is the same', () => {
+    /* Pressing Return twice is a re-run, not a second search. Without this an
+       identical tab appears beside the one you are already reading. */
+    mount();
+    click('find:one');
+    click('find:one');
+    expect(read('count')).toBe('1');
+  });
+});
+
+describe('a spent tab expires', () => {
+  it('closes 45 minutes after something was queued from it', () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      click('find:one');
+      click('used');                    // queued something from tab one
+      click('find:two');                // and moved on to another search
+      expect(read('count')).toBe('2');
+
+      act(() => { vi.advanceTimersByTime(46 * 60 * 1000); });
+      expect(read('count')).toBe('1');
+      expect(read('labels')).toBe('two');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('never closes the tab being read, however old', () => {
+    /* A tab vanishing while you are looking at it is worse than any number of
+       stale ones.
+       
+       There must be a SECOND tab for this to prove anything. With only one, the
+       "never empty the strip" guard saves it whatever the active check does —
+       verified by removing that check and watching this test still pass. */
+    vi.useFakeTimers();
+    try {
+      mount();
+      click('find:one');
+      click('used');                    // tab one is spent
+      click('find:two');                // open a second so the strip is not at its floor
+      const spent = screen.getAllByText(/^select:/)[0].textContent!.replace('select:', '');
+      click(`select:${spent}`);         // and go back to the spent one
+      expect(read('query')).toBe('one');
+
+      act(() => { vi.advanceTimersByTime(46 * 60 * 1000); });
+      expect(read('count')).toBe('2');
+      expect(read('query')).toBe('one');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves an unused tab alone forever', () => {
+    vi.useFakeTimers();
+    try {
+      mount();
+      click('find:one');
+      click('find:two');               // tab one was never queued from
+      act(() => { vi.advanceTimersByTime(3 * 60 * 60 * 1000); });
+      expect(read('count')).toBe('2');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -811,7 +811,7 @@ def related(artist, release, label, discogs_token, fetch_json=None):
 
     if artist:
         try:
-            _n, _i, releases, _c = browse_discogs(
+            _n, _i, releases, _c, _img = browse_discogs(
                 "artist", None, artist, discogs_token, fetch_json,
             )
             out["byArtist"] = [
@@ -823,7 +823,7 @@ def related(artist, release, label, discogs_token, fetch_json=None):
 
     if label:
         try:
-            name, _i, releases, _c = browse_discogs(
+            name, _i, releases, _c, _img = browse_discogs(
                 "label", None, label, discogs_token, fetch_json,
             )
             out["labelName"] = name
@@ -1036,22 +1036,39 @@ def _catalog_entry(raw, kind):
     }
 
 
-def browse_discogs(kind, entity_id, name, token, fetch_json=None):
+def browse_discogs(kind, entity_id, name, token, fetch_json=None,
+                   fetch_image=None, want_image=False):
     """A label's or an artist's whole discography, paginated.
 
-    Returns (name, id, releases, complete).
+    Returns (name, id, releases, complete, image).
+
+    `image` is the label's logo or the artist's photo, inlined as a data: URI,
+    and only when `want_image` asks for it. It costs one extra rate-gated
+    request on top of the pagination, so the caller decides — and the caller
+    that persists it only asks once, because a logo does not change.
     """
     fetch_json = fetch_json or _fetch_json
     headers = _discogs_auth(token)
+    image = None
 
     if not entity_id:
         if not name:
             raise DiscoverError("no id and no name to look up")
         entity_id, name = discogs_find_id(kind, name, token, fetch_json)
-    if not name:
+    # One call answers both questions, so it is made once rather than twice.
+    if not name or want_image:
         detail = fetch_json(f"{DISCOGS_API}/{kind}s/{entity_id}",
                             headers=headers, gate=_discogs_gate)
-        name = _strip_disambiguator(detail.get("name"))
+        if not name:
+            name = _strip_disambiguator(detail.get("name"))
+        if want_image:
+            images = detail.get("images") or []
+            first = images[0] if images else {}
+            # uri150 by preference: a thumbnail is what a 44px avatar needs,
+            # and the full-size uri can be a megabyte of press photo.
+            image = (fetch_image or _image_data_uri)(
+                first.get("uri150") or first.get("uri")
+            )
 
     releases = []
     complete = True
@@ -1070,7 +1087,7 @@ def browse_discogs(kind, entity_id, name, token, fetch_json=None):
         if page == DISCOGS_MAX_PAGES:
             complete = False
 
-    return name, int(entity_id), releases, complete
+    return name, int(entity_id), releases, complete, image
 
 
 # A wantlist is one person's own list rather than a whole discography, but a
@@ -1194,7 +1211,7 @@ def _bc_catalogue_name(html, url):
     return unescape(name) or (urllib.parse.urlparse(url).hostname or "")
 
 
-def browse_bandcamp(url, fetch_text=None):
+def browse_bandcamp(url, fetch_text=None, fetch_image=None, want_image=False):
     """A Bandcamp label's or artist's catalogue, from its /music page.
 
     THE FRAGILE PATH, as the brief warns. This is a public HTML page, not an
@@ -1248,34 +1265,51 @@ def browse_bandcamp(url, fetch_text=None):
             # the record's identity and it makes every URL look distinct.
             "url": page.split("?")[0],
         })
-    return name, releases
+
+    # The page's own OpenGraph image — the label's banner or the artist's
+    # photo. Free in requests: this is the HTML we already fetched, and the
+    # only cost is inlining the picture itself. Bandcamp has no API, so there
+    # is no better source and no worse one.
+    image = None
+    if want_image:
+        og = re.search(
+            r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+            html,
+        )
+        if og:
+            image = (fetch_image or _image_data_uri)(og.group(1))
+    return name, releases, image
 
 
 def browse(source_kind, kind, entity_id=None, name=None, url=None,
-           discogs_token="", fetch_json=None, fetch_text=None):
+           discogs_token="", fetch_json=None, fetch_text=None,
+           fetch_image=None, want_image=False):
     """Fetch a discography from whichever provider owns it."""
     if kind not in ("label", "artist"):
         raise DiscoverError(f"cannot browse a {kind}")
 
     if source_kind == "discogs":
-        found_name, found_id, releases, complete = browse_discogs(
+        found_name, found_id, releases, complete, image = browse_discogs(
             kind, entity_id, name, discogs_token, fetch_json,
+            fetch_image=fetch_image, want_image=want_image,
         )
         return {
             "requestId": "", "sourceKind": "discogs", "kind": kind,
             "name": found_name, "id": found_id,
             "url": f"https://www.discogs.com/{kind}/{found_id}",
-            "releases": releases, "complete": complete,
+            "releases": releases, "complete": complete, "imageUri": image,
         }
 
     if source_kind == "bandcamp":
         if not url:
             raise DiscoverError("Bandcamp has no ids; a page URL is required")
-        found_name, releases = browse_bandcamp(url, fetch_text)
+        found_name, releases, image = browse_bandcamp(
+            url, fetch_text, fetch_image=fetch_image, want_image=want_image,
+        )
         return {
             "requestId": "", "sourceKind": "bandcamp", "kind": kind,
             "name": found_name, "id": 0, "url": url,
-            "releases": releases, "complete": True,
+            "releases": releases, "complete": True, "imageUri": image,
         }
 
     raise DiscoverError(f"cannot browse {source_kind}")

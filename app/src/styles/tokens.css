@@ -103,7 +103,12 @@
 
   --material-sidebar: rgba(243, 243, 247, 0.72);
   --material-header: rgba(251, 251, 253, 0.72);
-  --material-popover: rgba(255, 255, 255, 0.82);
+  /* Nearly opaque, deliberately. These carry menus and explanations read over
+     a dense list, and a translucent surface is only a material while its blur
+     is actually working — see the popIn note in components.css for the case
+     where it silently was not, and the menu became unreadable. The blur stays;
+     this is the floor beneath it. */
+  --material-popover: rgba(255, 255, 255, 0.94);
   --blur-chrome: 30px;
   --blur-popover: 24px;
 
@@ -147,7 +152,7 @@
 
     --material-sidebar: rgba(38, 38, 44, 0.66);
     --material-header: rgba(23, 23, 26, 0.70);
-    --material-popover: rgba(44, 44, 50, 0.80);
+    --material-popover: rgba(44, 44, 50, 0.94);
 
     --text-primary: #f4f4f7;
     --text-secondary: rgba(235, 235, 245, 0.60);

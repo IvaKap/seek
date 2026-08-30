@@ -6,7 +6,14 @@ a label's entire back catalogue. See what a file actually is before you keep it.
 
 Built on [Nicotine+](https://nicotine-plus.org/), which does the protocol work.
 
-![Seek searching for Aphex Twin](docs/screenshots/search.png)
+![Seek, with three searches open at once](docs/screenshots/search.png)
+
+> **About the pictures.** The interface shots on this page are rendered from
+> Seek's design file, which is built from the same tokens, type scale and icon
+> set the app ships — so they show the real layout with sample records in it.
+> The **spectrogram below is a real measurement from a real file**, and the
+> install screenshots are real macOS dialogs; neither is a mock-up, because
+> both are evidence rather than illustration.
 
 > **Unofficial.** Not affiliated with, endorsed by, or connected to Soulseek or
 > the Nicotine+ project. Seek uses Nicotine+ as a library and is grateful for it.
@@ -40,7 +47,7 @@ the search bar** and Seek reads it before you press Return.
 ![Pasting a Discogs label link into Seek](docs/screenshots/link-discogs-label.png)
 
 Drop in a Discogs label URL and Seek identifies the label, then offers to browse
-its entire catalogue or add it to your want list.
+its entire catalogue, start watching it, or add the lot to your want list.
 
 > 🔑 **Discogs links need a free Discogs token.** [Set one up in 3 steps →](#discogs-token)
 > Bandcamp label links work with **no key at all**.
@@ -60,27 +67,81 @@ spelled, first time.
 
 ![Browsing the Apollo label catalogue](docs/screenshots/catalogue.png)
 
-500 releases, and Seek already knows which ones are in your library. Filter down
-to **"Not in my library"** and every row has a **Search** and a **Want** button.
-This is a whole afternoon of digging in one screen.
+Seek already knows which ones are in your library. Filter down to
+**"Not in my library"** and every row has a **Search** and a **Want** button.
+On a label with a few hundred releases this is a whole afternoon of digging in
+one screen.
 
 > 🔑 **Discogs catalogues need a [token](#discogs-token). Bandcamp catalogues do not.**
 
-### A watchlist of labels
+### A watchlist of labels *and artists*
 
-![The label watchlist](docs/screenshots/watchlist.png)
+![The label and artist watchlist](docs/screenshots/watchlist.png)
 
-The labels you're working through, with your progress on each — how many
+The catalogues you're working through, with your progress on each — how many
 releases, how many are on your want list, how many you've dealt with. Add a
 note to yourself ("the 12″ singles first, skip the CD comps"). Sources are mixed
-freely: Bandcamp labels and Discogs labels sit side by side.
+freely: Bandcamp and Discogs sit side by side.
 
-Nothing here refreshes itself. A catalogue costs several requests, so it is read
-only when you open it — deliberately, so Seek is never quietly hammering an API
-in the background.
+**Artists count as catalogues too.** They always did — the engine accepted
+either — but everything on screen said "labels", so half of what this screen
+does was invisible unless you happened to try it. Filter to one or the other, or
+read them together.
 
-> 🔑 Watching a **Discogs** label needs a [token](#discogs-token). Watching a
-> **Bandcamp** label needs nothing.
+Each row carries the catalogue's own logo, pulled from Discogs or off the
+Bandcamp page and stored inside Seek, never hot-linked. Switch to **Grid** and
+the screen becomes a shelf of them.
+
+**Check for new** looks for releases added since the last time you looked, and
+badges the row with a count — *four new* is worth crossing the room for and
+*one new* is worth knowing about later, which is why it is a number and not a
+dot. It clears when you open the catalogue.
+
+Nothing here refreshes itself, and the button is the reason. A Discogs
+catalogue is several rate-limited requests, so a dozen watched entries checked
+automatically would spend a minute and a half of someone else's API budget
+without being asked. You press it.
+
+> ⚠️ A brand-new release is, by definition, the one thing Soulseek is least
+> likely to have yet. Some of these notifications will lead to an empty search.
+> That is worth knowing before you turn it on rather than after.
+
+> 🔑 Watching a **Discogs** catalogue needs a [token](#discogs-token). Watching a
+> **Bandcamp** one needs nothing.
+
+---
+
+## Several searches at once
+
+Every search opens its own **tab**. Going back to one restores it exactly — its
+results, its filters, its grouping, what you had expanded. **⌘T** for a new one,
+**⌘W** to close it, or the **+** above the field.
+
+A tab is a search *put away*, not a second engine. Soulseek allows one search at
+a time, so leaving a tab whose search is still streaming stops it — that tab
+keeps the results it had and says it was stopped, rather than quietly losing the
+rest. Tabs you queued a download from tidy themselves up after 45 minutes; the
+one you're reading never disappears under you.
+
+---
+
+## Your collection, four ways
+
+![The library as a grid of covers](docs/screenshots/library.png)
+
+Point Seek at the folders you already have and it builds a library from them —
+then shows it **comfortable, compact, as a table, or as a grid**. Covers are how
+you pick through a shelf; the table gives you release, artist, tracks, size,
+format and year in aligned columns for auditing what you own.
+
+Artwork is fetched only for what's on screen, so a collection of thousands
+doesn't queue thousands of lookups to draw twenty. Where no artwork exists — and
+for most underground releases none ever will — you get a mark derived from the
+release name, the same one every time, so the shelf stays readable instead of
+turning into rows of identical grey squares.
+
+Everything you own is cross-referenced against every catalogue you browse, which
+is what makes **"not in my library"** a one-click filter.
 
 ---
 
@@ -101,6 +162,20 @@ around 192 kbps"* and, crucially, labels its own confidence — here
 
 Also here: **Preview** before you commit, **Fix tags**, and **Organise** to file
 the release where it belongs.
+
+---
+
+## Sharing, shown honestly
+
+![Uploads, with filters and sorting](docs/screenshots/uploads.png)
+
+Soulseek is reciprocal, and Seek treats that as the point rather than an
+afterthought. You can see what you're uploading, to whom, and what your ratio
+actually is — filtered and sorted the same way your downloads are, because it is
+the same list going the other way.
+
+It will also tell you plainly when a slow queue is the consequence of sharing
+nothing. That is usually the answer, and no other client says it.
 
 ---
 

@@ -253,10 +253,9 @@ export default function App() {
     setSearchingWant(entry);
     want.update(entry.id, { status: 'searching' });
     const query = want.queryFor(entry);
-    session.setQuery(query);
     setSection('search');
-    session.run(query);
-  }, [want, session]);
+    searchTabs.openWith(query);
+  }, [want, searchTabs]);
 
   useEffect(() => {
     // The search the user launched from the want list has stopped listening.
@@ -283,10 +282,9 @@ export default function App() {
 
   const searchCatalogEntry = useCallback((entry: { artist: string; title: string }) => {
     const q = `${entry.artist} ${entry.title}`.replace(/\s+/g, ' ').trim();
-    session.setQuery(q);
     setSection('search');
-    session.run(q);
-  }, [session]);
+    searchTabs.openWith(q);
+  }, [searchTabs]);
 
   const wantCatalogEntry = useCallback((entry: {
     artist: string; title: string; year: number | null; catno: string; url: string;
@@ -496,6 +494,35 @@ export default function App() {
         searchRef.current?.focus();
         return;
       }
+      /* ⌘W closes the TAB, and only falls through to closing the window when
+       * there is no tab left to close — which is exactly how Safari behaves,
+       * and the behaviour the muscle memory expects.
+       *
+       * preventDefault ONLY in the first case. Calling it unconditionally would
+       * leave the window with no keyboard close at all, and macOS users would
+       * find ⌘W simply dead once they were down to one search. */
+      if (e.key === 'w') {
+        e.preventDefault();
+        if (searchTabs.tabs.length > 1) {
+          searchTabs.close(searchTabs.activeId);
+        } else {
+          /* The last tab: close the WINDOW, the way Safari does.
+           *
+           * Explicitly, because the native Window → Close item was removed in
+           * lib.rs so that ⌘W could reach this handler at all. Nothing else
+           * would close the window now, and a shortcut that does nothing on the
+           * last tab is exactly the dead key that removal would have created.
+           *
+           * Dynamic import: this same frontend runs in a plain browser under
+           * the dev recipe in CLAUDE.md, where there is no Tauri shell and the
+           * import would throw. Failing to close a window that cannot be closed
+           * is the correct outcome there, so the rejection is swallowed. */
+          void import('@tauri-apps/api/window')
+            .then(({ getCurrentWindow }) => getCurrentWindow().close())
+            .catch(() => {});
+        }
+        return;
+      }
       if (e.key === 'Enter') {
         e.preventDefault();
         setSection('search');
@@ -535,16 +562,19 @@ export default function App() {
   // being invoked twice is harmless.
   const sessionRef = useRef(session);
   sessionRef.current = session;
+  const tabsRef = useRef(searchTabs);
+  tabsRef.current = searchTabs;
   useEffect(() => {
     // Only against recorded data. Firing a real Soulseek search for someone
     // else's demo query the instant the app opens would be presumptuous, and
     // it burns a search slot the user did not ask for.
     if (!sessionRef.current.isMock) return;
-    /* Set the box as well as running it, the way every other caller of `run`
-     * does. The field no longer starts with a query in it, so without this the
-     * replay would show results for a search the box claims was never made. */
-    sessionRef.current.setQuery('burial');
-    sessionRef.current.run('burial');
+    /* Through `openWith`, like every other search, and for a reason beyond
+     * tidiness: it runs in the fresh tab rather than opening one, AND it
+     * records that this tab has now searched. Calling `run` directly left the
+     * first tab looking untouched, so the user's NEXT search reused it instead
+     * of opening a tab — the fixture quietly behaving unlike the real app. */
+    tabsRef.current.openWith('burial');
   }, []);
 
   /* Actions, not a mirror of the navigation. Rebuilt whenever the state they
@@ -806,7 +836,7 @@ export default function App() {
         ) : section === 'history' ? (
           <HistoryView
             client={session.client}
-            onSearch={(q) => { setSection('search'); session.run(q); }}
+            onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
           />
         ) : section === 'saved' ? (
           <SavedView
@@ -817,7 +847,7 @@ export default function App() {
               // which is visible as a flash of results that should not be there.
               session.setFilters(f);
               setSection('search');
-              session.run(q);
+              searchTabs.openWith(q);
             }}
           />
         ) : section === 'followed' ? (
@@ -832,7 +862,7 @@ export default function App() {
             artwork={artwork}
             density={libDensity}
             onDensity={changeLibDensity}
-            onSearch={(q) => { setSection('search'); session.run(q); }}
+            onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
           />
         ) : section === 'want' ? (
           <WantListView
@@ -852,9 +882,8 @@ export default function App() {
             wantedUrls={wantedUrls}
             onSearch={(entry) => {
               const q = `${entry.artist} ${entry.title}`.replace(/\s+/g, ' ').trim();
-              session.setQuery(q);
               setSection('search');
-              session.run(q);
+              searchTabs.openWith(q);
             }}
             onWant={(entry) => {
               void want.add([{
@@ -899,7 +928,7 @@ export default function App() {
           <WishlistView
             client={session.client}
             signedIn={isSignedIn(session.serverState)}
-            onSearch={(q) => { setSection('search'); session.run(q); }}
+            onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
           />
         ) : section === 'browsing' ? (
           <BrowseView

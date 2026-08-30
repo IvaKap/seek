@@ -19,6 +19,9 @@ import type { LabelsSession, WatchedLabel } from '../data/labelStore.ts';
 import { describeProgress, describeRemaining, isStale, kindLabel } from '../domain/labels.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
 import { SegmentedControl } from './controls.tsx';
+import { ViewMenu } from './ViewMenu.tsx';
+import type { Density } from './ViewMenu.tsx';
+import { Placeholder } from './ReleaseCard.tsx';
 import {
   IconBandcamp, IconClose, IconDiscogs, IconEmpty, IconRelease,
 } from '../icons/index.tsx';
@@ -26,6 +29,15 @@ import {
 /** Which kinds the list is showing. `all` is not a kind, it is the absence of
  *  the filter — kept in the same union so one piece of state says everything. */
 type WatchKind = 'all' | 'label' | 'artist';
+
+function Face({ label, px }: { label: WatchedLabel; px: number }) {
+  return (
+    <span className="watch__face" style={{ width: px, height: px }} aria-hidden>
+      <Placeholder seed={label.name} />
+      {label.imageUri && <img className="art__img" src={label.imageUri} alt="" />}
+    </span>
+  );
+}
 
 function ProviderIcon({ source }: { source: WatchedLabel['sourceKind'] }) {
   return source === 'bandcamp'
@@ -49,9 +61,20 @@ function Row({
 
   return (
     <div className="watch" data-unread={progress.read ? undefined : 'true'}>
+      <Face label={label} px={44} />
       <span className="watch__body">
         <span className="watch__head">
           <span className="watch__name">{label.name}</span>
+          {/* A COUNT, not a dot. "Four new" is worth crossing the room for and
+              "one new" is worth knowing about later, and a dot says neither.
+              It clears when the catalogue is opened — there is deliberately no
+              dismiss, because a badge you can wave away stops meaning
+              anything. */}
+          {label.newCount > 0 && (
+            <span className="watch__new tnum">
+              {label.newCount} new
+            </span>
+          )}
           <span className="watch__kind">
             <ProviderIcon source={label.sourceKind} />
             {PROVIDER_LABEL[label.sourceKind]} {kindLabel(label.kind).toLowerCase()}
@@ -133,6 +156,39 @@ function Row({
   );
 }
 
+/** The shelf view: a face, a name, and how far through it you are. */
+function WatchGrid({
+  labels, onOpen,
+}: {
+  labels: WatchedLabel[];
+  onOpen(label: WatchedLabel): void;
+}) {
+  return (
+    <div className="watchgrid">
+      {labels.map((label) => {
+        const progress = describeProgress(label);
+        return (
+          <button
+            type="button"
+            key={label.id}
+            className="watchgrid__card pressable"
+            data-unread={progress.read ? undefined : 'true'}
+            onClick={() => onOpen(label)}
+          >
+            <Face label={label} px={132} />
+            {label.newCount > 0 && (
+              <span className="watchgrid__new tnum">{label.newCount} new</span>
+            )}
+            <span className="watchgrid__name">{label.name}</span>
+            <span className="watchgrid__kind">{kindLabel(label.kind)}</span>
+            <span className="watchgrid__facts tnum">{progress.summary}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function LabelsView({
   labels, onOpen,
 }: {
@@ -144,6 +200,9 @@ export function LabelsView({
    * one it is — but every piece of text around them said "labels", so half of
    * what this screen does was invisible unless you happened to try it. */
   const [kind, setKind] = useState<WatchKind>('all');
+  /* Not persisted, unlike the other screens' densities. This list is a dozen
+     rows at most; which way you last read it is not worth a stored setting. */
+  const [density, setDensity] = useState<Density>('comfortable');
 
   const all = labels.labels;
   const counts = {
@@ -164,6 +223,28 @@ export function LabelsView({
         </p>
         {/* Only once there is something to separate. A filter offering to hide
             nothing is a control that has to be read and then ignored. */}
+        {all.length > 0 && (
+          <div className="watches__tools">
+            <button
+              type="button"
+              className="btn pressable"
+              disabled={labels.checking}
+              /* Explicit, and it has to be. A Discogs catalogue is up to seven
+                 sequentially rate-limited requests, so doing this on mount
+                 would spend a minute and a half of someone else's API budget
+                 to render a list that was only glanced at. */
+              title="Look for releases added since the last check. Costs several requests per catalogue."
+              onClick={() => labels.check()}
+            >
+              {labels.checking ? 'Checking…' : 'Check for new'}
+            </button>
+            <ViewMenu
+              density={density}
+              onDensity={setDensity}
+              densities={['comfortable', 'grid']}
+            />
+          </div>
+        )}
         {counts.label > 0 && counts.artist > 0 && (
           <div className="watches__filter">
             <SegmentedControl<WatchKind>
@@ -227,7 +308,9 @@ export function LabelsView({
                 been opened yet.
               </p>
             )}
-            {list.map((label) => (
+            {density === 'grid' ? (
+              <WatchGrid labels={list} onOpen={onOpen} />
+            ) : list.map((label) => (
               <Row
                 key={label.id}
                 label={label}

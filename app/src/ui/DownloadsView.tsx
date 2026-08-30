@@ -606,6 +606,25 @@ export function DownloadsView({
   const [sort, setSort] = useState<SortKey>('default');
   const [descending, setDescending] = useState(false);
 
+  /* Grid is for picking through a pile of records you already have or already
+     lost. While a download is running the useful information is progress and
+     speed, and a cover says neither. */
+  const offeredDensities: Density[] = filter === 'active'
+    ? ['comfortable', 'compact', 'table']
+    : ['comfortable', 'compact', 'table', 'grid'];
+
+  /* A lens must never RENDER a density it does not OFFER.
+   *
+   * All three lenses share one stored density, so choosing Grid on Failed and
+   * switching to Downloads left the list drawing a grid that the menu could not
+   * show as chosen — the density was real, the control just had no entry for
+   * it. Falling back keeps the two in step. `App.tsx` makes the same move for
+   * search, where `searchDensity()` maps grid to comfortable because that menu
+   * never offers grid either. */
+  const shownDensity: Density = offeredDensities.includes(density)
+    ? density
+    : 'comfortable';
+
   const lens = session.groups.filter((g) => (
     /* A given-up group is excluded from 'active' by having its own state, and
      * joins Failed below. It is not a failure — nothing refused it and nothing
@@ -656,14 +675,9 @@ export function DownloadsView({
         )}
         {lens.length > 0 && (
           <ViewMenu
-            density={density}
+            density={shownDensity}
             onDensity={onDensity}
-            /* Grid is for picking through a pile of records you already have or
-               already lost. While a download is running the useful information
-               is progress and speed, and a cover says neither. */
-            densities={filter === 'active'
-              ? ['comfortable', 'compact', 'table']
-              : ['comfortable', 'compact', 'table', 'grid']}
+            densities={offeredDensities}
             sort={sort}
             onSort={setSort}
             descending={descending}
@@ -740,7 +754,7 @@ export function DownloadsView({
     <>
       {header}
       <div className="pane__scroll">
-        <div className="dls" data-density={density} data-filter={filter}>
+        <div className="dls" data-density={shownDensity} data-filter={filter}>
           {session.note && !session.error && (
             <p className="dls__note" role="status">{session.note}</p>
           )}
