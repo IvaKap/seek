@@ -36,7 +36,7 @@ The process that actually touches the folder is the **Python sidecar**
 `downloads.py`. The prompt is attributed to Seek.app because the sidecar is a
 bare executable with no bundle identity of its own.
 
-## The fix being attempted, and its honest status
+## The fix that was attempted, and why it FAILED
 
 **One self-signed certificate, created once and reused forever.**
 
@@ -44,10 +44,32 @@ The theory: a certificate gives `codesign` something stable to anchor a
 designated requirement to, instead of falling back to a raw content hash — which
 should be enough for TCC to match successive builds.
 
-**This is unverified.** It is plausible and free; it is not established. The only
-thing that settles it is the two-build test at the bottom of this file. A green
-build proves nothing here, and — as of 0.2.7 — neither does an in-app update
-that fails to prompt: see "What has actually been observed".
+**IT IS NOT. This was tested and the theory is wrong.** Do not re-attempt it.
+
+Two builds signed with the same certificate, differing only in their code, were
+installed one over the other by hand on 31 Aug 2026. macOS prompted for folder
+access again. And it is not that the designated requirement was missing —
+**both builds carry an identical one**:
+
+```
+$ codesign -d -r- /Applications/Seek.app
+designated => identifier "org.seek.unofficial" and certificate leaf = H"daf5a54f…"
+```
+
+Same bundle identifier, same certificate leaf, on both. That is exactly the
+stable identity the theory asked for, and TCC ignored it.
+
+**TCC does not match on the app's designated requirement.** It records its own
+requirement when the grant is made, and it only generalises to "any build from
+this signer" when the signer is a chain it TRUSTS — an Apple-issued one. A
+self-signed certificate produces a stable identity that is not a trusted one, so
+the privacy system keeps pinning the exact code. Every release is new code.
+
+The certificate is being KEPT anyway, for three reasons that are all small: it
+costs nothing now that the pipeline works, it is a prerequisite for a Developer
+ID rather than a detour away from one, and removing it would change the app's
+identity a second time and spend one more prompt on every user for no benefit.
+What is not kept is the claim that it fixes anything.
 
 The certain fix is a paid Apple Developer ID ($99/year), which also removes the
 `xattr` dance on first install. The roadmap for that is already written at the
@@ -348,31 +370,38 @@ which this project already relies on for updates. So an in-app update that does
 not prompt may be evidence of a working certificate, or may be evidence of
 nothing but the updater. The manual replace is what separates them.
 
-### What has actually been observed
+### What was observed — the test, run
 
-**0.2.6 (ad-hoc) → 0.2.7 (signed), via the in-app updater: NO PROMPT**, and the
-download went to `~/Desktop/Muzik` — a protected location — without asking.
+Both halves, 30–31 Aug 2026, download folder `~/Desktop/Muzik` (protected):
 
-That was **not** the prediction. The identity changes at that boundary, so the
-release notes and this file both said to expect one prompt. Getting none is
-encouraging and unexplained: it is consistent with the certificate working, and
-equally consistent with the updater-lineage explanation above, because that
-upgrade was an in-app update.
+| Install method | Builds | Result |
+| --- | --- | --- |
+| in-app updater | 0.2.6 ad-hoc → 0.2.7 signed | **no prompt** |
+| manual replace | 0.2.7 signed → a local build, SAME certificate, different code | **PROMPTED** |
 
-It is recorded here as an observation, not a result. The verdict stays **open**
-until a manual replace between two builds signed with the same certificate is
-tested.
+The second row is the answer. The first row is the updater lineage and says
+nothing about the certificate — which is exactly why this test needs both halves,
+and why the earlier version of this file, which accepted either method, would
+have recorded a false pass.
 
-### If it fails
+**Verdict: the self-signed certificate does not fix the folder prompt.** The
+remaining options are the three below, and only the first actually solves it.
 
-Say so plainly and stop — do not ship further changes pretending it helped. The
-remaining options, in order:
+### It failed. The options that remain
+
+Said plainly, and no further changes have been shipped pretending it helped.
+In order:
 
 1. **Apple Developer ID.** The only certain fix. Also removes the quarantine
    dance. $99/year plus notarisation in CI.
-2. **Steer the folder away from protected locations.** pynicotine already
-   defaults to `~/.local/share/nicotine/downloads`, which is not TCC-protected.
-   Helps new users only; useless once someone has chosen their real Downloads.
+2. **Steer the folder away from protected locations.** This is the free one, and
+   it works today. TCC protects `~/Desktop`, `~/Documents`, `~/Downloads`,
+   iCloud Drive and removable volumes — and their subfolders, which is why
+   `~/Desktop/Muzik` prompts. `~/Music`, `~/Movies` and `~/Public` are not in
+   that set, so a download folder under one of them never triggers the prompt at
+   all. pynicotine's own default, `~/.local/share/nicotine/downloads`, is also
+   outside it. Moving an existing folder is a one-time inconvenience against a
+   prompt on every hand-installed update.
 3. **Accept and document it.** Costs nothing, changes nothing.
 
 ## Two things to expect either way
