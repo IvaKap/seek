@@ -10,4 +10,4 @@
 # It was 0.2.5 through the whole of 0.2.6, because "kept in step" was a promise
 # with nothing behind it. release.sh now checks this line too, which is the
 # only reason to believe the sentence above.
-__version__ = "0.2.6"
+__version__ = "0.2.7"
