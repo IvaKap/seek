@@ -46,7 +46,8 @@ should be enough for TCC to match successive builds.
 
 **This is unverified.** It is plausible and free; it is not established. The only
 thing that settles it is the two-build test at the bottom of this file. A green
-build proves nothing here.
+build proves nothing here, and — as of 0.2.7 — neither does an in-app update
+that fails to prompt: see "What has actually been observed".
 
 The certain fix is a paid Apple Developer ID ($99/year), which also removes the
 `xattr` dance on first install. The roadmap for that is already written at the
@@ -320,18 +321,47 @@ log for `no certificate configured`.
 real builds.**
 
 1. Install the **first** signed build (call it A).
-2. Point Settings → Folders → Downloads at your real `~/Downloads`.
+2. Point Settings → Folders → Downloads at a TCC-protected folder — anything
+   under `~/Downloads`, `~/Desktop` or `~/Documents`, or iCloud Drive. It does
+   not have to be `~/Downloads` itself; a subfolder of a protected one is
+   protected.
 3. Start a download. macOS prompts. **Allow it.**
 4. Cut a second release (B) — any trivial change, so the code hash differs.
-5. Update to B, either through the in-app updater or by replacing the app.
-6. Start another download.
+5. Update to B **through the in-app updater**. Start a download.
+6. Then replace the app **by hand** — drag B over A in Applications — and start
+   another download.
 
-| What happens | What it means |
-| --- | --- |
-| **No prompt** | It worked. A stable self-signed identity is enough for TCC. |
-| **Prompted again** | It did not. The certificate is not enough, and only a Developer ID will fix it. |
+**Both halves of step 5–6 are needed, and this is the correction to what this
+file used to say.** It claimed "no prompt" was a clean pass with nothing to
+interpret. It is not, because an in-app update and a manual replace are not the
+same experiment:
 
-There is no partial result and no interpreting required.
+| | No prompt | Prompted |
+| --- | --- | --- |
+| **in-app update** | inconclusive on its own — see below | the certificate did not help |
+| **manual replace** | **the certificate worked** | the certificate did not help |
+
+macOS does not treat an app replacing itself the way it treats a file you drag
+into place. The updating process is already trusted, and a grant can survive on
+that lineage alone — the same reason an app's own download skips quarantine,
+which this project already relies on for updates. So an in-app update that does
+not prompt may be evidence of a working certificate, or may be evidence of
+nothing but the updater. The manual replace is what separates them.
+
+### What has actually been observed
+
+**0.2.6 (ad-hoc) → 0.2.7 (signed), via the in-app updater: NO PROMPT**, and the
+download went to `~/Desktop/Muzik` — a protected location — without asking.
+
+That was **not** the prediction. The identity changes at that boundary, so the
+release notes and this file both said to expect one prompt. Getting none is
+encouraging and unexplained: it is consistent with the certificate working, and
+equally consistent with the updater-lineage explanation above, because that
+upgrade was an in-app update.
+
+It is recorded here as an observation, not a result. The verdict stays **open**
+until a manual replace between two builds signed with the same certificate is
+tested.
 
 ### If it fails
 
