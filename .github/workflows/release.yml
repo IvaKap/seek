@@ -59,24 +59,57 @@ jobs:
       #
       # Conditional ON PURPOSE. With no secret configured nothing is exported
       # and the build is ad-hoc exactly as before, so this is safe to merge
-      # before the certificate exists. Tauri reads these three variables
-      # natively — verified in the CLI binary — and imports the .p12 itself.
+      # before the certificate exists.
+      #
+      # WE DO THE KEYCHAIN WORK, AND DELIBERATELY DO NOT EXPORT APPLE_CERTIFICATE.
+      # Tauri has two paths (tauri-bundler/src/bundle/macos/sign.rs::keychain):
+      # given APPLE_CERTIFICATE it imports the .p12 and then ENUMERATES the
+      # keychain for a valid identity — and a self-signed certificate is not a
+      # valid one until it is trusted, so `security find-identity -v` returns
+      # nothing and the build dies with "failed to resolve signing identity".
+      # That is exactly how v0.2.7 failed the first time.
+      #
+      # Given only APPLE_SIGNING_IDENTITY it skips the enumeration and hands the
+      # name straight to `codesign -s`, which signs perfectly well with an
+      # untrusted certificate — measured, not assumed. So we import it here and
+      # pass only the name.
+      #
+      # The SEARCH LIST is the part that is easy to miss: `Keychain::sign` only
+      # passes `--keychain` when it created the keychain itself, so with this
+      # path codesign resolves the private key through the user's search list.
+      # Leave the new keychain out of it and codesign blocks on a GUI prompt
+      # that no runner will ever answer.
       - name: Use a signing certificate, if one is configured
         env:
           CERT: ${{ secrets.APPLE_CERTIFICATE }}
           CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
         run: |
-          if [ -n "$CERT" ] && [ -n "$IDENTITY" ]; then
-            {
-              echo "APPLE_CERTIFICATE=$CERT"
-              echo "APPLE_CERTIFICATE_PASSWORD=$CERT_PASSWORD"
-              echo "APPLE_SIGNING_IDENTITY=$IDENTITY"
-            } >> "$GITHUB_ENV"
-            echo "signing with the configured identity"
-          else
+          set -euo pipefail
+          if [ -z "$CERT" ] || [ -z "$IDENTITY" ]; then
             echo "no certificate configured — ad-hoc signing, as before"
+            exit 0
           fi
+
+          KC="$RUNNER_TEMP/seek-signing.keychain-db"
+          KCPASS="$(openssl rand -hex 24)"
+          P12="$RUNNER_TEMP/seek-signing.p12"
+          # -A: the secret is one unwrapped line, which is how the runbook makes it.
+          printf '%s' "$CERT" | openssl base64 -d -A > "$P12"
+
+          security create-keychain -p "$KCPASS" "$KC"
+          security set-keychain-settings -t 3600 -u "$KC"
+          security unlock-keychain -p "$KCPASS" "$KC"
+          security import "$P12" -k "$KC" -P "$CERT_PASSWORD" -T /usr/bin/codesign -f pkcs12
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KCPASS" "$KC" >/dev/null
+          # Keep whatever was already there; add ours.
+          EXISTING="$(security list-keychain -d user | tr -d ' "')"
+          # shellcheck disable=SC2086
+          security list-keychain -d user -s $EXISTING "$KC"
+          rm -f "$P12"
+
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "imported the certificate; signing as \"$IDENTITY\""
 
       - name: Build
         # The updater artifacts are signed during the BUNDLE step, so the key
@@ -88,6 +121,24 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: ./release.sh
+
+      # A build that was MEANT to be signed and came out ad-hoc is the failure
+      # mode this whole exercise exists to prevent, and it is invisible in a
+      # green log. So assert it rather than hope.
+      - name: The bundle is signed with the configured identity
+        if: env.APPLE_SIGNING_IDENTITY != ''
+        run: |
+          APP=app/src-tauri/target/release/bundle/macos/Seek.app
+          codesign -dvvv "$APP" 2>&1 | grep -E "Signature|Authority|TeamIdentifier" || true
+          if codesign -dvvv "$APP" 2>&1 | grep -q "Signature=adhoc"; then
+            echo "::error::APPLE_SIGNING_IDENTITY was set but the bundle is ad-hoc signed"
+            exit 1
+          fi
+          codesign -dvvv "$APP" 2>&1 | grep -q "Authority=$APPLE_SIGNING_IDENTITY" || {
+            echo "::error::bundle is not signed by \"$APPLE_SIGNING_IDENTITY\""
+            exit 1
+          }
+          echo "signed by $APPLE_SIGNING_IDENTITY"
 
       - name: Package
         id: package

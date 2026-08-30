@@ -238,9 +238,43 @@ set APPLE_CERTIFICATE_PASSWORD` — rather than relying on whatever the tool
 trims. A password with a stray `\n` fails the import on CI and says only that
 the import failed.
 
-Tauri's CLI reads all three natively — confirmed in the shipped binary — and
-imports the certificate into a temporary keychain itself. No manual `security`
-commands are needed.
+**The workflow imports the certificate itself, and deliberately does NOT export
+`APPLE_CERTIFICATE` to the build.** This is the one thing here that is not
+obvious, and it is what made the first v0.2.7 release fail with
+
+```
+failed to bundle project: failed codesign application: failed to resolve signing identity
+```
+
+Tauri has two paths, in `tauri-bundler/src/bundle/macos/sign.rs::keychain`:
+
+| What it sees | What it does |
+| --- | --- |
+| `APPLE_CERTIFICATE` + password | imports the `.p12`, then **enumerates** the keychain for a *valid* identity |
+| only `APPLE_SIGNING_IDENTITY` | hands the name straight to `codesign -s` |
+
+The first path cannot work with a self-signed certificate. Enumeration is
+`find-identity -v`, and an untrusted certificate is not a *valid* one — the same
+`0 valid identities found` from step 1. The `.p12` imports fine (`1 identity
+imported` appears in the log immediately before the failure); it is the lookup
+afterwards that finds nothing.
+
+The second path never looks. `codesign` signs perfectly well with an untrusted
+certificate — measured on a fresh keychain with no trust settings anywhere — so
+the workflow does the `security` dance and passes only the name.
+
+**Do not "simplify" this back to exporting `APPLE_CERTIFICATE`.** It looks like
+the obvious thing and it is the failing path.
+
+One detail inside that dance is easy to lose: `Keychain::sign` only passes
+`--keychain` when Tauri created the keychain itself, so on this path `codesign`
+resolves the private key through the **user's keychain search list**. Leave the
+new keychain out of the search list and `codesign` blocks on a GUI prompt that
+no runner will ever answer — it does not error, it hangs until the job times
+out.
+
+The workflow also asserts the result: a build that was meant to be signed and
+came out `Signature=adhoc` fails the run rather than shipping quietly.
 
 **`tauri.conf.json` still says `"signingIdentity": "-"`, and that is correct.**
 The environment variable wins; the config is the fallback. From the CLI source
