@@ -668,9 +668,46 @@ class CoreHost:
     def _cmd_stats_get(self, _params):
         return self._transfer_stats()
 
+    def _adopt_wishlist_search(self, token):
+        """Register a wishlist run the first time results arrive for it.
+
+        THE WISHLIST WAS WRITE-ONLY WITHOUT THIS. `searches.add` was called from
+        exactly one place — `search.start`, a search the user ran — and
+        `accept()` drops any token it does not know. Upstream mints its own
+        token for a wish and emits NO event when the timer fires it
+        (`add-search` comes from `do_search`, the manual path, only). So every
+        automatic result was thrown away at this door: the wish was registered,
+        upstream re-ran it forever, and Seek never showed a single hit.
+
+        Adopting on first response rather than at add time is deliberate. A wish
+        keeps ONE token across every re-run, so there is no start to hook — but
+        there is always a first result, and that is the moment the search
+        becomes worth having.
+
+        Upstream conveniently files a wish in BOTH of its maps —
+        `wishlist[term] = searches[token] = search` — so this is a direct
+        lookup and needs no scan.
+        """
+        known = self.searches.get(token)
+        if known is not None and known.closed is None:
+            return
+        upstream = self.core.search.searches.get(token)
+        if upstream is None or getattr(upstream, "mode", None) != "wishlist":
+            return
+        # `add` REPLACES any entry under this token, which is what a re-run
+        # needs: the previous run's results are done with, and carrying them
+        # forward would walk the result cap up until the search closed itself
+        # and started dropping again.
+        search = self.searches.add(
+            token, upstream.term, upstream.term_transmitted, "wishlist",
+        )
+        log.info("wishlist search %r produced results", upstream.term)
+        self.bridge.broadcast("search.started", search.info())
+
     def _on_search_response(self, msg):
         if msg.token is None or msg.list is None:
             return  # rejected upstream: unknown token, or an ignored user/IP
+        self._adopt_wishlist_search(msg.token)
         self._country_from_search(msg)
         extra = self._peer_extra.get(msg.username, {})
         peer = translate.peer_stats_from_search(msg, **extra)
