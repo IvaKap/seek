@@ -73,7 +73,14 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
     setByTransfer((prev) => (prev.get(transferId)?.state === 'running'
       ? prev : new Map(prev).set(transferId, { state: 'running' })));
 
-    void client.request<{ requestId: string }>('analysis.checksums', { transferId })
+    /* `path: null` is REQUIRED, not tidiness. A nullable field in the schema
+       may be null; it may not be ABSENT, and the sidecar's validator rejects
+       the command with "path: missing" — which no unit test here would see,
+       because nothing below the socket runs that validator. Caught by driving
+       the frozen binary. */
+    void client.request<{ requestId: string }>(
+      'analysis.checksums', { path: null, transferId },
+    )
       .then((r) => pending.current.set(r.requestId, transferId))
       .catch((e: Error) => {
         setByTransfer((prev) => new Map(prev).set(transferId, {
