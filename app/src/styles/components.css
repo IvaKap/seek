@@ -852,6 +852,23 @@
   font-size: var(--fs-micro); color: var(--text-secondary);
 }
 
+/* A wish that has found something. Accent, not warn: this is good news, and it
+   is the only news the wishlist ever delivers. */
+.wish__found {
+  padding: 0 var(--sp-2); border-radius: var(--radius-pill);
+  background: var(--bg-sunken); color: var(--text-secondary);
+  font-size: var(--fs-micro); white-space: nowrap; border: 0;
+}
+.wish__found--new { background: var(--accent-soft); color: var(--accent); }
+.wish__row[data-unseen='true'] .wish__q { font-weight: 600; }
+
+/* The filters a wish carries, said as a phrase. Dim, because it qualifies the
+   query beside it rather than competing with it. */
+.wish__filters {
+  color: var(--text-tertiary); font-size: var(--fs-micro);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 18rem;
+}
+
 /* Sits where `owned` sits on a release card, and reads the same way: one fact
    about this record, stated once. */
 .buddyonly {

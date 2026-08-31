@@ -14,9 +14,32 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
-import { IconEmpty, IconSearch } from '../icons/index.tsx';
+import type { WishHits } from '../data/wishHits.ts';
+import type { Filters } from '../domain/types.ts';
+import { describeFilters } from '../domain/wishFilters.ts';
+import { IconClose, IconEmpty, IconSearch } from '../icons/index.tsx';
 
-interface WishlistState { items: string[]; intervalSeconds: number }
+/** Mirrors `WishFilters` on the wire — see shared/schema.py for why it is
+ *  Seek's own shape rather than upstream's slots. */
+export interface WishFilters {
+  formats: string[];
+  losslessOnly: boolean;
+  minBitrate: number | null;
+  durationMin: number | null;
+  durationMax: number | null;
+  sizeMin: number | null;
+  sizeMax: number | null;
+  excludeTranscodes: boolean;
+  freeSlotsOnly: boolean;
+  minSpeed: number | null;
+  maxQueue: number | null;
+  include: string;
+  exclude: string;
+  hidePrivate: boolean;
+}
+
+interface Wish { query: string; filters: WishFilters | null }
+interface WishlistState { items: Wish[]; intervalSeconds: number }
 
 function interval(seconds: number): string {
   if (seconds <= 0) return 'once the server says how often';
@@ -26,12 +49,17 @@ function interval(seconds: number): string {
 }
 
 export function WishlistView({
-  client, signedIn, onSearch,
+  client, signedIn, onSearch, hits, currentFilters,
 }: {
   client: SidecarClient | null;
   signedIn: boolean;
   /** Run one now, by hand, without waiting for the timer. */
   onSearch(query: string): void;
+  /** What the automatic runs have turned up, waiting to be looked at. */
+  hits?: WishHits;
+  /** The filters currently set on the search screen, offered as a starting
+   *  point — copying what you can see beats retyping it into a second form. */
+  currentFilters?: Filters;
 }) {
   const [state, setState] = useState<WishlistState>({ items: [], intervalSeconds: 0 });
   const [draft, setDraft] = useState('');
@@ -59,6 +87,13 @@ export function WishlistView({
   const remove = useCallback((query: string) => {
     if (!client) return;
     void client.request<WishlistState>('wishlist.remove', { query })
+      .then(setState)
+      .catch((e: Error) => setError(e.message));
+  }, [client]);
+
+  const setFilters = useCallback((query: string, filters: WishFilters | null) => {
+    if (!client) return;
+    void client.request<WishlistState>('wishlist.filters', { query, filters })
       .then(setState)
       .catch((e: Error) => setError(e.message));
   }, [client]);
@@ -101,29 +136,83 @@ export function WishlistView({
           </div>
         ) : (
           <ul className="wish">
-            {state.items.map((q) => (
-              <li key={q} className="wish__row">
-                <span className="wish__q">{q}</span>
-                <button
-                  type="button"
-                  className="verify pressable"
-                  onPointerDown={() => onSearch(q)}
-                  title="Search for this now instead of waiting"
-                >
-                  <IconSearch size={12} painted={1.5} /> Now
-                </button>
-                <button
-                  type="button"
-                  className="verify pressable"
-                  onPointerDown={() => remove(q)}
-                >
-                  Remove
-                </button>
-              </li>
-            ))}
+            {state.items.map((wish) => {
+              const hit = hits?.byQuery[wish.query];
+              const found = hit?.sources.length ?? 0;
+              return (
+                <li key={wish.query} className="wish__row" data-unseen={hit?.unseen ? 'true' : undefined}>
+                  <span className="wish__q">{wish.query}</span>
+
+                  {/* A COUNT, and only once there is one. A wish that has never
+                      hit says nothing rather than "0 found", which reads as a
+                      verdict on the wish instead of an absence of news. */}
+                  {found > 0 && (
+                    <button
+                      type="button"
+                      className={hit?.unseen ? 'wish__found wish__found--new pressable' : 'wish__found pressable'}
+                      title={`${found} files from ${hit?.peerCount ?? 0} people. Opens as a search.`}
+                      onPointerDown={() => { hits?.markSeen(wish.query); onSearch(wish.query); }}
+                    >
+                      <span className="tnum">{found}</span> found
+                    </button>
+                  )}
+
+                  {wish.filters && (
+                    <span className="wish__filters" title={describeFilters(wish.filters)}>
+                      {describeFilters(wish.filters)}
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    className="verify pressable"
+                    onPointerDown={() => onSearch(wish.query)}
+                    title="Search for this now instead of waiting"
+                  >
+                    <IconSearch size={12} painted={1.5} /> Now
+                  </button>
+
+                  {/* Copying the filters you can already see beats a second
+                      form that says the same things in a smaller space. */}
+                  {currentFilters && !wish.filters && (
+                    <button
+                      type="button"
+                      className="verify pressable"
+                      title="Judge this wish by the filters currently set on the search screen"
+                      onPointerDown={() => setFilters(wish.query, toWire(currentFilters))}
+                    >
+                      Use current filters
+                    </button>
+                  )}
+                  {wish.filters && (
+                    <button
+                      type="button"
+                      className="verify pressable"
+                      title="Stop filtering this wish"
+                      onPointerDown={() => setFilters(wish.query, null)}
+                    >
+                      <IconClose size={11} painted={1.7} /> Filters
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    className="verify pressable"
+                    onPointerDown={() => remove(wish.query)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
     </>
   );
+}
+
+/** `Filters` is UI-shaped and holds a Set; the wire cannot. */
+function toWire(f: Filters): WishFilters {
+  return { ...f, formats: [...f.formats] };
 }

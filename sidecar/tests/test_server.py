@@ -304,7 +304,24 @@ def _event_samples():
             ],
         },
         "chat.members": {"room": "electronic", "users": ["someone", "another"]},
-        "wishlist.state": {"items": ["burial untrue"], "intervalSeconds": 720},
+        "wishlist.state": {
+            "items": [
+                {"query": "burial untrue", "filters": None},
+                {
+                    # A wish carrying filters, so the nested type is exercised
+                    # rather than only its null case.
+                    "query": "drexciya",
+                    "filters": {
+                        "formats": ["FLAC"], "losslessOnly": True,
+                        "minBitrate": None, "durationMin": None, "durationMax": None,
+                        "sizeMin": None, "sizeMax": None, "excludeTranscodes": True,
+                        "freeSlotsOnly": False, "minSpeed": None, "maxQueue": None,
+                        "include": "", "exclude": "", "hidePrivate": True,
+                    },
+                },
+            ],
+            "intervalSeconds": 720,
+        },
         "buddies.state": {"items": ["metalheadz2003"]},
         "library.gaps": {
             "key": "burial|untrue", "matched": True, "releaseTitle": "Untrue",

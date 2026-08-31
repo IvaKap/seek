@@ -1949,10 +1949,93 @@ export interface BuddyState {
   items: string[];
 }
 
+/**
+ * The filters a wish is judged by when it runs.
+ *
+ * SEEK'S OWN, DELIBERATELY, though upstream has slots for this. Its
+ * `update_wish_filters` takes filter_in, filter_out, size, bitrate,
+ * has_free_slot, country, file_type, length and is_public, and persists
+ * them in its wishlist file — but ONLY the GTK client ever reads them
+ * back (gtkgui/search.py), so the core does no filtering with them and
+ * they would buy storage and no behaviour.
+ *
+ * They also do not fit. There is no slot for a transcode check, none
+ * for peer speed or queue length, one `file_type` string where Seek
+ * keeps a set of formats, and nothing at all for buddy-only results —
+ * which are the two filters most worth carrying on a wish, since a wish
+ * runs while nobody is watching and a result you can neither download
+ * nor trust is worse than no result.
+ *
+ * So this mirrors `Filters` in app/src/domain/types.ts, field for field.
+ * Anything else would be a translation with losses in both directions.
+ */
+export interface WishFilters {
+  /** Format labels to keep. Empty means any. */
+  formats: string[];
+  losslessOnly: boolean;
+
+  /** kbps. Lossless satisfies any floor. */
+  minBitrate: number | null;
+
+  /** Seconds. */
+  durationMin: number | null;
+
+  /** Seconds. */
+  durationMax: number | null;
+
+  /** Bytes. */
+  sizeMin: number | null;
+
+  /** Bytes. */
+  sizeMax: number | null;
+
+  /** Drop what fails the physics check. */
+  excludeTranscodes: boolean;
+  freeSlotsOnly: boolean;
+
+  /** Bytes per second, advertised. */
+  minSpeed: number | null;
+  maxQueue: number | null;
+
+  /** Space-separated words the filename must contain. */
+  include: string;
+
+  /** Space-separated words that disqualify a filename. */
+  exclude: string;
+
+  /**
+   * Drop buddy-only results. True by default everywhere in Seek: a buddy-only
+   * file you are not a buddy for is refused every time, and on an unattended
+   * run there is nobody to notice.
+   */
+  hidePrivate: boolean;
+}
+
+/** A standing query, and what it should be judged by. */
+export interface Wish {
+  /** The wish text. Upstream keys its wishlist by this. */
+  query: string;
+
+  /**
+   * Null when the wish keeps no filters of its own, which is the default and
+   * means its results are shown unfiltered.
+   */
+  filters: WishFilters | null;
+}
+
+/** Set or clear the filters on one wish. */
+export interface WishFiltersParams {
+  /** Which wish. */
+  query: string;
+
+  /** Null clears them. */
+  filters: WishFilters | null;
+}
+
 /** The wishlist, and how often the server permits it to run. */
 export interface WishlistState {
-  /** Queries, newest first. */
-  items: string[];
+  /** Wishes, newest first. */
+  items: Wish[];
 
   /**
    * Server-dictated seconds between automatic runs. 0 before the server has
@@ -2770,6 +2853,8 @@ export interface CommandParams {
   'wishlist.add': WishParams;
   /** Drop a query from the wishlist. */
   'wishlist.remove': WishParams;
+  /** Set or clear the filters carried by one wish. */
+  'wishlist.filters': WishFiltersParams;
   /** Current wishlist and interval. */
   'wishlist.list': Record<string, never>;
   /**
@@ -3025,6 +3110,7 @@ export interface CommandResult {
   'chat.open': Record<string, never>;
   'wishlist.add': WishlistState;
   'wishlist.remove': WishlistState;
+  'wishlist.filters': WishlistState;
   'wishlist.list': WishlistState;
   'artwork.get': RequestAccepted;
   'artwork.stats': ArtworkCacheStats;
@@ -3114,6 +3200,7 @@ export const COMMAND_NAMES = [
   'chat.open',
   'wishlist.add',
   'wishlist.remove',
+  'wishlist.filters',
   'wishlist.list',
   'artwork.get',
   'artwork.stats',

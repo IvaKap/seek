@@ -46,6 +46,7 @@ import { useRelated } from './data/relatedStore.ts';
 import { LibraryView } from './ui/LibraryView.tsx';
 import { BrowseView } from './ui/BrowseView.tsx';
 import { WishlistView } from './ui/WishlistView.tsx';
+import { useWishHits } from './data/wishHits.ts';
 import { FollowedView, HistoryView, SavedView, serialiseFilters } from './ui/DiscoveryViews.tsx';
 import { DownloadsView } from './ui/DownloadsView.tsx';
 import { ChatView } from './ui/ChatView.tsx';
@@ -220,6 +221,9 @@ export default function App() {
   const sessions = useSessions(session.client, want.entries);
   const catalog = useCatalog(session.client);
   const labels = useLabels(session.client);
+  /* What the wishlist has turned up while you were doing something else. It
+     never interrupts — the count waits on the Wishlist screen and in the nav. */
+  const wishHits = useWishHits(session.client);
   const related = useRelated(session.client);
   /* The want entry whose search is in flight. One at a time on purpose:
      Soulseek throttles a client that searches faster than the server allows,
@@ -791,6 +795,7 @@ export default function App() {
         roomUnread={roomUnread}
         privateUnread={privateUnread}
         wantPending={want.pendingCount}
+        wishFound={wishHits.unseenCount}
         hasSessions={sessions.sessions.length > 0}
         hasLabels={labels.labels.length > 0}
         uploadCount={transfers.uploadCount}
@@ -929,6 +934,8 @@ export default function App() {
             client={session.client}
             signedIn={isSignedIn(session.serverState)}
             onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
+            hits={wishHits}
+            currentFilters={session.filters}
           />
         ) : section === 'browsing' ? (
           <BrowseView

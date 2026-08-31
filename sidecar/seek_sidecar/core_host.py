@@ -2459,9 +2459,25 @@ class CoreHost:
     # wishlist search more often than that is what gets a client throttled.
     # So Seek never polls — it registers the wish and listens.
 
+    def _wish_filters(self):
+        """Per-wish filters, keyed by wish text.
+
+        SEEK'S STATE, not pynicotine's — `load_config()` silently drops sections
+        it has no defaults for, so anything of ours in its config survives the
+        write and vanishes on reload. Upstream also has its own filter slots and
+        they are deliberately unused; the reasoning is on `WishFilters` in
+        shared/schema.py.
+        """
+        stored = self._load_state().get("wish_filters")
+        return dict(stored) if isinstance(stored, dict) else {}
+
     def _wishlist_state(self):
+        filters = self._wish_filters()
         return {
-            "items": list(reversed(list(self.core.search.wishlist))),
+            "items": [
+                {"query": q, "filters": filters.get(q)}
+                for q in reversed(list(self.core.search.wishlist))
+            ],
             "intervalSeconds": int(self.core.search.wishlist_interval or 0),
         }
 
@@ -2477,9 +2493,37 @@ class CoreHost:
         self.bridge.broadcast("wishlist.state", state)
         return state
 
+    def _cmd_wishlist_filters(self, params):
+        query = str(params.get("query") or "").strip()
+        if not query:
+            raise CommandError("bad_request", "empty wish")
+        if query not in self.core.search.wishlist:
+            raise CommandError("not_found", "no such wish")
+
+        stored = self._wish_filters()
+        filters = params.get("filters")
+        if filters is None:
+            # Clearing REMOVES the key rather than storing an empty filter set.
+            # An all-defaults object and "no filters" render identically and
+            # behave identically, and keeping both invites code that has to ask
+            # which one it is looking at.
+            stored.pop(query, None)
+        else:
+            stored[query] = dict(filters)
+        self._save_state(wish_filters=stored)
+
+        state = self._wishlist_state()
+        self.bridge.broadcast("wishlist.state", state)
+        return state
+
     def _cmd_wishlist_remove(self, params):
         query = (params.get("query") or "").strip()
         self.core.search.remove_wish(query)
+        # Otherwise re-adding the same text later silently inherits filters the
+        # user last saw months ago.
+        stored = self._wish_filters()
+        if stored.pop(query, None) is not None:
+            self._save_state(wish_filters=stored)
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
         return state

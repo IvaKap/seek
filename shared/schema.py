@@ -1645,10 +1645,71 @@ STRUCTS = {
         "",
         [("items", "str[]", "Buddy usernames, as upstream holds them.")],
     ),
+    "WishFilters": (
+        "The filters a wish is judged by when it runs.\n"
+        "\n"
+        "SEEK'S OWN, DELIBERATELY, though upstream has slots for this. Its\n"
+        "`update_wish_filters` takes filter_in, filter_out, size, bitrate,\n"
+        "has_free_slot, country, file_type, length and is_public, and persists\n"
+        "them in its wishlist file — but ONLY the GTK client ever reads them\n"
+        "back (gtkgui/search.py), so the core does no filtering with them and\n"
+        "they would buy storage and no behaviour.\n"
+        "\n"
+        "They also do not fit. There is no slot for a transcode check, none\n"
+        "for peer speed or queue length, one `file_type` string where Seek\n"
+        "keeps a set of formats, and nothing at all for buddy-only results —\n"
+        "which are the two filters most worth carrying on a wish, since a wish\n"
+        "runs while nobody is watching and a result you can neither download\n"
+        "nor trust is worse than no result.\n"
+        "\n"
+        "So this mirrors `Filters` in app/src/domain/types.ts, field for field.\n"
+        "Anything else would be a translation with losses in both directions.",
+        [
+            ("formats", "str[]", "Format labels to keep. Empty means any."),
+            ("losslessOnly", "bool", ""),
+            ("minBitrate", "int?", "kbps. Lossless satisfies any floor."),
+            ("durationMin", "int?", "Seconds."),
+            ("durationMax", "int?", "Seconds."),
+            ("sizeMin", "int?", "Bytes."),
+            ("sizeMax", "int?", "Bytes."),
+            ("excludeTranscodes", "bool", "Drop what fails the physics check."),
+            ("freeSlotsOnly", "bool", ""),
+            ("minSpeed", "int?", "Bytes per second, advertised."),
+            ("maxQueue", "int?", ""),
+            ("include", "str", "Space-separated words the filename must contain."),
+            ("exclude", "str", "Space-separated words that disqualify a filename."),
+            (
+                "hidePrivate",
+                "bool",
+                "Drop buddy-only results. True by default everywhere in Seek: "
+                "a buddy-only file you are not a buddy for is refused every "
+                "time, and on an unattended run there is nobody to notice.",
+            ),
+        ],
+    ),
+    "Wish": (
+        "A standing query, and what it should be judged by.",
+        [
+            ("query", "str", "The wish text. Upstream keys its wishlist by this."),
+            (
+                "filters",
+                "WishFilters?",
+                "Null when the wish keeps no filters of its own, which is the "
+                "default and means its results are shown unfiltered.",
+            ),
+        ],
+    ),
+    "WishFiltersParams": (
+        "Set or clear the filters on one wish.",
+        [
+            ("query", "str", "Which wish."),
+            ("filters", "WishFilters?", "Null clears them."),
+        ],
+    ),
     "WishlistState": (
         "The wishlist, and how often the server permits it to run.",
         [
-            ("items", "str[]", "Queries, newest first."),
+            ("items", "Wish[]", "Wishes, newest first."),
             (
                 "intervalSeconds",
                 "int",
@@ -2374,6 +2435,11 @@ COMMANDS = {
         "WishlistState",
     ),
     "wishlist.remove": ("Drop a query from the wishlist.", "WishParams", "WishlistState"),
+    "wishlist.filters": (
+        "Set or clear the filters carried by one wish.",
+        "WishFiltersParams",
+        "WishlistState",
+    ),
     "wishlist.list": ("Current wishlist and interval.", None, "WishlistState"),
     "artwork.get": (
         "Ask for a release cover. Replies immediately with a requestId; the "

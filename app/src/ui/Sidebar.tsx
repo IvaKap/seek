@@ -81,7 +81,7 @@ function Rate({ direction, bytesPerSec }: { direction: 'down' | 'up'; bytesPerSe
 export function Sidebar({
   active, onSelect, downloadCount, browsingUser, status, throughput,
   roomUnread = 0, privateUnread = 0, wantPending = 0, hasSessions = false,
-  hasLabels = false, uploadCount = 0,
+  hasLabels = false, uploadCount = 0, wishFound = 0,
 }: {
   active: Section;
   onSelect(s: Section): void;
@@ -92,6 +92,8 @@ export function Sidebar({
   throughput?: Throughput;
   /** Want list entries not yet looked for. Absent, not zero, when there are none. */
   wantPending?: number;
+  /** Wishes that have found something you have not looked at yet. */
+  wishFound?: number;
   /** Dig Sessions appears only once one exists — see the note on `browsing`. */
   hasSessions?: boolean;
   /** Labels appears only once a catalogue is watched, for the same reason. */
@@ -182,7 +184,9 @@ export function Sidebar({
         ...(hasLabels
           ? [{ id: 'labels' as Section, label: 'Labels & Artists', icon: <IconLabels size={16} /> }]
           : []),
-        { id: 'wishlist', label: 'Wishlist', icon: <IconSearch size={16} /> },
+        /* The badge is the whole point of the wishlist working at all: it runs
+           while you are elsewhere, so this is the only way you learn it hit. */
+        { id: 'wishlist', label: 'Wishlist', icon: <IconSearch size={16} />, badge: wishFound || undefined },
         { id: 'history', label: 'Search History', icon: <IconHistory size={16} /> },
         { id: 'saved', label: 'Saved Searches', icon: <IconLibrary size={16} /> },
       ],

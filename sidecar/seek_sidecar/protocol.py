@@ -1576,10 +1576,77 @@ class BuddyState(TypedDict):
     items: List[str]
 
 
+class WishFilters(TypedDict):
+    """
+    The filters a wish is judged by when it runs.
+
+    SEEK'S OWN, DELIBERATELY, though upstream has slots for this. Its
+    `update_wish_filters` takes filter_in, filter_out, size, bitrate,
+    has_free_slot, country, file_type, length and is_public, and persists
+    them in its wishlist file — but ONLY the GTK client ever reads them
+    back (gtkgui/search.py), so the core does no filtering with them and
+    they would buy storage and no behaviour.
+
+    They also do not fit. There is no slot for a transcode check, none
+    for peer speed or queue length, one `file_type` string where Seek
+    keeps a set of formats, and nothing at all for buddy-only results —
+    which are the two filters most worth carrying on a wish, since a wish
+    runs while nobody is watching and a result you can neither download
+    nor trust is worse than no result.
+
+    So this mirrors `Filters` in app/src/domain/types.ts, field for field.
+    Anything else would be a translation with losses in both directions.
+    """
+    # Format labels to keep. Empty means any.
+    formats: List[str]
+    losslessOnly: bool
+    # kbps. Lossless satisfies any floor.
+    minBitrate: Optional[int]
+    # Seconds.
+    durationMin: Optional[int]
+    # Seconds.
+    durationMax: Optional[int]
+    # Bytes.
+    sizeMin: Optional[int]
+    # Bytes.
+    sizeMax: Optional[int]
+    # Drop what fails the physics check.
+    excludeTranscodes: bool
+    freeSlotsOnly: bool
+    # Bytes per second, advertised.
+    minSpeed: Optional[int]
+    maxQueue: Optional[int]
+    # Space-separated words the filename must contain.
+    include: str
+    # Space-separated words that disqualify a filename.
+    exclude: str
+    # Drop buddy-only results. True by default everywhere in Seek: a
+    # buddy-only file you are not a buddy for is refused every time, and on an
+    # unattended run there is nobody to notice.
+    hidePrivate: bool
+
+
+class Wish(TypedDict):
+    """A standing query, and what it should be judged by."""
+    # The wish text. Upstream keys its wishlist by this.
+    query: str
+    # Null when the wish keeps no filters of its own, which is the default and
+    # means its results are shown unfiltered.
+    filters: Optional["WishFilters"]
+
+
+class WishFiltersParams(TypedDict):
+    """Set or clear the filters on one wish."""
+    # Which wish.
+    query: str
+    # Null clears them.
+    filters: Optional["WishFilters"]
+
+
 class WishlistState(TypedDict):
     """The wishlist, and how often the server permits it to run."""
-    # Queries, newest first.
-    items: List[str]
+    # Wishes, newest first.
+    items: List["Wish"]
     # Server-dictated seconds between automatic runs. 0 before the server has
     # told us, which it does shortly after login.
     intervalSeconds: int
@@ -2724,8 +2791,32 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "BuddyState": (
         ("items", "str", True, False),
     ),
+    "WishFilters": (
+        ("formats", "str", True, False),
+        ("losslessOnly", "bool", False, False),
+        ("minBitrate", "int", False, True),
+        ("durationMin", "int", False, True),
+        ("durationMax", "int", False, True),
+        ("sizeMin", "int", False, True),
+        ("sizeMax", "int", False, True),
+        ("excludeTranscodes", "bool", False, False),
+        ("freeSlotsOnly", "bool", False, False),
+        ("minSpeed", "int", False, True),
+        ("maxQueue", "int", False, True),
+        ("include", "str", False, False),
+        ("exclude", "str", False, False),
+        ("hidePrivate", "bool", False, False),
+    ),
+    "Wish": (
+        ("query", "str", False, False),
+        ("filters", "WishFilters", False, True),
+    ),
+    "WishFiltersParams": (
+        ("query", "str", False, False),
+        ("filters", "WishFilters", False, True),
+    ),
     "WishlistState": (
-        ("items", "str", True, False),
+        ("items", "Wish", True, False),
         ("intervalSeconds", "int", False, False),
     ),
     "TransferIdsParams": (
@@ -2995,6 +3086,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "chat.open": ("ChatOpenParams", None),
     "wishlist.add": ("WishParams", "WishlistState"),
     "wishlist.remove": ("WishParams", "WishlistState"),
+    "wishlist.filters": ("WishFiltersParams", "WishlistState"),
     "wishlist.list": (None, "WishlistState"),
     "artwork.get": ("ArtworkParams", "RequestAccepted"),
     "artwork.stats": (None, "ArtworkCacheStats"),
