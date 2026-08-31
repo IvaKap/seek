@@ -2191,6 +2191,64 @@
 }
 .verify__caret { margin-left: 0.25rem; color: var(--text-tertiary); }
 
+/* The checksum report.
+ *
+ * A grid rather than flex, so the verdict column lines up down the list — you
+ * read this by scanning one column for the word that is not "Verified", and
+ * ragged verdicts make that scan impossible.
+ *
+ * The tone comes from the entry, not from the row's state: a whole-file
+ * mismatch is amber and an audio-fingerprint mismatch is red, because one is a
+ * question about tagging and the other is an answer about the music. See the
+ * header on domain/checksums.ts. */
+.cks { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cks__cap { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+.cks__headline { font-size: var(--fs-secondary); }
+.cks__headline[data-tone='good'] { color: var(--success); }
+.cks__headline[data-tone='warn'] { color: var(--warn); }
+.cks__headline[data-tone='bad']  { color: var(--danger); }
+.cks__headline[data-tone='unknown'] { color: var(--text-secondary); }
+.cks__meta {
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-tertiary); font-variant-numeric: tabular-nums;
+}
+
+.cks__list { list-style: none; margin: 0; padding: 0; max-width: 46rem; }
+.cks__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) auto auto;
+  align-items: baseline;
+  gap: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) 0;
+  border-top: 1px solid var(--separator);
+}
+.cks__row:first-child { border-top: 0; }
+.cks__name {
+  font-size: var(--fs-secondary); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cks__kind, .cks__verdict {
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  white-space: nowrap;
+}
+.cks__kind { color: var(--text-quaternary); }
+.cks__verdict[data-tone='good'] { color: var(--success); }
+.cks__verdict[data-tone='warn'] { color: var(--warn); }
+.cks__verdict[data-tone='bad']  { color: var(--danger); }
+.cks__verdict[data-tone='unknown'] { color: var(--text-tertiary); }
+/* The sentence runs the full width under its own row rather than squeezing
+   into a fourth column, where every explanation would wrap to four lines. */
+.cks__why {
+  grid-column: 1 / -1;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); line-height: 1.45;
+}
+.cks__note {
+  margin: 0; max-width: 40rem;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-tertiary); line-height: 1.45;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   .spec__svg { background: var(--bg-raised); }
 }

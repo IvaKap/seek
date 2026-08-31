@@ -292,6 +292,28 @@ def _event_samples():
         "analysis.failed": {
             "requestId": "r", "path": "/tmp/a.flac", "reason": "decode failed",
         },
+        "checksums.result": {
+            "requestId": "r", "folderPath": "/tmp/release", "transferId": None,
+            "sidecars": [{
+                "path": "/tmp/release/album.ffp", "kind": "ffp",
+                "entryCount": 2, "unparsedLines": 0, "error": "",
+            }],
+            "entries": [
+                {
+                    "name": "01.flac", "kind": "ffp", "expected": "ab" * 16,
+                    "localPath": "/tmp/release/01.flac", "actual": "ab" * 16,
+                    "issue": None,
+                },
+                {
+                    "name": "02.flac", "kind": "ffp", "expected": "cd" * 16,
+                    "localPath": "", "actual": None, "issue": "missing",
+                },
+            ],
+        },
+        "checksums.failed": {
+            "requestId": "r", "path": "/tmp/release/01.flac",
+            "reason": "no such folder",
+        },
         "chat.message": {
             "scope": "room", "target": "electronic", "username": "someone",
             "message": "anyone got the Hyperdub reissue", "outgoing": False,

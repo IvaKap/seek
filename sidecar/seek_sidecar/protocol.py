@@ -119,6 +119,30 @@ genuinely lacks high-frequency energy. Never render any of these as a
 definitive verdict — there is no 'fake' value here on purpose.
 """
 
+ChecksumKind = Literal["ffp", "md5"]
+"""
+Which sidecar an expected digest came out of, and therefore what it is a
+digest OF.
+
+'ffp' is the FLAC STREAMINFO signature — an MD5 of the DECODED audio,
+unchanged by tagging. 'md5' is md5sum over the whole file, which a single
+tag edit changes. They fail differently and the UI must not collapse them
+into one word: an ffp mismatch means different audio, an md5 mismatch might
+only mean somebody fixed a spelling.
+"""
+
+ChecksumIssue = Literal["missing", "not_flac", "no_signature", "unreadable"]
+"""
+Why a digest could not be computed for a file a sidecar named. Null on
+`ChecksumEntry.issue` means it WAS computed and the comparison is
+meaningful.
+
+None of these are failures of the check. 'missing' most often means the
+release is incomplete, which is worth knowing; 'no_signature' means the
+encoder left the STREAMINFO MD5 unset, which is permitted and says nothing
+about the audio.
+"""
+
 ShareConsent = Literal["unset", "granted", "declined"]
 """
 Whether the user has decided what to share back to the network.
@@ -170,6 +194,8 @@ ENUM_VALUES: Dict[str, Tuple[str, ...]] = {
     "TransferState": ("queued", "rejected", "getting_status", "transferring", "paused", "cancelled", "filtered", "finished", "user_logged_off", "connection_closed", "connection_timeout", "download_folder_error", "local_file_error", "unknown",),
     "ErrorCode": ("bad_request", "unknown_command", "not_connected", "already_queued", "not_found", "unsupported", "internal",),
     "SpectralAssessment": ("likely_lossless", "possible_transcode", "strong_signs_of_lossy_source", "inconclusive",),
+    "ChecksumKind": ("ffp", "md5",),
+    "ChecksumIssue": ("missing", "not_flac", "no_signature", "unreadable",),
     "ShareConsent": ("unset", "granted", "declined",),
     "LogLevel": ("debug", "info", "warning", "error",),
     "WantSource": ("youtube", "bandcamp", "discogs", "manual", "fingerprint",),
@@ -1982,6 +2008,95 @@ class AnalysisFailedEvent(TypedDict):
     reason: str
 
 
+class ChecksumSidecar(TypedDict):
+    """
+    One `.ffp` or `.md5` file found beside a download, and how much of it
+    could be read. `unparsedLines` is reported rather than swallowed: a
+    sidecar we half-understood must not look like one that verified cleanly.
+    """
+    # Absolute local path of the sidecar itself.
+    path: str
+    kind: "ChecksumKind"
+    # Lines that parsed into a name and a digest.
+    entryCount: int
+    # Non-comment lines that did not.
+    unparsedLines: int
+    # Empty when the file was read. Developer-facing when it was not.
+    error: str
+
+
+class ChecksumEntry(TypedDict):
+    """
+    One claim a sidecar makes, beside what the local file actually is.
+
+    Deliberately NOT a verdict. `expected` and `actual` are both here and
+    the comparison is the frontend's, for the same reason no other
+    conclusion is drawn in Python: the wording of a mismatch depends
+    entirely on `kind`, and that wording is a display decision.
+    """
+    # The name exactly as the sidecar wrote it.
+    name: str
+    kind: "ChecksumKind"
+    # Lowercase hex, as claimed by the sidecar.
+    expected: str
+    # Absolute path of the file this line resolved to, or empty when no such
+    # file is in the folder.
+    localPath: str
+    # Lowercase hex computed from the bytes on disk. Null exactly when `issue`
+    # is set.
+    actual: Optional[str]
+    # Null when `actual` was computed.
+    issue: Optional["ChecksumIssue"]
+
+
+class ChecksumReport(TypedDict):
+    """
+    What the checksum sidecars in one folder say about the files in it.
+
+    This is the only HARD fact Seek can offer about a downloaded file. The
+    protocol carries no hashes at all (RECON.md §2), so every other check is
+    inference: the search-time arithmetic is a prediction and the spectral
+    pass is a reading. When an uploader shipped a fingerprint, it is
+    evidence of a different order — and it costs nothing, because the
+    sidecar already downloaded with the rest of the folder.
+
+    An empty `sidecars` is the ordinary case and must not read as a failure.
+    Most releases have none.
+    """
+    # Echoes the analysis.checksums request.
+    requestId: str
+    # The folder that was inspected.
+    folderPath: str
+    # The transfer this was asked for, when the request supplied one.
+    transferId: Optional[str]
+    # Empty when the folder has none.
+    sidecars: List["ChecksumSidecar"]
+    # Every line of every sidecar, in file order.
+    entries: List["ChecksumEntry"]
+
+
+class ChecksumRequestParams(TypedDict):
+    """
+    Verify a downloaded folder against any checksum sidecar in it. The file
+    identifies the FOLDER; the check is never about one track, because a
+    sidecar covers the release.
+
+    Runs on a worker thread — a `.md5` reads every byte of every file — and
+    the reply is immediate.
+    """
+    # Absolute local path of any file in the folder. Null means 'use the file
+    # for transferId'.
+    path: Optional[str]
+    # A finished transfer whose folder should be checked. Ignored if `path` is
+    # given.
+    transferId: Optional[str]
+
+
+class ChecksumRequestResult(TypedDict):
+    # Correlates the later checksums.result event.
+    requestId: str
+
+
 class SharedFolder(TypedDict):
     """One folder offered to the network."""
     # Name peers see. Upstream keys shares on this, and it need not resemble
@@ -2960,6 +3075,35 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("path", "str", False, True),
         ("reason", "str", False, False),
     ),
+    "ChecksumSidecar": (
+        ("path", "str", False, False),
+        ("kind", "ChecksumKind", False, False),
+        ("entryCount", "int", False, False),
+        ("unparsedLines", "int", False, False),
+        ("error", "str", False, False),
+    ),
+    "ChecksumEntry": (
+        ("name", "str", False, False),
+        ("kind", "ChecksumKind", False, False),
+        ("expected", "str", False, False),
+        ("localPath", "str", False, False),
+        ("actual", "str", False, True),
+        ("issue", "ChecksumIssue", False, True),
+    ),
+    "ChecksumReport": (
+        ("requestId", "str", False, False),
+        ("folderPath", "str", False, False),
+        ("transferId", "str", False, True),
+        ("sidecars", "ChecksumSidecar", True, False),
+        ("entries", "ChecksumEntry", True, False),
+    ),
+    "ChecksumRequestParams": (
+        ("path", "str", False, True),
+        ("transferId", "str", False, True),
+    ),
+    "ChecksumRequestResult": (
+        ("requestId", "str", False, False),
+    ),
     "SharedFolder": (
         ("virtualName", "str", False, False),
         ("path", "str", False, False),
@@ -3079,6 +3223,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "transfer.clear": ("TransferIdsParams", None),
     "transfer.list": (None, "TransferListResult"),
     "analysis.spectral": ("SpectralRequestParams", "SpectralRequestResult"),
+    "analysis.checksums": ("ChecksumRequestParams", "ChecksumRequestResult"),
     "chat.rooms": (None, None),
     "chat.join": ("ChatJoinParams", None),
     "chat.leave": ("ChatLeaveParams", None),
@@ -3169,6 +3314,8 @@ EVENTS: Dict[str, str] = {
     "folder.finished": "FolderFinishedEvent",
     "analysis.result": "SpectralAnalysis",
     "analysis.failed": "AnalysisFailedEvent",
+    "checksums.result": "ChecksumReport",
+    "checksums.failed": "AnalysisFailedEvent",
     "chat.message": "ChatMessage",
     "chat.rooms": "ChatRoomList",
     "chat.members": "ChatRoomMembers",

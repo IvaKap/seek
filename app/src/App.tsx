@@ -21,6 +21,7 @@ import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
 import { useAnalysis } from './data/analysisStore.ts';
+import { useChecksums } from './data/checksumStore.ts';
 import { useBrowse } from './data/browseStore.ts';
 import { useArtwork } from './data/artworkStore.ts';
 import { useLibrary } from './data/libraryStore.ts';
@@ -212,6 +213,7 @@ export default function App() {
   );
   const updates = useUpdates();
   const analysis = useAnalysis(session.client);
+  const checksums = useChecksums(session.client);
   const artwork = useArtwork(session.client);
   const library = useLibrary(session.client);
   const browse = useBrowse(session.client, library.ownedReleases);
@@ -950,6 +952,7 @@ export default function App() {
             filter={section === 'downloads' ? 'active'
               : section === 'completed' ? 'finished' : 'failed'}
             analysis={analysis}
+            checksums={checksums}
             client={session.client}
             preview={preview}
             density={dlDensity}

@@ -24,8 +24,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from . import (
-    discover as discover_mod, enrich, library as library_mod, logfile,
-    nicotine_import, registries, translate,
+    checksums, discover as discover_mod, enrich, library as library_mod,
+    logfile, nicotine_import, registries, translate,
 )
 from .protocol import PROTOCOL_VERSION
 
@@ -3017,6 +3017,67 @@ class CoreHost:
             })
             return
         self.bridge.broadcast("analysis.result", payload)
+
+    # -- checksum sidecars (post-download only) ----------------------------
+
+    def _cmd_analysis_checksums(self, params):
+        """Queue a check of one downloaded FOLDER against its `.ffp`/`.md5`.
+
+        The request names a file and we take its folder, because a checksum
+        sidecar covers the release rather than a track — and because the file
+        the user pressed the button on is the one thing they can point at.
+
+        On the worker pool for the same reason as spectral analysis: a `.md5`
+        reads every byte of every file in the folder, which for a 24-bit
+        release is a gigabyte of I/O that must not touch the event loop.
+        """
+        path = self._resolve_local_file(params)
+        folder = self._checksum_folder(path)
+        transfer_id = params.get("transferId")
+
+        request_id = registries.transfer_id(folder, str(transfer_id or ""))
+        self._analysis_pool.submit(
+            self._run_checksums, request_id, folder, path, transfer_id,
+        )
+        return {"requestId": request_id}
+
+    def _checksum_folder(self, path):
+        """Where to look for the sidecar: the file's folder, or its parent.
+
+        A multi-disc rip commonly puts ONE fingerprint at the release root and
+        the audio in `CD1/`, `CD2/`, and its lines are relative to that root —
+        so looking only beside the file finds nothing on exactly the releases
+        most likely to carry one.
+
+        The parent is only considered when the file's own folder has none, and
+        never when the parent IS the download root: a stray `.md5` sitting
+        loose in the downloads folder has nothing to do with this release.
+        """
+        folder = os.path.dirname(path)
+        if checksums.find_sidecars(folder):
+            return folder
+
+        parent = os.path.dirname(folder)
+        if not parent or parent == folder:
+            return folder
+        root = self._download_root()
+        if root and os.path.realpath(parent) == os.path.realpath(root):
+            return folder
+        return parent if checksums.find_sidecars(parent) else folder
+
+    def _run_checksums(self, request_id, folder, path, transfer_id):
+        """Worker-thread body. Never raises into the pool."""
+        try:
+            report = checksums.verify_folder(folder)
+        except Exception as error:
+            log.warning("checksum check failed for %s: %s", folder, error)
+            self.bridge.broadcast("checksums.failed", {
+                "requestId": request_id, "path": path, "reason": str(error),
+            })
+            return
+        report["requestId"] = request_id
+        report["transferId"] = transfer_id
+        self.bridge.broadcast("checksums.result", report)
 
     # -- chat --------------------------------------------------------------
     #

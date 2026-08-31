@@ -114,6 +114,30 @@ export type SpectralAssessment =
   | 'inconclusive';
 
 /**
+ * Which sidecar an expected digest came out of, and therefore what it is a
+ * digest OF.
+ *
+ * 'ffp' is the FLAC STREAMINFO signature — an MD5 of the DECODED audio,
+ * unchanged by tagging. 'md5' is md5sum over the whole file, which a single
+ * tag edit changes. They fail differently and the UI must not collapse them
+ * into one word: an ffp mismatch means different audio, an md5 mismatch might
+ * only mean somebody fixed a spelling.
+ */
+export type ChecksumKind = 'ffp' | 'md5';
+
+/**
+ * Why a digest could not be computed for a file a sidecar named. Null on
+ * `ChecksumEntry.issue` means it WAS computed and the comparison is
+ * meaningful.
+ *
+ * None of these are failures of the check. 'missing' most often means the
+ * release is incomplete, which is worth knowing; 'no_signature' means the
+ * encoder left the STREAMINFO MD5 unset, which is permitted and says nothing
+ * about the audio.
+ */
+export type ChecksumIssue = 'missing' | 'not_flac' | 'no_signature' | 'unreadable';
+
+/**
  * Whether the user has decided what to share back to the network.
  *
  * 'declined' is a real, persisted answer, not an absence of one, and the
@@ -2472,6 +2496,115 @@ export interface AnalysisFailedEvent {
   reason: string;
 }
 
+/**
+ * One `.ffp` or `.md5` file found beside a download, and how much of it could
+ * be read. `unparsedLines` is reported rather than swallowed: a sidecar we
+ * half-understood must not look like one that verified cleanly.
+ */
+export interface ChecksumSidecar {
+  /** Absolute local path of the sidecar itself. */
+  path: string;
+  kind: ChecksumKind;
+
+  /** Lines that parsed into a name and a digest. */
+  entryCount: number;
+
+  /** Non-comment lines that did not. */
+  unparsedLines: number;
+
+  /** Empty when the file was read. Developer-facing when it was not. */
+  error: string;
+}
+
+/**
+ * One claim a sidecar makes, beside what the local file actually is.
+ *
+ * Deliberately NOT a verdict. `expected` and `actual` are both here and the
+ * comparison is the frontend's, for the same reason no other conclusion is
+ * drawn in Python: the wording of a mismatch depends entirely on `kind`, and
+ * that wording is a display decision.
+ */
+export interface ChecksumEntry {
+  /** The name exactly as the sidecar wrote it. */
+  name: string;
+  kind: ChecksumKind;
+
+  /** Lowercase hex, as claimed by the sidecar. */
+  expected: string;
+
+  /**
+   * Absolute path of the file this line resolved to, or empty when no such
+   * file is in the folder.
+   */
+  localPath: string;
+
+  /**
+   * Lowercase hex computed from the bytes on disk. Null exactly when `issue`
+   * is set.
+   */
+  actual: string | null;
+
+  /** Null when `actual` was computed. */
+  issue: ChecksumIssue | null;
+}
+
+/**
+ * What the checksum sidecars in one folder say about the files in it.
+ *
+ * This is the only HARD fact Seek can offer about a downloaded file. The
+ * protocol carries no hashes at all (RECON.md §2), so every other check is
+ * inference: the search-time arithmetic is a prediction and the spectral pass
+ * is a reading. When an uploader shipped a fingerprint, it is evidence of a
+ * different order — and it costs nothing, because the sidecar already
+ * downloaded with the rest of the folder.
+ *
+ * An empty `sidecars` is the ordinary case and must not read as a failure.
+ * Most releases have none.
+ */
+export interface ChecksumReport {
+  /** Echoes the analysis.checksums request. */
+  requestId: string;
+
+  /** The folder that was inspected. */
+  folderPath: string;
+
+  /** The transfer this was asked for, when the request supplied one. */
+  transferId: string | null;
+
+  /** Empty when the folder has none. */
+  sidecars: ChecksumSidecar[];
+
+  /** Every line of every sidecar, in file order. */
+  entries: ChecksumEntry[];
+}
+
+/**
+ * Verify a downloaded folder against any checksum sidecar in it. The file
+ * identifies the FOLDER; the check is never about one track, because a sidecar
+ * covers the release.
+ *
+ * Runs on a worker thread — a `.md5` reads every byte of every file — and the
+ * reply is immediate.
+ */
+export interface ChecksumRequestParams {
+  /**
+   * Absolute local path of any file in the folder. Null means 'use the file
+   * for transferId'.
+   */
+  path: string | null;
+
+  /**
+   * A finished transfer whose folder should be checked. Ignored if `path` is
+   * given.
+   */
+  transferId: string | null;
+}
+
+export interface ChecksumRequestResult {
+  /** Correlates the later checksums.result event. */
+  requestId: string;
+}
+
 /** One folder offered to the network. */
 export interface SharedFolder {
   /**
@@ -2832,6 +2965,11 @@ export interface CommandParams {
   'transfer.list': Record<string, never>;
   /** Queue a post-download spectral analysis. Returns immediately. */
   'analysis.spectral': SpectralRequestParams;
+  /**
+   * Check a downloaded folder against the `.ffp`/`.md5` sidecars in it.
+   * Returns immediately; the report arrives as `checksums.result`.
+   */
+  'analysis.checksums': ChecksumRequestParams;
   /** Ask the server for the room list. Answers on the chat.rooms event. */
   'chat.rooms': Record<string, never>;
   /** Join a room and start receiving its messages. */
@@ -3103,6 +3241,7 @@ export interface CommandResult {
   'transfer.clear': Record<string, never>;
   'transfer.list': TransferListResult;
   'analysis.spectral': SpectralRequestResult;
+  'analysis.checksums': ChecksumRequestResult;
   'chat.rooms': Record<string, never>;
   'chat.join': Record<string, never>;
   'chat.leave': Record<string, never>;
@@ -3193,6 +3332,7 @@ export const COMMAND_NAMES = [
   'transfer.clear',
   'transfer.list',
   'analysis.spectral',
+  'analysis.checksums',
   'chat.rooms',
   'chat.join',
   'chat.leave',
@@ -3307,6 +3447,16 @@ export interface EventPayload {
   'analysis.result': SpectralAnalysis;
   /** A spectral analysis could not run. */
   'analysis.failed': AnalysisFailedEvent;
+  /**
+   * A folder was checked against its checksum sidecars. A report with no
+   * sidecars is a normal answer, not a failure.
+   */
+  'checksums.result': ChecksumReport;
+  /**
+   * The folder could not be inspected at all — not the same thing as a file
+   * inside it failing its checksum, which is reported as an entry.
+   */
+  'checksums.failed': AnalysisFailedEvent;
   /** A chat line, incoming or echoed. */
   'chat.message': ChatMessage;
   /** The room list changed. */
@@ -3400,6 +3550,8 @@ export const EVENT_NAMES = [
   'folder.finished',
   'analysis.result',
   'analysis.failed',
+  'checksums.result',
+  'checksums.failed',
   'chat.message',
   'chat.rooms',
   'chat.members',

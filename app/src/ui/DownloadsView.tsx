@@ -25,6 +25,7 @@ import { matchesQuery, sortGroups } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
 import type { Density } from './ViewMenu.tsx';
 import type { AnalysisSession } from '../data/analysisStore.ts';
+import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { ASSESSMENT_LABEL, ASSESSMENT_TONE, explain } from '../data/analysisStore.ts';
 import { Spectrum } from './Spectrum.tsx';
@@ -38,6 +39,8 @@ import type { CatalogEntry } from '../data/catalogStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
 import { IconChevronDown, IconDownload, IconEmpty, IconRelease } from '../icons/index.tsx';
+import { ChecksumPanel } from './ChecksumPanel.tsx';
+import { summarise } from '../domain/checksums.ts';
 import { Placeholder } from './ReleaseCard.tsx';
 import { useNearViewport } from './useNearViewport.ts';
 
@@ -95,6 +98,73 @@ function Verdict({
       onPointerDown={onToggle}
     >
       {ASSESSMENT_LABEL[a.assessment]}
+      <span className="verify__caret" aria-hidden>{open ? '\u2303' : '\u2304'}</span>
+    </button>
+  );
+}
+
+/**
+ * The release's own checksum file, if it shipped with one.
+ *
+ * GROUP-LEVEL, not per file: an `.ffp` or `.md5` covers the folder, so one
+ * request answers for every track in it and a per-file button would re-hash
+ * the whole release each time it was pressed.
+ *
+ * This is a different KIND of claim from everything beside it. The spectral
+ * verdict is a reading of the audio and the search-time badge was a prediction;
+ * this is a comparison against a digest the uploader published. When one is
+ * present it is the only hard fact Seek has — the protocol carries no hashes
+ * at all — so it gets its own word rather than being folded into "Verify".
+ */
+function HashButton({
+  g, checksums, compact, open, onToggle,
+}: {
+  g: TransferGroup;
+  checksums: ChecksumSession;
+  compact?: boolean;
+  open: boolean;
+  onToggle(): void;
+}) {
+  const id = g.transfers.find((t) => t.state === 'finished')?.id;
+  if (!id) return null;
+
+  const cls = compact ? 'verify pressable' : 'btn pressable';
+  const entry = checksums.byTransfer.get(id);
+
+  if (!entry) {
+    return (
+      <button
+        type="button"
+        className={cls}
+        title="Check these files against any .ffp or .md5 the uploader shipped with them — the one hard fact Soulseek itself cannot give you."
+        onPointerDown={() => { checksums.check(id); onToggle(); }}
+      >
+        Check hashes
+      </button>
+    );
+  }
+  if (entry.state === 'running') {
+    return <span className="verify verify--busy">Checking…</span>;
+  }
+  if (entry.state === 'failed') {
+    return <span className="verify verify--failed" title={entry.reason}>Could not check</span>;
+  }
+
+  const s = summarise(entry.report!);
+  return (
+    <button
+      type="button"
+      className="verify verify--done pressable"
+      data-tone={s.tone}
+      aria-expanded={open}
+      title={s.headline}
+      onPointerDown={onToggle}
+    >
+      {/* "0 verified" in red is a riddle. When something failed, the count
+          that matters is the count of failures. */}
+      {s.none ? 'No checksum file'
+        : s.mismatched > 0 ? `${s.mismatched} failed`
+          : `${s.matched} verified`}
       <span className="verify__caret" aria-hidden>{open ? '\u2303' : '\u2304'}</span>
     </button>
   );
@@ -193,7 +263,7 @@ function FileRow({
  * the row already says.
  */
 function Actions({
-  g, session, compact, discovery, related, setRelated,
+  g, session, compact, discovery, related, setRelated, checksums, hashOpen, setHashOpen,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -201,6 +271,9 @@ function Actions({
   discovery?: RelatedDiscovery;
   related?: boolean;
   setRelated?(fn: (v: boolean) => boolean): void;
+  checksums?: ChecksumSession;
+  hashOpen?: boolean;
+  setHashOpen?(fn: (v: boolean) => boolean): void;
 }) {
   const ids = g.transfers.map((t) => t.id);
   const cls = compact ? 'verify pressable' : 'btn pressable';
@@ -231,6 +304,15 @@ function Actions({
         <button type="button" className={cls} onPointerDown={() => session.retry(ids)}>
           Retry
         </button>
+      )}
+      {checksums && g.state === 'finished' && (
+        <HashButton
+          g={g}
+          checksums={checksums}
+          compact={compact}
+          open={hashOpen ?? false}
+          onToggle={() => setHashOpen?.((v) => !v)}
+        />
       )}
       {discovery && g.state === 'finished' && (
         <button
@@ -267,6 +349,7 @@ function Actions({
  */
 function TableRow({
   g, session, filter, open, onToggle, discovery, related, setRelated,
+  checksums, hashOpen, setHashOpen,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -276,6 +359,9 @@ function TableRow({
   discovery?: RelatedDiscovery;
   related: boolean;
   setRelated(fn: (v: boolean) => boolean): void;
+  checksums: ChecksumSession;
+  hashOpen: boolean;
+  setHashOpen(fn: (v: boolean) => boolean): void;
 }) {
   const pct = g.size > 0 ? Math.round((g.bytesDone / g.size) * 100) : 0;
   const firstError = g.transfers.find((t) => t.error)?.error;
@@ -328,18 +414,21 @@ function TableRow({
       <span className="dl__cell dl__cell--who">{g.username}</span>
       <span className="dl__cell dl__rowactions">
         <Actions g={g} session={session} compact discovery={discovery}
-                 related={related} setRelated={setRelated} />
+                 related={related} setRelated={setRelated}
+                 checksums={checksums} hashOpen={hashOpen} setHashOpen={setHashOpen} />
       </span>
     </div>
   );
 }
 
 function Group({
-  g, session, analysis, client, preview, density, filter, discovery, open, onOpenChange,
+  g, session, analysis, checksums, client, preview, density, filter, discovery,
+  open, onOpenChange,
 }: {
   g: TransferGroup;
   session: TransferSession;
   analysis: AnalysisSession;
+  checksums: ChecksumSession;
   client: SidecarClient | null;
   preview: PreviewSession;
   density: Density;
@@ -354,6 +443,9 @@ function Group({
   const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(fn(open));
   /** Whether the Related shelf is showing for this release. */
   const [related, setRelated] = useState(false);
+  /** Whether the checksum report is showing. Separate from Related: they are
+   *  different questions and closing one must not close the other. */
+  const [hashOpen, setHashOpen] = useState(false);
   /** Which file's spectrum is expanded. Only one at a time — the chart is the
    *  evidence for a single claim, and two side by side invite comparison the
    *  data does not support. */
@@ -398,6 +490,13 @@ function Group({
     />
   );
 
+  const hashEntry = checksums.byTransfer.get(
+    g.transfers.find((t) => t.state === 'finished')?.id ?? '',
+  );
+  const hashPanel = hashOpen && hashEntry?.state === 'done' && (
+    <ChecksumPanel report={hashEntry.report!} />
+  );
+
   const files = open && (
     <ul className="dl__files">
       {g.transfers.map((t) => (
@@ -426,8 +525,12 @@ function Group({
           discovery={discovery}
           related={related}
           setRelated={setRelated}
+          checksums={checksums}
+          hashOpen={hashOpen}
+          setHashOpen={setHashOpen}
         />
         {files}
+        {hashPanel && <div className="dl__detail dl__detail--row">{hashPanel}</div>}
         {relatedPanel && <div className="dl__detail dl__detail--row">{relatedPanel}</div>}
       </>
     );
@@ -496,10 +599,12 @@ function Group({
 
       <div className="dl__actions">
         <Actions g={g} session={session} discovery={discovery}
-                 related={related} setRelated={setRelated} />
+                 related={related} setRelated={setRelated}
+                 checksums={checksums} hashOpen={hashOpen} setHashOpen={setHashOpen} />
       </div>
 
       {files}
+      {hashPanel && <div className="dl__detail">{hashPanel}</div>}
       {relatedPanel && <div className="dl__detail">{relatedPanel}</div>}
     </div>
   );
@@ -595,14 +700,15 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
 }
 
 export function DownloadsView({
-  session, signedIn, filter, analysis, client, preview, density, onDensity,
-  discovery,
+  session, signedIn, filter, analysis, checksums, client, preview, density,
+  onDensity, discovery,
 }: {
   session: TransferSession;
   signedIn: boolean;
   /** Which section this is rendering — the same list, three lenses. */
   filter: 'active' | 'finished' | 'failed';
   analysis: AnalysisSession;
+  checksums: ChecksumSession;
   client: SidecarClient | null;
   preview: PreviewSession;
   density: Density;
@@ -825,6 +931,7 @@ export function DownloadsView({
               g={g}
               session={session}
               analysis={analysis}
+              checksums={checksums}
               client={client}
               preview={preview}
               density={density}

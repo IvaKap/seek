@@ -131,6 +131,28 @@ ENUMS = {
             "inconclusive",
         ],
     ),
+    "ChecksumKind": (
+        "Which sidecar an expected digest came out of, and therefore what it is "
+        "a digest OF.\n"
+        "\n"
+        "'ffp' is the FLAC STREAMINFO signature — an MD5 of the DECODED audio, "
+        "unchanged by tagging. 'md5' is md5sum over the whole file, which a "
+        "single tag edit changes. They fail differently and the UI must not "
+        "collapse them into one word: an ffp mismatch means different audio, an "
+        "md5 mismatch might only mean somebody fixed a spelling.",
+        ["ffp", "md5"],
+    ),
+    "ChecksumIssue": (
+        "Why a digest could not be computed for a file a sidecar named. Null on "
+        "`ChecksumEntry.issue` means it WAS computed and the comparison is "
+        "meaningful.\n"
+        "\n"
+        "None of these are failures of the check. 'missing' most often means the "
+        "release is incomplete, which is worth knowing; 'no_signature' means the "
+        "encoder left the STREAMINFO MD5 unset, which is permitted and says "
+        "nothing about the audio.",
+        ["missing", "not_flac", "no_signature", "unreadable"],
+    ),
     "ShareConsent": (
         "Whether the user has decided what to share back to the network.\n"
         "\n"
@@ -2083,6 +2105,99 @@ STRUCTS = {
             ("reason", "str", "Developer-facing text. Not for display."),
         ],
     ),
+    "ChecksumSidecar": (
+        "One `.ffp` or `.md5` file found beside a download, and how much of it "
+        "could be read. `unparsedLines` is reported rather than swallowed: a "
+        "sidecar we half-understood must not look like one that verified "
+        "cleanly.",
+        [
+            ("path", "str", "Absolute local path of the sidecar itself."),
+            ("kind", "ChecksumKind", ""),
+            ("entryCount", "int", "Lines that parsed into a name and a digest."),
+            ("unparsedLines", "int", "Non-comment lines that did not."),
+            (
+                "error",
+                "str",
+                "Empty when the file was read. Developer-facing when it was not.",
+            ),
+        ],
+    ),
+    "ChecksumEntry": (
+        "One claim a sidecar makes, beside what the local file actually is.\n"
+        "\n"
+        "Deliberately NOT a verdict. `expected` and `actual` are both here and "
+        "the comparison is the frontend's, for the same reason no other "
+        "conclusion is drawn in Python: the wording of a mismatch depends "
+        "entirely on `kind`, and that wording is a display decision.",
+        [
+            ("name", "str", "The name exactly as the sidecar wrote it."),
+            ("kind", "ChecksumKind", ""),
+            ("expected", "str", "Lowercase hex, as claimed by the sidecar."),
+            (
+                "localPath",
+                "str",
+                "Absolute path of the file this line resolved to, or empty when "
+                "no such file is in the folder.",
+            ),
+            (
+                "actual",
+                "str?",
+                "Lowercase hex computed from the bytes on disk. Null exactly "
+                "when `issue` is set.",
+            ),
+            ("issue", "ChecksumIssue?", "Null when `actual` was computed."),
+        ],
+    ),
+    "ChecksumReport": (
+        "What the checksum sidecars in one folder say about the files in it.\n"
+        "\n"
+        "This is the only HARD fact Seek can offer about a downloaded file. The "
+        "protocol carries no hashes at all (RECON.md §2), so every other check "
+        "is inference: the search-time arithmetic is a prediction and the "
+        "spectral pass is a reading. When an uploader shipped a fingerprint, it "
+        "is evidence of a different order — and it costs nothing, because the "
+        "sidecar already downloaded with the rest of the folder.\n"
+        "\n"
+        "An empty `sidecars` is the ordinary case and must not read as a "
+        "failure. Most releases have none.",
+        [
+            ("requestId", "str", "Echoes the analysis.checksums request."),
+            ("folderPath", "str", "The folder that was inspected."),
+            (
+                "transferId",
+                "str?",
+                "The transfer this was asked for, when the request supplied one.",
+            ),
+            ("sidecars", "ChecksumSidecar[]", "Empty when the folder has none."),
+            ("entries", "ChecksumEntry[]", "Every line of every sidecar, in file order."),
+        ],
+    ),
+    "ChecksumRequestParams": (
+        "Verify a downloaded folder against any checksum sidecar in it. The "
+        "file identifies the FOLDER; the check is never about one track, "
+        "because a sidecar covers the release.\n"
+        "\n"
+        "Runs on a worker thread — a `.md5` reads every byte of every file — and "
+        "the reply is immediate.",
+        [
+            (
+                "path",
+                "str?",
+                "Absolute local path of any file in the folder. Null means 'use "
+                "the file for transferId'.",
+            ),
+            (
+                "transferId",
+                "str?",
+                "A finished transfer whose folder should be checked. Ignored if "
+                "`path` is given.",
+            ),
+        ],
+    ),
+    "ChecksumRequestResult": (
+        "",
+        [("requestId", "str", "Correlates the later checksums.result event.")],
+    ),
     "SharedFolder": (
         "One folder offered to the network.",
         [
@@ -2409,6 +2524,12 @@ COMMANDS = {
         "SpectralRequestParams",
         "SpectralRequestResult",
     ),
+    "analysis.checksums": (
+        "Check a downloaded folder against the `.ffp`/`.md5` sidecars in it. "
+        "Returns immediately; the report arrives as `checksums.result`.",
+        "ChecksumRequestParams",
+        "ChecksumRequestResult",
+    ),
     "chat.rooms": (
         "Ask the server for the room list. Answers on the chat.rooms event.",
         None,
@@ -2721,6 +2842,16 @@ EVENTS = {
         "SpectralAnalysis",
     ),
     "analysis.failed": ("A spectral analysis could not run.", "AnalysisFailedEvent"),
+    "checksums.result": (
+        "A folder was checked against its checksum sidecars. A report with no "
+        "sidecars is a normal answer, not a failure.",
+        "ChecksumReport",
+    ),
+    "checksums.failed": (
+        "The folder could not be inspected at all — not the same thing as a "
+        "file inside it failing its checksum, which is reported as an entry.",
+        "AnalysisFailedEvent",
+    ),
     "chat.message": ("A chat line, incoming or echoed.", "ChatMessage"),
     "chat.rooms": ("The room list changed.", "ChatRoomList"),
     "chat.members": ("A room's membership changed.", "ChatRoomMembers"),
