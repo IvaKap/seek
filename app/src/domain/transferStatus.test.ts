@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { needsAttention, transferStatus } from './transferStatus.ts';
+import { groupStatus, needsAttention, transferStatus } from './transferStatus.ts';
 
 function t(over: Partial<Parameters<typeof transferStatus>[0]> = {}) {
   return transferStatus({
@@ -128,5 +128,78 @@ describe('the wording contract', () => {
   it('survives a state the sidecar has not been taught yet', () => {
     /* A newer engine against an older app. Silence would be worse. */
     expect(t({ state: 'something_new' }).text.length).toBeGreaterThan(0);
+  });
+});
+
+/* ---------------------------------------------------------- group status */
+
+describe('groupStatus — one line for a whole release', () => {
+  const t = (over: Partial<Parameters<typeof groupStatus>[0][number]> = {}) => ({
+    state: 'transferring', error: null, queuePosition: null,
+    stalled: false, bytesDone: 1, ...over,
+  });
+
+  it('says nothing for a healthy download — the progress bar already does', () => {
+    expect(groupStatus([t(), t()])).toBeNull();
+  });
+
+  it('says nothing when every file is finished', () => {
+    expect(groupStatus([t({ state: 'finished' }), t({ state: 'finished' })])).toBeNull();
+  });
+
+  it('says nothing for no transfers at all', () => {
+    expect(groupStatus([])).toBeNull();
+  });
+
+  it('surfaces a refusal ahead of a queue, because a queue resolves itself', () => {
+    const line = groupStatus([
+      t({ state: 'queued', queuePosition: 4 }),
+      t({ state: 'rejected', error: 'File not shared.' }),
+    ]);
+    expect(line?.tone).toBe('refused');
+    expect(line?.text).toContain('no longer sharing');
+  });
+
+  it('surfaces a stall ahead of a queue', () => {
+    const line = groupStatus([
+      t({ state: 'queued', queuePosition: 2 }),
+      t({ state: 'transferring', stalled: true }),
+    ]);
+    expect(line?.tone).toBe('broken');
+    expect(line?.text).toContain('Stalled');
+  });
+
+  it('falls back to the queue when nothing is wrong', () => {
+    const line = groupStatus([t(), t({ state: 'queued', queuePosition: 7 })]);
+    expect(line?.tone).toBe('waiting');
+    expect(line?.text).toContain('7');
+  });
+
+  it('counts a partial failure, so one bad track is not read as a dead release', () => {
+    const line = groupStatus([
+      t({ state: 'rejected', error: 'File not shared.' }),
+      t(), t(), t(),
+    ]);
+    // 1 of 4 refused — the count is the difference between "give up" and
+    // "retry that one".
+    expect(line?.text).toContain('(1 of 4)');
+  });
+
+  it('does not count when every unfinished file failed the same way', () => {
+    const line = groupStatus([
+      t({ state: 'rejected', error: 'File not shared.' }),
+      t({ state: 'rejected', error: 'File not shared.' }),
+    ]);
+    expect(line?.text).not.toContain('of');
+  });
+
+  it('ignores finished files when counting', () => {
+    const line = groupStatus([
+      t({ state: 'finished' }), t({ state: 'finished' }),
+      t({ state: 'rejected', error: 'Banned' }),
+    ]);
+    // The only unfinished file is the refused one — no count, and the finished
+    // pair must not inflate the denominator.
+    expect(line?.text).toBe('This person has banned you');
   });
 });

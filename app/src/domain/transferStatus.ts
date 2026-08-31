@@ -70,6 +70,60 @@ const REJECTIONS: Record<string, { text: string; retryable: boolean }> = {
 };
 
 /**
+ * One line for a whole release, so the list says WHY without being opened.
+ *
+ * A group is many files and they are rarely in the same state. The order below
+ * is not "most common", it is MOST WORTH KNOWING — a refusal never resolves on
+ * its own and should be read before a queue position that will:
+ *
+ *   1. refused    they said no; the group is going nowhere until you act
+ *   2. stalled    moving once, silent now
+ *   3. paused     you did that
+ *   4. waiting    queued, and where in the queue
+ *   5. active     nothing — the progress bar already says it, and repeating
+ *                 "Downloading" beside a moving bar is noise
+ *
+ * Returns null when there is nothing worth saying, which is the common case
+ * for a healthy download and for a finished one.
+ */
+export function groupStatus(transfers: Array<Parameters<typeof transferStatus>[0]>):
+TransferStatusLine | null {
+  if (transfers.length === 0) return null;
+
+  const lines = transfers
+    .filter((t) => t.state !== 'finished')
+    .map(transferStatus);
+  if (lines.length === 0) return null;
+
+  const byTone = (tone: TransferTone) => lines.find((l) => l.tone === tone);
+
+  const refused = byTone('refused');
+  if (refused) return countedLine(refused, lines);
+
+  const broken = byTone('broken');
+  if (broken) return countedLine(broken, lines);
+
+  const waiting = byTone('waiting');
+  if (waiting) return waiting;
+
+  // Everything left is moving. The bar says so better than words.
+  return null;
+}
+
+/**
+ * "They refused" reads as the whole release when it was one file of twelve.
+ * Counting is the difference between a release you should give up on and one
+ * with a single bad track in it.
+ */
+function countedLine(line: TransferStatusLine, all: TransferStatusLine[]): TransferStatusLine {
+  const same = all.filter((l) => l.text === line.text).length;
+  // Only when it is PARTIAL. `same === all.length` covers the lone-file case
+  // too, since one of one is not a fraction worth printing.
+  if (same === all.length) return line;
+  return { ...line, text: `${line.text} (${same} of ${all.length})` };
+}
+
+/**
  * Queue position, worded so the number means something.
  *
  * `queuePosition` is null both for "not queued" and "queued but they have not

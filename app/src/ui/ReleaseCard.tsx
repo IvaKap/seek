@@ -128,6 +128,19 @@ export function ReleaseCard({
           </span>
         )}
 
+        {/* The default grouping is RELEASE, so a mark that only existed on the
+            track and source rows was a mark nobody saw. Any file in the folder
+            being buddy-only makes the whole folder undownloadable in practice,
+            which is why this tests `some` rather than `every`. */}
+        {release.files.some((f) => f.private) && (
+          <span
+            className="buddyonly"
+            title="Only this peer's buddies can download this. Requesting it is refused unless they have added you."
+          >
+            Buddies only
+          </span>
+        )}
+
         <span className="card__body">
           <span className="card__heading">
             {release.artist && <span className="card__artist">{release.artist}</span>}

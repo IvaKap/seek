@@ -12,14 +12,14 @@
  * thing the brief says destroys the calm.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed } from '../data/transferStore.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
 import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
-import { transferStatus } from '../domain/transferStatus.ts';
+import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
 import { matchesQuery, sortGroups } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
@@ -279,6 +279,7 @@ function TableRow({
 }) {
   const pct = g.size > 0 ? Math.round((g.bytesDone / g.size) * 100) : 0;
   const firstError = g.transfers.find((t) => t.error)?.error;
+  const status = groupStatus(g.transfers);
 
   return (
     <div className="dl__row" data-state={g.state}>
@@ -294,7 +295,11 @@ function TableRow({
           data-open={open ? 'true' : undefined}
         />
         <span className="dl__rowname">{g.title}</span>
-        {g.stalled && <span className="dl__flag">stalled</span>}
+        {/* Replaces a bare "stalled" flag, which was the only thing this row
+            ever said about why nothing was happening — and it could not tell a
+            refusal from a queue, though both look identical at 0 bytes/sec.
+            Opening every card to find out is what this removes. */}
+        {status && <span className="dl__status" data-tone={status.tone}>{status.text}</span>}
       </button>
 
       <span className="dl__cell tnum">{g.finished}/{g.transfers.length}</span>
@@ -330,7 +335,7 @@ function TableRow({
 }
 
 function Group({
-  g, session, analysis, client, preview, density, filter, discovery,
+  g, session, analysis, client, preview, density, filter, discovery, open, onOpenChange,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -340,8 +345,13 @@ function Group({
   density: Density;
   filter: 'active' | 'finished' | 'failed';
   discovery?: RelatedDiscovery;
+  /* CONTROLLED, where this used to hold its own useState. "Expand all" cannot
+     exist while every row owns its own secret — one control has to be able to
+     speak for all of them. */
+  open: boolean;
+  onOpenChange(next: boolean): void;
 }) {
-  const [open, setOpen] = useState(false);
+  const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(fn(open));
   /** Whether the Related shelf is showing for this release. */
   const [related, setRelated] = useState(false);
   /** Which file's spectrum is expanded. Only one at a time — the chart is the
@@ -606,6 +616,18 @@ export function DownloadsView({
   const [sort, setSort] = useState<SortKey>('default');
   const [descending, setDescending] = useState(false);
 
+  /* Which releases are open, by key rather than by index — the list re-sorts
+     and re-filters under you, and an index would open whatever moved into that
+     slot. Held here rather than in each row so one control can open them all. */
+  const [openKeys, setOpenKeys] = useState<Set<string>>(new Set());
+  const setOpenFor = useCallback((key: string, next: boolean) => {
+    setOpenKeys((prev) => {
+      const s2 = new Set(prev);
+      if (next) s2.add(key); else s2.delete(key);
+      return s2;
+    });
+  }, []);
+
   /* Grid is for picking through a pile of records you already have or already
      lost. While a download is running the useful information is progress and
      speed, and a cover says neither. */
@@ -646,6 +668,15 @@ export function DownloadsView({
    * `hiddenCount` is what the filter is holding back, and it is stated rather
    * than left implied — an empty list with a stale query in the box is the
    * thing people report as "my downloads disappeared". */
+  /* Off the FILTERED list: "Expand all" that opened rows the filter is hiding
+     would be a control acting on something the user cannot see. */
+  const allOpen = groups.length > 0 && groups.every((g) => openKeys.has(g.key));
+  /* Every transfer in the failed lens, flattened — the button clears the
+     section, not one release. */
+  const failedIds = filter === 'failed'
+    ? groups.flatMap((g) => g.transfers.map((t) => t.id))
+    : [];
+
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);
   const totalFiles = groups.reduce((n, g) => n + g.transfers.length, 0);
   const hiddenCount = lens.length - groups.length;
@@ -672,6 +703,32 @@ export function DownloadsView({
             aria-label="Filter by release name or peer"
             onChange={(e) => setQuery(e.target.value)}
           />
+        )}
+        {groups.length > 0 && (
+          /* One button, not two: with everything shut the useful action is to
+             open, and with anything open it is to shut. A pair would leave one
+             of them dead most of the time. */
+          <button
+            type="button"
+            className="btn pressable"
+            onClick={() => setOpenKeys(allOpen ? new Set() : new Set(groups.map((g) => g.key)))}
+          >
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
+        )}
+        {filter === 'failed' && failedIds.length > 0 && (
+          /* Only on Failed, and it says the number, because "Clear" with no
+             count is the button people press once and then wonder what it
+             took. It removes the records; it does not cancel anything, since
+             nothing here is still running. */
+          <button
+            type="button"
+            className="btn pressable"
+            title="Remove every failed transfer from this list. Nothing is deleted from disk."
+            onClick={() => session.clear(failedIds)}
+          >
+            Clear {integer(failedIds.length)} failed
+          </button>
         )}
         {lens.length > 0 && (
           <ViewMenu
@@ -773,6 +830,8 @@ export function DownloadsView({
               density={density}
               filter={filter}
               discovery={discovery}
+              open={openKeys.has(g.key)}
+              onOpenChange={(next) => setOpenFor(g.key, next)}
             />
           ))}
         </div>

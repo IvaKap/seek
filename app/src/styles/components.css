@@ -852,6 +852,29 @@
   font-size: var(--fs-micro); color: var(--text-secondary);
 }
 
+/* Sits where `owned` sits on a release card, and reads the same way: one fact
+   about this record, stated once. */
+.buddyonly {
+  align-self: flex-start;
+  padding: 0 var(--sp-2); height: 1.1rem; line-height: 1.1rem;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft); color: var(--warn);
+  font-size: var(--fs-caption); white-space: nowrap;
+}
+
+/* The download row's one-line reason. Toned, because the difference between
+   "queued" and "refused" is the difference between waiting and giving up, and
+   colour carries that faster than reading does. */
+.dl__status {
+  margin-left: var(--sp-2); padding: 0 var(--sp-2);
+  border-radius: var(--radius-sm); background: var(--bg-sunken);
+  font-size: var(--fs-micro); color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22rem;
+}
+.dl__status[data-tone='refused'] { background: var(--warn-soft); color: var(--warn); }
+.dl__status[data-tone='broken'] { color: var(--danger); }
+.dl__status[data-tone='waiting'] { color: var(--text-tertiary); }
+
 /* Warn-coloured, not neutral: unlike "free", this is not a nicety about the
    row, it is the reason the download will be refused unless you are on that
    peer's buddy list. These rows are hidden by default, so when one is on
