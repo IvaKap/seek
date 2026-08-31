@@ -295,6 +295,9 @@ export function createGrouper(): Grouper {
  * allocation. This is the function that has to stay under 16ms for 5,000 rows.
  */
 export function matches(s: SourceFile, f: Filters, include: string[], exclude: string[]): boolean {
+  // First because it is the cheapest test and the most decisive: a buddy-only
+  // result is not a worse result, it is one that cannot be downloaded at all.
+  if (f.hidePrivate && s.private) return false;
   if (f.losslessOnly && !s.quality.lossless) return false;
   if (f.formats.size > 0 && !f.formats.has(s.quality.label)) return false;
   if (f.excludeTranscodes && s.transcode.suspect) return false;

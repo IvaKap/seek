@@ -852,6 +852,16 @@
   font-size: var(--fs-micro); color: var(--text-secondary);
 }
 
+/* Warn-coloured, not neutral: unlike "free", this is not a nicety about the
+   row, it is the reason the download will be refused unless you are on that
+   peer's buddy list. These rows are hidden by default, so when one is on
+   screen the user has asked to see them and needs to know which is which. */
+.row__private {
+  margin-left: var(--sp-2); padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm); background: var(--warn-soft);
+  font-size: var(--fs-micro); color: var(--warn); white-space: nowrap;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .row:hover, .card:hover { background: var(--bg-hover); }
 }

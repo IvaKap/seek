@@ -76,6 +76,25 @@ function Meta({ children, dim, title, col }: {
  * glyph (a chevron, not the download arrow a live transfer uses) so a promise
  * is never mistaken for a measurement.
  */
+/**
+ * A buddy-only result.
+ *
+ * Hidden by default (`Filters.hidePrivate`), so this only appears once the
+ * user has deliberately asked to see them — at which point the one thing they
+ * need is to tell these apart from results they can actually download. The
+ * title says what will happen rather than what the flag is called.
+ */
+function PrivateMark() {
+  return (
+    <span
+      className="row__private"
+      title="Only this peer's buddies can download this. Requesting it is refused unless they have added you."
+    >
+      buddies only
+    </span>
+  );
+}
+
 function AdvertisedSpeed({ bytesPerSec }: { bytesPerSec: number }) {
   return (
     <span
@@ -166,6 +185,7 @@ export function TrackRow({
         </span>
 
         <span className="row__tail">
+          {best.private && <PrivateMark />}
           {sources > 1 && (
             <span className="row__sources">
               <span className="tnum">{integer(sources)}</span> sources
@@ -425,6 +445,7 @@ export function SourceRow({
           </span>
         </span>
         <span className="row__tail">
+          {source.private && <PrivateMark />}
           {source.peer.freeSlots && <span className="row__free">free</span>}
         </span>
       </div>

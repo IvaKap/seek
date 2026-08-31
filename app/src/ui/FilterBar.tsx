@@ -74,6 +74,16 @@ export function FilterBar({
           onChange={(v) => patch({ freeSlotsOnly: v })}
           label="Free slots"
         />
+        {/* Phrased as the thing you would turn ON, like its neighbours, even
+            though the stored flag is the hiding one — a toggle labelled "Hide
+            buddy-only" that is on by default reads as a filter someone else
+            applied. Only useful if you are actually on people's buddy lists,
+            which is why it is off. */}
+        <Toggle
+          checked={!filters.hidePrivate}
+          onChange={(v) => patch({ hidePrivate: !v })}
+          label="Buddy-only results"
+        />
       </div>
 
       <div className="filters__line filters__line--numeric">

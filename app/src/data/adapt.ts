@@ -40,6 +40,16 @@ export interface WireSearchResultData {
   searchId: number;
   peer: WirePeerStats;
   files: WireFileRef[];
+  /**
+   * The peer answered from their buddy-only list.
+   *
+   * The sidecar has always set this — it calls `searches.accept` a second time
+   * with `private=True` for `msg.privatelist` — and the app dropped it on the
+   * floor for the whole of 0.2.x, which is why buddy-only results were shown
+   * as if anyone could download them. Optional here because the fixture replay
+   * predates the field.
+   */
+  private?: boolean;
 }
 
 export type SearchCloseReason = 'timeout' | 'result_cap' | 'stopped' | 'disconnected';
@@ -81,9 +91,10 @@ export function adaptPeer(p: WirePeerStats, reliability: ReliabilityLookup): Pee
   };
 }
 
-export function adaptFile(f: WireFileRef, user: string): RawFile {
+export function adaptFile(f: WireFileRef, user: string, isPrivate = false): RawFile {
   return {
     user,
+    private: isPrivate,
     path: f.path,
     size: f.size,
     bitrate: f.bitrate,
@@ -102,9 +113,10 @@ export function adaptSearchResult(
   reliability: ReliabilityLookup,
 ): SourceFile[] {
   const peer = adaptPeer(data.peer, reliability);
+  const isPrivate = data.private === true;
   const out: SourceFile[] = [];
   for (const f of data.files) {
-    out.push(toSourceFile(adaptFile(f, data.peer.username), peer, tick));
+    out.push(toSourceFile(adaptFile(f, data.peer.username, isPrivate), peer, tick));
   }
   return out;
 }
