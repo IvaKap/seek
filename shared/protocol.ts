@@ -2056,6 +2056,50 @@ export interface WishFiltersParams {
   filters: WishFilters | null;
 }
 
+/**
+ * Which of a wish's results have already been looked at.
+ *
+ * OPAQUE HASHES, not paths. A wish keeps one token forever and upstream
+ * re-runs it on the server's interval, so the same peers holding the same
+ * files come back every single time. Without a record of what has been
+ * seen, a wish announces the same news for weeks and the badge stops
+ * meaning anything.
+ *
+ * The frontend derives these from `SourceFile.id`, which is `user path`,
+ * and hashes them for two reasons: a few hundred full remote paths per
+ * wish is a large thing to keep in a state file and to send, and the
+ * sidecar has no business holding a list of who has what.
+ *
+ * The sidecar stores and returns them and does nothing else with them —
+ * deciding which results are new is a dedup, and dedup is TypeScript's.
+ */
+export interface WishSeen {
+  /** Which wish. */
+  query: string;
+
+  /**
+   * Opaque per-result hashes, oldest first. Capped by the sidecar; the oldest
+   * are dropped first.
+   */
+  ids: string[];
+}
+
+/**
+ * Every wish's seen-set. Deliberately NOT part of `WishlistState`: that event
+ * is broadcast whenever the list or the interval changes, and carrying a few
+ * thousand hashes on each one would be paying a large cost repeatedly for
+ * something the frontend only needs when it starts.
+ */
+export interface WishSeenList {
+  /** One entry per wish that has any. */
+  items: WishSeen[];
+}
+
+export interface WishSeenResult {
+  /** How many hashes are now remembered for that wish. */
+  count: number;
+}
+
 /** The wishlist, and how often the server permits it to run. */
 export interface WishlistState {
   /** Wishes, newest first. */
@@ -2996,6 +3040,16 @@ export interface CommandParams {
   /** Current wishlist and interval. */
   'wishlist.list': Record<string, never>;
   /**
+   * Remember that these results have been looked at, so a later run does not
+   * announce them again. Additive — the sidecar merges.
+   */
+  'wishlist.seen': WishSeen;
+  /**
+   * Every wish's seen-set. Asked for once, when the frontend connects; the
+   * frontend is the only writer and tracks its own copy after that.
+   */
+  'wishlist.seenList': Record<string, never>;
+  /**
    * Ask for a release cover. Replies immediately with a requestId; the image
    * arrives later as `artwork.result` or `artwork.failed`. Never on the
    * critical path — rows render with their placeholder first.
@@ -3251,6 +3305,8 @@ export interface CommandResult {
   'wishlist.remove': WishlistState;
   'wishlist.filters': WishlistState;
   'wishlist.list': WishlistState;
+  'wishlist.seen': WishSeenResult;
+  'wishlist.seenList': WishSeenList;
   'artwork.get': RequestAccepted;
   'artwork.stats': ArtworkCacheStats;
   'artwork.clear': ArtworkCacheStats;
@@ -3342,6 +3398,8 @@ export const COMMAND_NAMES = [
   'wishlist.remove',
   'wishlist.filters',
   'wishlist.list',
+  'wishlist.seen',
+  'wishlist.seenList',
   'artwork.get',
   'artwork.stats',
   'artwork.clear',

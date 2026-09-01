@@ -41,6 +41,11 @@ SIDECAR_VERSION = "0.2.7"
 # Upstream speed limits are in KiB/s; our wire is bytes/sec everywhere.
 KIB = 1024
 
+# How many already-seen results one wish remembers. Chosen against the frontend
+# cap of 400 results per run: high enough that a normal run is remembered whole,
+# low enough that twenty wishes cost tens of kilobytes rather than megabytes.
+WISH_SEEN_CAP = 250
+
 # Components deliberately left out (RECON.md §2):
 #   update_checker  — calls out to pypi.org on start. The brief says no
 #                     telemetry, and an unsolicited outbound request tied to
@@ -2484,6 +2489,62 @@ class CoreHost:
     def _cmd_wishlist_list(self, _params):
         return self._wishlist_state()
 
+    # -- what a wish has already shown you ---------------------------------
+    #
+    # Upstream keeps ONE token per wish and re-runs it forever, so the same
+    # peers holding the same files come back on every single run. A badge that
+    # fires for those says "news" when there is none, and after a week of that
+    # it is furniture. This is the record that lets the frontend tell a new
+    # result from the fourth appearance of an old one.
+    #
+    # Stored, not derived: the point is to survive a restart. Without that,
+    # quitting Seek resurrects every result a wish has ever found.
+
+    def _wish_seen(self):
+        """Per-wish seen-sets, keyed by wish text. Seek's state, not upstream's."""
+        stored = self._load_state().get("wish_seen")
+        if not isinstance(stored, dict):
+            return {}
+        return {q: list(ids) for q, ids in stored.items() if isinstance(ids, list)}
+
+    def _cmd_wishlist_seenList(self, _params):
+        seen = self._wish_seen()
+        return {"items": [{"query": q, "ids": ids} for q, ids in seen.items() if ids]}
+
+    def _cmd_wishlist_seen(self, params):
+        query = str(params.get("query") or "").strip()
+        if not query:
+            raise CommandError("bad_request", "empty wish")
+        if query not in self.core.search.wishlist:
+            raise CommandError("not_found", "no such wish")
+
+        incoming, known = [], set()
+        for entry in params.get("ids") or []:
+            entry = str(entry)
+            if entry and entry not in known:
+                known.add(entry)
+                incoming.append(entry)
+
+        # Re-marking MOVES an id to the end rather than leaving it where it
+        # was. A file a peer still offers is re-marked every time you look, so
+        # the window fills with what is current; leaving it in place would let
+        # a still-live result age out while newer noise kept it company.
+        stored = self._wish_seen()
+        merged = [e for e in stored.get(query, []) if e not in known] + incoming
+
+        # OLDEST DROPPED FIRST, and re-marking moves an id back to the end.
+        # A result still being offered every run is re-marked every time you
+        # look, so what falls out of the window is what stopped appearing —
+        # which is exactly what you no longer need to remember. One that does
+        # fall out and later returns reads as new again; bounded and honest,
+        # and the alternative is a state file that only ever grows.
+        if len(merged) > WISH_SEEN_CAP:
+            merged = merged[-WISH_SEEN_CAP:]
+
+        stored[query] = merged
+        self._save_state(wish_seen=stored)
+        return {"count": len(merged)}
+
     def _cmd_wishlist_add(self, params):
         query = (params.get("query") or "").strip()
         if not query:
@@ -2520,10 +2581,14 @@ class CoreHost:
         query = (params.get("query") or "").strip()
         self.core.search.remove_wish(query)
         # Otherwise re-adding the same text later silently inherits filters the
-        # user last saw months ago.
+        # user last saw months ago — and, worse, starts life believing it has
+        # already shown you results you have never seen.
         stored = self._wish_filters()
         if stored.pop(query, None) is not None:
             self._save_state(wish_filters=stored)
+        seen = self._wish_seen()
+        if seen.pop(query, None) is not None:
+            self._save_state(wish_seen=seen)
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
         return state

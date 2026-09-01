@@ -139,21 +139,34 @@ export function WishlistView({
             {state.items.map((wish) => {
               const hit = hits?.byQuery[wish.query];
               const found = hit?.sources.length ?? 0;
+              const fresh = hit?.fresh.length ?? 0;
               return (
                 <li key={wish.query} className="wish__row" data-unseen={hit?.unseen ? 'true' : undefined}>
                   <span className="wish__q">{wish.query}</span>
 
                   {/* A COUNT, and only once there is one. A wish that has never
                       hit says nothing rather than "0 found", which reads as a
-                      verdict on the wish instead of an absence of news. */}
+                      verdict on the wish instead of an absence of news.
+
+                      NEW, not total. Upstream re-runs this query forever and
+                      most of what comes back is what came back last time, so a
+                      number that counts the repeats says the same thing every
+                      twelve minutes and stops being worth reading. Once you
+                      have seen them the button keeps the total, quietly — the
+                      files are still there, they are just no longer news. */}
                   {found > 0 && (
                     <button
                       type="button"
-                      className={hit?.unseen ? 'wish__found wish__found--new pressable' : 'wish__found pressable'}
-                      title={`${found} files from ${hit?.peerCount ?? 0} people. Opens as a search.`}
+                      className={fresh > 0 ? 'wish__found wish__found--new pressable' : 'wish__found pressable'}
+                      title={fresh > 0
+                        ? `${fresh} you have not seen, of ${found} files from `
+                          + `${hit?.peerCount ?? 0} people. Opens as a search.`
+                        : `${found} files from ${hit?.peerCount ?? 0} people, all of which `
+                          + 'this wish has shown you before. Opens as a search.'}
                       onPointerDown={() => { hits?.markSeen(wish.query); onSearch(wish.query); }}
                     >
-                      <span className="tnum">{found}</span> found
+                      <span className="tnum">{fresh > 0 ? fresh : found}</span>
+                      {fresh > 0 ? ' new' : ' found'}
                     </button>
                   )}
 

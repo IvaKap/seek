@@ -197,6 +197,9 @@ class _WishHost:
         return dict(self.state)
 
     _wish_filters = CoreHost._wish_filters
+    # Bound here rather than on _SeenHost: `wishlist.remove` drops a wish's
+    # seen-set too, so every host that can remove one needs it.
+    _wish_seen = CoreHost._wish_seen
     _wishlist_state = CoreHost._wishlist_state
     _cmd_wishlist_list = CoreHost._cmd_wishlist_list
     _cmd_wishlist_filters = CoreHost._cmd_wishlist_filters
@@ -280,3 +283,133 @@ def test_removing_a_wish_that_had_no_filters_is_harmless():
     h._cmd_wishlist_remove({"query": "shackleton"})
     # The one that DID have filters must be untouched.
     assert h.state["wish_filters"]["drexciya"]["losslessOnly"] is True
+
+
+# -- what a wish has already shown you ---------------------------------------
+#
+# Upstream keeps ONE token per wish and re-runs it forever, so the same peers
+# holding the same files come back every run. Without this record a wish
+# announces the same news for weeks and its badge stops meaning anything.
+
+from seek_sidecar.core_host import WISH_SEEN_CAP
+
+
+class _SeenHost(_WishHost):
+    _cmd_wishlist_seen = CoreHost._cmd_wishlist_seen
+    _cmd_wishlist_seenList = CoreHost._cmd_wishlist_seenList
+
+
+def test_a_wish_has_seen_nothing_to_begin_with():
+    h = _SeenHost(["drexciya"])
+    assert h._cmd_wishlist_seenList(None) == {"items": []}
+
+
+def test_marking_results_seen_remembers_them():
+    h = _SeenHost(["drexciya"])
+    assert h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1", "b2"]}) == {"count": 2}
+    assert h._cmd_wishlist_seenList(None) == {
+        "items": [{"query": "drexciya", "ids": ["a1", "b2"]}]
+    }
+    # Seek's own state file, never pynicotine's config.
+    assert h.state["wish_seen"]["drexciya"] == ["a1", "b2"]
+
+
+def test_marking_is_additive_across_runs():
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1"]})
+    result = h._cmd_wishlist_seen({"query": "drexciya", "ids": ["b2", "c3"]})
+    assert result == {"count": 3}
+    assert h.state["wish_seen"]["drexciya"] == ["a1", "b2", "c3"]
+
+
+def test_the_same_result_twice_is_remembered_once():
+    # The ordinary case: a peer still offering the same file next run.
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1", "b2"]})
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1", "b2", "c3"]})
+    assert h.state["wish_seen"]["drexciya"] == ["a1", "b2", "c3"]
+
+
+def test_a_repeat_inside_one_call_is_also_collapsed():
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1", "a1", "a1"]})
+    assert h.state["wish_seen"]["drexciya"] == ["a1"]
+
+
+def test_the_set_is_capped_and_drops_the_oldest():
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya",
+                          "ids": [f"id{i}" for i in range(WISH_SEEN_CAP + 20)]})
+    kept = h.state["wish_seen"]["drexciya"]
+    assert len(kept) == WISH_SEEN_CAP
+    # The NEWEST survive: what falls out is what stopped appearing.
+    assert kept[-1] == f"id{WISH_SEEN_CAP + 19}"
+    assert "id0" not in kept
+
+
+def test_re_marking_keeps_a_still_offered_result_inside_the_window():
+    # A file a peer still has is re-marked every time you look, so the window
+    # holds what is current rather than what happened to arrive first.
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["keeper"]})
+    h._cmd_wishlist_seen({"query": "drexciya",
+                          "ids": [f"filler{i}" for i in range(WISH_SEEN_CAP - 1)]})
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["keeper", "newcomer"]})
+    kept = h.state["wish_seen"]["drexciya"]
+    assert len(kept) == WISH_SEEN_CAP
+    assert "keeper" in kept
+
+
+def test_each_wish_keeps_its_own_seen_set():
+    h = _SeenHost(["drexciya", "shackleton"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1"]})
+    items = {i["query"]: i["ids"] for i in h._cmd_wishlist_seenList(None)["items"]}
+    assert items == {"drexciya": ["a1"]}
+
+
+def test_seen_only_attaches_to_a_wish_that_exists():
+    h = _SeenHost(["drexciya"])
+    with pytest.raises(CommandError):
+        h._cmd_wishlist_seen({"query": "never wished for", "ids": ["a1"]})
+
+
+def test_an_empty_query_is_refused_for_seen():
+    h = _SeenHost(["drexciya"])
+    with pytest.raises(CommandError):
+        h._cmd_wishlist_seen({"query": "  ", "ids": ["a1"]})
+
+
+def test_marking_nothing_is_harmless():
+    h = _SeenHost(["drexciya"])
+    assert h._cmd_wishlist_seen({"query": "drexciya", "ids": []}) == {"count": 0}
+    # And leaves nothing behind for the frontend to skip over: a wish with an
+    # empty set has nothing to say, so it is not in the list at all.
+    assert h._cmd_wishlist_seenList(None) == {"items": []}
+
+
+def test_removing_a_wish_forgets_what_it_had_shown_you():
+    # Left behind, re-adding the same text later would start life believing it
+    # had already shown you results you have never seen — the badge would then
+    # stay silent on the first run, which is the exact opposite of the point.
+    h = _SeenHost(["drexciya"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1", "b2"]})
+    h._cmd_wishlist_remove({"query": "drexciya"})
+    assert h.state["wish_seen"] == {}
+
+
+def test_removing_one_wish_leaves_the_others_alone():
+    h = _SeenHost(["drexciya", "shackleton"])
+    h._cmd_wishlist_seen({"query": "drexciya", "ids": ["a1"]})
+    h._cmd_wishlist_seen({"query": "shackleton", "ids": ["b2"]})
+    h._cmd_wishlist_remove({"query": "shackleton"})
+    assert h.state["wish_seen"] == {"drexciya": ["a1"]}
+
+
+def test_a_corrupt_state_file_does_not_take_the_wishlist_down():
+    # seek-state.json is on disk and editable; a wrong shape must degrade to
+    # "nothing seen yet" rather than raising inside a command handler.
+    h = _SeenHost(["drexciya"])
+    h.state["wish_seen"] = "not a dict"
+    assert h._wish_seen() == {}
+    h.state["wish_seen"] = {"drexciya": "not a list"}
+    assert h._wish_seen() == {}

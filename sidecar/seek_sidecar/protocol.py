@@ -1669,6 +1669,47 @@ class WishFiltersParams(TypedDict):
     filters: Optional["WishFilters"]
 
 
+class WishSeen(TypedDict):
+    """
+    Which of a wish's results have already been looked at.
+
+    OPAQUE HASHES, not paths. A wish keeps one token forever and upstream
+    re-runs it on the server's interval, so the same peers holding the same
+    files come back every single time. Without a record of what has been
+    seen, a wish announces the same news for weeks and the badge stops
+    meaning anything.
+
+    The frontend derives these from `SourceFile.id`, which is `user path`,
+    and hashes them for two reasons: a few hundred full remote paths per
+    wish is a large thing to keep in a state file and to send, and the
+    sidecar has no business holding a list of who has what.
+
+    The sidecar stores and returns them and does nothing else with them —
+    deciding which results are new is a dedup, and dedup is TypeScript's.
+    """
+    # Which wish.
+    query: str
+    # Opaque per-result hashes, oldest first. Capped by the sidecar; the
+    # oldest are dropped first.
+    ids: List[str]
+
+
+class WishSeenList(TypedDict):
+    """
+    Every wish's seen-set. Deliberately NOT part of `WishlistState`: that
+    event is broadcast whenever the list or the interval changes, and
+    carrying a few thousand hashes on each one would be paying a large cost
+    repeatedly for something the frontend only needs when it starts.
+    """
+    # One entry per wish that has any.
+    items: List["WishSeen"]
+
+
+class WishSeenResult(TypedDict):
+    # How many hashes are now remembered for that wish.
+    count: int
+
+
 class WishlistState(TypedDict):
     """The wishlist, and how often the server permits it to run."""
     # Wishes, newest first.
@@ -2930,6 +2971,16 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("query", "str", False, False),
         ("filters", "WishFilters", False, True),
     ),
+    "WishSeen": (
+        ("query", "str", False, False),
+        ("ids", "str", True, False),
+    ),
+    "WishSeenList": (
+        ("items", "WishSeen", True, False),
+    ),
+    "WishSeenResult": (
+        ("count", "int", False, False),
+    ),
     "WishlistState": (
         ("items", "Wish", True, False),
         ("intervalSeconds", "int", False, False),
@@ -3233,6 +3284,8 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "wishlist.remove": ("WishParams", "WishlistState"),
     "wishlist.filters": ("WishFiltersParams", "WishlistState"),
     "wishlist.list": (None, "WishlistState"),
+    "wishlist.seen": ("WishSeen", "WishSeenResult"),
+    "wishlist.seenList": (None, "WishSeenList"),
     "artwork.get": ("ArtworkParams", "RequestAccepted"),
     "artwork.stats": (None, "ArtworkCacheStats"),
     "artwork.clear": (None, "ArtworkCacheStats"),

@@ -1728,6 +1728,43 @@ STRUCTS = {
             ("filters", "WishFilters?", "Null clears them."),
         ],
     ),
+    "WishSeen": (
+        "Which of a wish's results have already been looked at.\n"
+        "\n"
+        "OPAQUE HASHES, not paths. A wish keeps one token forever and upstream\n"
+        "re-runs it on the server's interval, so the same peers holding the same\n"
+        "files come back every single time. Without a record of what has been\n"
+        "seen, a wish announces the same news for weeks and the badge stops\n"
+        "meaning anything.\n"
+        "\n"
+        "The frontend derives these from `SourceFile.id`, which is `user path`,\n"
+        "and hashes them for two reasons: a few hundred full remote paths per\n"
+        "wish is a large thing to keep in a state file and to send, and the\n"
+        "sidecar has no business holding a list of who has what.\n"
+        "\n"
+        "The sidecar stores and returns them and does nothing else with them —\n"
+        "deciding which results are new is a dedup, and dedup is TypeScript's.",
+        [
+            ("query", "str", "Which wish."),
+            (
+                "ids",
+                "str[]",
+                "Opaque per-result hashes, oldest first. Capped by the sidecar; "
+                "the oldest are dropped first.",
+            ),
+        ],
+    ),
+    "WishSeenList": (
+        "Every wish's seen-set. Deliberately NOT part of `WishlistState`: that "
+        "event is broadcast whenever the list or the interval changes, and "
+        "carrying a few thousand hashes on each one would be paying a large "
+        "cost repeatedly for something the frontend only needs when it starts.",
+        [("items", "WishSeen[]", "One entry per wish that has any.")],
+    ),
+    "WishSeenResult": (
+        "",
+        [("count", "int", "How many hashes are now remembered for that wish.")],
+    ),
     "WishlistState": (
         "The wishlist, and how often the server permits it to run.",
         [
@@ -2562,6 +2599,18 @@ COMMANDS = {
         "WishlistState",
     ),
     "wishlist.list": ("Current wishlist and interval.", None, "WishlistState"),
+    "wishlist.seen": (
+        "Remember that these results have been looked at, so a later run does "
+        "not announce them again. Additive — the sidecar merges.",
+        "WishSeen",
+        "WishSeenResult",
+    ),
+    "wishlist.seenList": (
+        "Every wish's seen-set. Asked for once, when the frontend connects; "
+        "the frontend is the only writer and tracks its own copy after that.",
+        None,
+        "WishSeenList",
+    ),
     "artwork.get": (
         "Ask for a release cover. Replies immediately with a requestId; the "
         "image arrives later as `artwork.result` or `artwork.failed`. Never on "
