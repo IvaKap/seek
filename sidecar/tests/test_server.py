@@ -28,6 +28,22 @@ def bridge():
     b.stop()
 
 
+@pytest.fixture
+def lenient():
+    """Restore PRODUCTION broadcast behaviour for one test.
+
+    `conftest.py` turns STRICT_VALIDATION on for the whole run so an invalid
+    event fails the test that produced it. The handful of tests that assert what
+    a RUNNING sidecar does with a bad payload need the real thing, and must say
+    so rather than quietly depending on a global.
+    """
+    from seek_sidecar import server as server_mod
+    was = server_mod.STRICT_VALIDATION
+    server_mod.STRICT_VALIDATION = False
+    yield
+    server_mod.STRICT_VALIDATION = was
+
+
 def url(bridge, token=TOKEN):
     return f"ws://127.0.0.1:{bridge.bound_port}/?token={token}"
 
@@ -188,10 +204,14 @@ async def test_broadcast_reaches_every_client(bridge):
             assert frame["data"]["connections"] == 3
 
 
-async def test_invalid_broadcast_is_dropped_not_raised(bridge):
+async def test_invalid_broadcast_is_dropped_not_raised(bridge, lenient):
     """broadcast() runs inside a pynicotine event callback. Upstream treats any
     exception escaping a callback as fatal — it calls core.quit() and re-raises
-    (events.py:275). A bad payload must never get that far."""
+    (events.py:275). A bad payload must never get that far.
+
+    `lenient` because conftest turns STRICT_VALIDATION on for the whole run.
+    This is the one test that asserts PRODUCTION behaviour, so it is the one
+    test that has to opt out of the stricter test-run behaviour."""
     async with websockets.connect(url(bridge)) as ws:
         bridge.broadcast("connection.stats", {"connections": "three"})  # bad type
         bridge.broadcast("connection.stats", {
@@ -199,6 +219,30 @@ async def test_invalid_broadcast_is_dropped_not_raised(bridge):
         })
         frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=2))
         assert frame["data"]["connections"] == 1, "the invalid frame was sent"
+
+
+async def test_a_dropped_event_is_counted(bridge, lenient):
+    """A drop is always OUR bug, and a line in a log file is where bugs go to be
+    forgotten. Twice this class has cost real chat messages; both times the
+    evidence existed and nothing was reading it."""
+    bridge.broadcast("connection.stats", {"connections": "three"})
+    bridge.broadcast("connection.stats", {"connections": "four"})
+    assert bridge.dropped_events == {"connection.stats": 2}
+
+
+async def test_a_good_event_is_not_counted(bridge):
+    bridge.broadcast("connection.stats", {
+        "connections": 1, "downloadBandwidth": 0, "uploadBandwidth": 0,
+    })
+    assert bridge.dropped_events == {}
+
+
+async def test_under_test_an_invalid_event_raises(bridge):
+    """The whole point of STRICT_VALIDATION: a handler that emits something the
+    schema forbids fails the test that drove it, rather than passing while the
+    user-visible thing silently does not happen."""
+    with pytest.raises(protocol.SchemaError):
+        bridge.broadcast("connection.stats", {"connections": "three"})
 
 
 async def test_broadcast_with_no_clients_is_harmless(bridge):

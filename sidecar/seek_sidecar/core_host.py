@@ -3202,6 +3202,12 @@ class CoreHost:
         return self.core.users.login_username or ""
 
     def _on_room_message(self, msg):
+        # SUPPRESSED. See the note on _on_private_message: upstream nulls the
+        # identifying field to tell later handlers it has swallowed this one.
+        # `chatrooms._say_chat_room` does it for a room we are not in, for an
+        # ignored user, for an ignored IP, and for a plugin that ate the line.
+        if msg.room is None:
+            return
         self.bridge.broadcast("chat.message", self._chat_line(
             "room", msg.room, msg.user, msg.message,
             outgoing=msg.user == self._own_username(),
@@ -3234,6 +3240,31 @@ class CoreHost:
         yourself makes sender and recipient identical, which is exactly the test
         that hid this bug in the first place.
         """
+        # SUPPRESSED — NOT a message with no target.
+        #
+        # Upstream signals "I have handled this, do not display it" by NULLING
+        # the identifying field on the message object in place, and every
+        # handler registered after it sees the mutation. `events.emit` runs
+        # callbacks in registration order and the core registers its own during
+        # init, so ours ALWAYS runs second and always sees it.
+        #
+        # `privatechat._message_user` does it five ways: a server message it
+        # turned into something else, a user on the ignore list, an ignored IP,
+        # a plugin that ate the line, and — the one that is not a suppression at
+        # all — a message QUEUED pending the sender's IP, which is re-emitted
+        # for real from `_get_peer_address` once the address arrives.
+        #
+        # Without this the message was emitted anyway and only survived being
+        # shown because `ChatMessage.target` is non-nullable and the event
+        # validator refused it. That is luck, not design, and it points the
+        # obvious fix at exactly the wrong thing: making `target` nullable would
+        # start rendering messages from people you have ignored.
+        #
+        # `_on_user_status` and `_on_room_user_change` already do this; these
+        # two handlers were simply missed.
+        if msg.user is None:
+            return
+
         outgoing = getattr(msg, "message_id", None) is None
         self.bridge.broadcast("chat.message", self._chat_line(
             "private", msg.user,

@@ -54,6 +54,12 @@ from . import protocol
 
 log = logging.getLogger("seek.server")
 
+#: Turn a dropped event into a raised one. FALSE IN PRODUCTION, always — see
+#: `Bridge.broadcast` for why an exception there takes the whole core down.
+#: `conftest.py` sets it for the test run, so a handler that emits something
+#: the schema forbids fails a test rather than writing to a log nobody reads.
+STRICT_VALIDATION = False
+
 MAX_FRAME_BYTES = 4 * 1024 * 1024
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
@@ -97,6 +103,10 @@ class Bridge:
         self._token = token
         self._on_command = on_command
         self._allowed_origins = frozenset(o for o in allowed_origins if o and o != "*")
+
+        #: event name -> how many times it was refused. A drop is our bug, and
+        #: a number something can read beats a line in a file.
+        self.dropped_events = {}
 
         self.inbox = queue.SimpleQueue()   # main thread drains this
         self._clients = set()
@@ -277,11 +287,26 @@ class Bridge:
         callback, and letting an exception escape would make upstream call
         core.quit() and re-raise (events.py:275), taking the whole core down
         over one bad field.
+
+        A drop is ALWAYS OUR BUG. The payload is built by this codebase, so a
+        schema violation is never a network condition — it means a handler
+        produced something the wire forbids, and a user-visible thing silently
+        did not happen. Twice now that has cost real chat: once when upstream's
+        message_type vocabulary did not match ChatMessageKind, and once when
+        upstream's null-the-field suppression signal reached `_chat_line`.
+
+        In production it still drops, for the reason above. Under test it
+        RAISES (`STRICT_VALIDATION`), so a handler that emits something invalid
+        fails the test that drove it instead of passing quietly and leaving the
+        evidence in a log file nobody reads.
         """
         try:
             protocol.validate_event(event_name, data)
         except protocol.SchemaError as error:
             log.error("refusing to emit invalid %s: %s", event_name, error)
+            self.dropped_events[event_name] = self.dropped_events.get(event_name, 0) + 1
+            if STRICT_VALIDATION:
+                raise
             return
 
         if not self._clients:

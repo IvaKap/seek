@@ -22,3 +22,15 @@ hot-reload either, and the two failure modes look identical from the outside.
 import sys
 
 sys.dont_write_bytecode = True
+
+# Under test, an event the schema forbids RAISES instead of being dropped.
+#
+# In production `Bridge.broadcast` logs and drops, because an exception inside a
+# pynicotine event callback makes upstream call core.quit(). That is right for a
+# running app and wrong for a test suite: it means a handler can emit something
+# invalid, the user-visible thing silently does not happen, and the test that
+# drove it passes. Twice that has cost real chat messages — the second time was
+# found by reading a production log, not by a test.
+from seek_sidecar import server as _server
+
+_server.STRICT_VALIDATION = True
