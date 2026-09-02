@@ -39,6 +39,11 @@ function fakeClient() {
       sent.push({ cmd, params: params ?? {} });
       if (cmd in replies) return Promise.resolve(replies[cmd]);
       if (cmd === 'youtube.list') return Promise.resolve({ sheets: [] });
+      // Seeded on mount; answered here so it does not consume a request id and
+      // shift the ones the async commands get.
+      if (cmd === 'youtube.authState') {
+        return Promise.resolve({ configured: false, signedIn: false, account: '', error: '' });
+      }
       // The RequestAccepted shape for the async commands.
       reqN += 1;
       return Promise.resolve({ requestId: `req-${reqN}` });
@@ -182,6 +187,71 @@ describe('commands', () => {
       sheetId: 'a', videoId: '1', artist: null, title: null,
       discogsUrl: 'https://www.discogs.com/release/7',
     });
+  });
+});
+
+describe('google sign-in', () => {
+  it('a youtube.auth event updates the auth state', async () => {
+    const { client, emit } = fakeClient();
+    const box = mount(client);
+    await act(async () => {});
+    expect(box.yt.auth.signedIn).toBe(false);
+    await act(async () => {
+      emit('youtube.auth', { configured: true, signedIn: true, account: 'My Channel', error: '' });
+    });
+    expect(box.yt.auth.signedIn).toBe(true);
+    expect(box.yt.auth.account).toBe('My Channel');
+  });
+
+  it('a failed sign-in surfaces its error', async () => {
+    const { client, emit } = fakeClient();
+    const box = mount(client);
+    await act(async () => {
+      emit('youtube.auth', { configured: true, signedIn: false, account: '', error: 'Google refused: access_denied' });
+    });
+    expect(box.yt.error).toMatch(/access_denied/);
+  });
+
+  it('signOut applies the returned state and clears playlists', async () => {
+    const { client, emit, replies } = fakeClient();
+    replies['youtube.signOut'] = { configured: true, signedIn: false, account: '', error: '' };
+    const box = mount(client);
+    await act(async () => {
+      emit('youtube.auth', { configured: true, signedIn: true, account: 'Me', error: '' });
+      emit('youtube.playlists', { requestId: 'r', items: [{ id: 'LL', title: 'Liked videos', itemCount: 0, privacy: '' }] });
+    });
+    expect(box.yt.myPlaylists.length).toBe(1);
+    await act(async () => { box.yt.signOut(); });
+    expect(box.yt.auth.signedIn).toBe(false);
+    expect(box.yt.myPlaylists).toEqual([]);
+  });
+
+  it('youtube.playlists populates the picker', async () => {
+    const { client, emit } = fakeClient();
+    const box = mount(client);
+    await act(async () => {
+      emit('youtube.playlists', { requestId: 'r', items: [
+        { id: 'LL', title: 'Liked videos', itemCount: 0, privacy: '' },
+        { id: 'PLx', title: 'Digging', itemCount: 42, privacy: 'private' },
+      ] });
+    });
+    expect(box.yt.myPlaylists.map((p) => p.id)).toEqual(['LL', 'PLx']);
+  });
+
+  it('addLiked sends source liked', async () => {
+    const { client, sent } = fakeClient();
+    const box = mount(client);
+    await act(async () => { box.yt.addLiked(); });
+    const add = sent.find((c) => c.cmd === 'youtube.addSheet')!;
+    expect(add.params.source).toBe('liked');
+  });
+
+  it('addPlaylist sends the picked id with title present-or-null', async () => {
+    const { client, sent } = fakeClient();
+    const box = mount(client);
+    await act(async () => { box.yt.addPlaylist('PLx', 'Digging'); });
+    const add = sent.find((c) => c.cmd === 'youtube.addSheet')!;
+    expect(add.params).toEqual({ source: 'playlist', sourceId: 'PLx', title: 'Digging' });
   });
 });
 

@@ -33,6 +33,7 @@ import { ConnectionsPanel, ProfilePanel } from './ProfilePanel.tsx';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import type { PrefsSession } from '../data/prefsStore.ts';
 import type { EngineSession } from '../data/engineStore.ts';
+import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { ConnectionsSession, ProfileSession } from '../data/profileStore.ts';
 import { readableError } from '../domain/folders.ts';
 import { IconInfo } from '../icons/index.tsx';
@@ -301,7 +302,7 @@ function SpeedLimit({
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsView({
-  client, serverState, prefs, engine, profile, connections,
+  client, serverState, prefs, engine, profile, connections, youtube,
 }: {
   client: SidecarClient | null;
   serverState: string | null;
@@ -309,6 +310,7 @@ export function SettingsView({
   engine: EngineSession;
   profile: ProfileSession;
   connections: ConnectionsSession;
+  youtube: YoutubeSession;
 }) {
   const [tab, setTab] = useState<Tab>('account');
   const { settings } = prefs;
@@ -772,10 +774,82 @@ export function SettingsView({
                       'In APIs & Services → Credentials, press Create credentials → API key.',
                       'Copy the key and paste it here.',
                     ]}
-                    note="An API key, not an OAuth client. OAuth is for reaching a Google account's private data; a public playlist needs none of it, and Seek holds no client secret and never asks you to sign in to Google."
+                    note="An API key reads only PUBLIC playlists. To pull in your own private playlists and liked videos, add a Google OAuth client below and sign in — that is optional and separate from this key."
                   />
                 )}
               />
+              <SecretRow
+                label="Google OAuth client id"
+                hint="Optional. With the secret below, unlocks private playlists and liked videos."
+                placeholderSet="Client id saved"
+                placeholderUnset="Client id"
+                stored={settings.youtubeOauthClientId}
+                ariaLabel="Google OAuth client id"
+                available={prefs.available}
+                onSave={(v) => prefs.patch({ youtubeOauthClientId: v })}
+                help={(
+                  <HowTo
+                    title="a Google OAuth client"
+                    steps={[
+                      'In the same Google Cloud project, open APIs & Services → Credentials.',
+                      'Press Create credentials → OAuth client ID, and choose "Desktop app".',
+                      'Copy the client ID here, and the client secret into the field below.',
+                      'On the OAuth consent screen, add yourself as a Test user so Google lets you through.',
+                    ]}
+                    note="A Desktop client. Google issues a client secret for it and its own docs treat that as non-confidential for an installed app — Seek still keeps it on the sidecar and never echoes it. Sign-in uses a loopback redirect with PKCE; no secret rides on the URL."
+                  />
+                )}
+              />
+              <SecretRow
+                label="Google OAuth client secret"
+                hint="The secret paired with the client id above."
+                placeholderSet="Secret saved"
+                placeholderUnset="Client secret"
+                stored={settings.youtubeOauthClientSecret}
+                ariaLabel="Google OAuth client secret"
+                available={prefs.available}
+                onSave={(v) => prefs.patch({ youtubeOauthClientSecret: v })}
+              />
+              <Row
+                label="Google sign-in"
+                hint="Opens your browser to consent. Only what you allow — read-only YouTube."
+                control={(
+                  <span className="settings__inline">
+                    {youtube.auth.signedIn ? (
+                      <>
+                        <span className="settings__ok">
+                          Signed in{youtube.auth.account ? ` as ${youtube.auth.account}` : ''}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn pressable"
+                          disabled={!prefs.available}
+                          onClick={() => youtube.signOut()}
+                        >
+                          Sign out
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="btn pressable"
+                        disabled={!prefs.available || !youtube.auth.configured}
+                        title={youtube.auth.configured
+                          ? 'Open the browser and sign in to Google'
+                          : 'Add a client id and secret first'}
+                        onClick={() => youtube.signIn()}
+                      >
+                        Sign in with Google
+                      </button>
+                    )}
+                  </span>
+                )}
+              />
+              {youtube.auth.error && (
+                <p className="signin__error" role="alert">
+                  Google sign-in: {youtube.auth.error}
+                </p>
+              )}
               <Row
                 label="Artwork cache limit"
                 hint="Least-recently-used eviction once the cap is reached."

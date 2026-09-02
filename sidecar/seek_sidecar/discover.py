@@ -1480,22 +1480,38 @@ PLAYLIST_MAX_PAGES = 20
 PLAYLIST_DEAD_TITLES = ("Deleted video", "Private video")
 
 
-def playlist_items(playlist_id, api_key, fetch_json=None):
-    """Every entry of a public playlist, as raw facts.
+def _youtube_auth(api_key, access_token):
+    """A (params-extra, headers) pair for a YouTube Data call.
+
+    A signed-in call carries an OAuth bearer token and no key — that is what
+    reaches a private playlist or the liked list. A public call carries the key
+    as a query parameter, the way it always has.
+    """
+    if access_token:
+        return {}, {"Authorization": f"Bearer {access_token}"}
+    return {"key": api_key}, None
+
+
+def playlist_items(playlist_id, api_key, fetch_json=None, access_token=None):
+    """Every entry of a playlist, as raw facts.
 
     Returns the payload for a `discover.playlistItems` event minus its
     requestId. Nothing here parses a title into artist and track: that guess
     belongs to `parseTitle.ts` on the other side of the seam.
+
+    With `access_token` the call is authenticated and can read a PRIVATE
+    playlist or the liked list ('LL'); without one it needs the public API key.
     """
     if not playlist_id:
         raise DiscoverError("no playlist id")
-    if not api_key:
+    if not api_key and not access_token:
         raise DiscoverError(
             "a YouTube Data API key is needed to read a playlist",
             needs="youtubeApiKey",
         )
 
     fetch = fetch_json or _fetch_json
+    auth, headers = _youtube_auth(api_key, access_token)
     items = []
     total = 0
     token = ""
@@ -1506,14 +1522,12 @@ def playlist_items(playlist_id, api_key, fetch_json=None):
             "part": "snippet,contentDetails",
             "playlistId": playlist_id,
             "maxResults": str(PLAYLIST_PAGE),
-            "key": api_key,
+            **auth,
         }
         if token:
             params["pageToken"] = token
-        payload = fetch(
-            "https://www.googleapis.com/youtube/v3/playlistItems?"
-            + urllib.parse.urlencode(params)
-        )
+        url = "https://www.googleapis.com/youtube/v3/playlistItems?" + urllib.parse.urlencode(params)
+        payload = fetch(url, headers=headers) if headers else fetch(url)
 
         # pageInfo.totalResults is the WHOLE playlist, not this page.
         total = int((payload.get("pageInfo") or {}).get("totalResults") or 0)
@@ -1570,7 +1584,7 @@ def _iso8601_seconds(text):
     return total or None
 
 
-def youtube_video_details(video_ids, api_key, fetch_json=None):
+def youtube_video_details(video_ids, api_key, fetch_json=None, access_token=None):
     """Duration, description and upload date for up to 50 videos per request.
 
     `playlistItems` carries none of these — this is the second call the old
@@ -1581,13 +1595,14 @@ def youtube_video_details(video_ids, api_key, fetch_json=None):
     ids = [v for v in (video_ids or []) if v]
     if not ids:
         return {}
-    if not api_key:
+    if not api_key and not access_token:
         raise DiscoverError(
             "a YouTube Data API key is needed to read video details",
             needs="youtubeApiKey",
         )
 
     fetch = fetch_json or _fetch_json
+    auth, headers = _youtube_auth(api_key, access_token)
     out = {}
     for start in range(0, len(ids), YOUTUBE_VIDEOS_MAX):
         batch = ids[start:start + YOUTUBE_VIDEOS_MAX]
@@ -1595,12 +1610,10 @@ def youtube_video_details(video_ids, api_key, fetch_json=None):
             "part": "snippet,contentDetails",
             "id": ",".join(batch),
             "maxResults": str(YOUTUBE_VIDEOS_MAX),
-            "key": api_key,
+            **auth,
         }
-        payload = fetch(
-            "https://www.googleapis.com/youtube/v3/videos?"
-            + urllib.parse.urlencode(params)
-        )
+        url = "https://www.googleapis.com/youtube/v3/videos?" + urllib.parse.urlencode(params)
+        payload = fetch(url, headers=headers) if headers else fetch(url)
         for entry in payload.get("items") or []:
             snippet = entry.get("snippet") or {}
             details = entry.get("contentDetails") or {}
@@ -1609,4 +1622,46 @@ def youtube_video_details(video_ids, api_key, fetch_json=None):
                 "durationSeconds": _iso8601_seconds(details.get("duration")),
                 "publishedAt": str(snippet.get("publishedAt") or "") or None,
             }
+    return out
+
+
+#: Cap the picker's playlist list; nobody scrolls a thousand of their own.
+YOUTUBE_PLAYLISTS_MAX_PAGES = 4
+
+
+def youtube_my_playlists(access_token, fetch_json=None):
+    """The signed-in user's own playlists (private included), newest first.
+
+    Authenticated only — `mine=true` has no meaning without a user token. Raw
+    facts for the add picker; the liked list is synthesised by the caller, since
+    it is not returned here.
+    """
+    if not access_token:
+        raise DiscoverError("not signed in")
+    fetch = fetch_json or _fetch_json
+    headers = {"Authorization": f"Bearer {access_token}"}
+    out = []
+    token = ""
+    for _page in range(YOUTUBE_PLAYLISTS_MAX_PAGES):
+        params = {"part": "snippet,contentDetails,status", "mine": "true",
+                  "maxResults": "50"}
+        if token:
+            params["pageToken"] = token
+        payload = fetch(
+            "https://www.googleapis.com/youtube/v3/playlists?" + urllib.parse.urlencode(params),
+            headers=headers,
+        )
+        for entry in payload.get("items") or []:
+            snippet = entry.get("snippet") or {}
+            content = entry.get("contentDetails") or {}
+            status = entry.get("status") or {}
+            out.append({
+                "id": str(entry.get("id") or ""),
+                "title": str(snippet.get("title") or ""),
+                "itemCount": int(content.get("itemCount") or 0),
+                "privacy": str(status.get("privacyStatus") or ""),
+            })
+        token = str(payload.get("nextPageToken") or "")
+        if not token:
+            break
     return out

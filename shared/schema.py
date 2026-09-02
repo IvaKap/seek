@@ -617,10 +617,26 @@ STRUCTS = {
                 "youtubeApiKey",
                 "bool",
                 "Whether a key is stored. NEVER the value — same rule as the "
-                "Discogs token and the AcoustID key. Reading a public playlist "
-                "needs only this simple API key; the OAuth client YouTube also "
-                "offers is for a user's PRIVATE data and is deliberately not "
-                "used, so there is no client secret to hold.",
+                "Discogs token and the AcoustID key. Reading a PUBLIC playlist "
+                "needs only this simple API key.",
+            ),
+            (
+                "youtubeOauthClientId",
+                "bool",
+                "Whether a Google OAuth client id is stored. Optional, and only "
+                "for the sign-in that unlocks PRIVATE playlists and liked videos "
+                "(see `youtube.signIn`). A client id is not a secret, but it is "
+                "still reported as a boolean for consistency with the fields "
+                "around it.",
+            ),
+            (
+                "youtubeOauthClientSecret",
+                "bool",
+                "Whether the Google OAuth client secret is stored. NEVER the "
+                "value. Google issues one for a 'Desktop app' client and its own "
+                "docs treat it as non-confidential for an installed app — but it "
+                "is a credential all the same, so it does not echo back across "
+                "the socket, same rule as every other secret here.",
             ),
             (
                 "autoDigSessions",
@@ -649,6 +665,8 @@ STRUCTS = {
             ("autoOrganise", "bool?", ""),
             ("acoustidApiKey", "str?", "The key itself, for writing. Empty clears it."),
             ("youtubeApiKey", "str?", "The key itself, for writing. Empty clears it."),
+            ("youtubeOauthClientId", "str?", "The client id, for writing. Empty clears it."),
+            ("youtubeOauthClientSecret", "str?", "The client secret, for writing. Empty clears it."),
             ("autoDigSessions", "bool?", ""),
             ("stalledFailMinutes", "int?", ""),
             ("clearCompletedDays", "int?", ""),
@@ -1274,6 +1292,56 @@ STRUCTS = {
             ("title", "str?", ""),
             ("discogsUrl", "str?", "A Discogs release/master URL to use as-is."),
         ],
+    ),
+    "YoutubeAuthState": (
+        "Whether the user has signed in to Google, which is what unlocks private "
+        "playlists and liked videos.\n"
+        "\n"
+        "OPTIONAL and off by default. Public playlists never need this — they run "
+        "on the plain API key. Sign-in is an OAuth 2.0 loopback flow (see "
+        "`youtube.signIn`); the refresh token it yields is held sidecar-side and "
+        "never crosses the socket, so this reports only the FACT of a session, "
+        "not the token.",
+        [
+            (
+                "configured",
+                "bool",
+                "A Google OAuth client id and secret are both stored, so sign-in "
+                "is possible. Sign-in is refused until they are.",
+            ),
+            ("signedIn", "bool", "A refresh token is held and usable."),
+            (
+                "account",
+                "str",
+                "The signed-in YouTube channel's title, when known. Empty when "
+                "signed out or not yet fetched. For display only.",
+            ),
+            (
+                "error",
+                "str",
+                "Why the last sign-in attempt failed, developer-facing. Empty "
+                "when there is nothing to report.",
+            ),
+        ],
+    ),
+    "YoutubeMyPlaylist": (
+        "One of the signed-in user's own playlists, for the add picker. 'Liked "
+        "videos' arrives as a synthetic entry with id 'LL'.",
+        [
+            ("id", "str", "Playlist id, or 'LL' for liked videos."),
+            ("title", "str", ""),
+            ("itemCount", "int", "How many videos it holds, as YouTube reports."),
+            (
+                "privacy",
+                "str",
+                "'private', 'unlisted' or 'public', verbatim from YouTube. Empty "
+                "for the synthetic liked entry.",
+            ),
+        ],
+    ),
+    "YoutubeMyPlaylists": (
+        "The signed-in user's playlists, newest first, with liked videos first.",
+        [("requestId", "str", ""), ("items", "YoutubeMyPlaylist[]", "")],
     ),
     "DiscogsWant": (
         "One release from the user's Discogs wantlist.\n"
@@ -3002,6 +3070,31 @@ COMMANDS = {
         "YoutubeRematchParams",
         "RequestAccepted",
     ),
+    "youtube.signIn": (
+        "Sign in to Google to unlock private playlists and liked videos.\n"
+        "\n"
+        "Runs an OAuth 2.0 loopback flow with PKCE: the sidecar opens the "
+        "system browser to Google's consent screen, catches the redirect on a "
+        "transient 127.0.0.1 listener, and exchanges the code for a refresh "
+        "token it keeps on its own side. Needs a Google OAuth client id and "
+        "secret in Settings first. Replies immediately; the outcome arrives on "
+        "`youtube.auth`.",
+        None,
+        "RequestAccepted",
+    ),
+    "youtube.signOut": (
+        "Forget the Google refresh token. Public playlists keep working.",
+        None,
+        "YoutubeAuthState",
+    ),
+    "youtube.authState": ("Whether Google sign-in is configured and active.", None, "YoutubeAuthState"),
+    "youtube.myPlaylists": (
+        "List the signed-in user's own playlists (private included) plus liked "
+        "videos, for the add picker. Replies immediately; the list arrives on "
+        "`youtube.playlists`.",
+        None,
+        "RequestAccepted",
+    ),
     "history.list": ("Recent searches, newest first.", None, "HistoryState"),
     "history.record": ("Note that a search was run.", "WishParams", "HistoryState"),
     "history.clear": ("Forget the search history.", None, "HistoryState"),
@@ -3152,6 +3245,15 @@ EVENTS = {
         "uses, because matches arrive about one a second and redrawing per match "
         "is the jitter the brief forbids.",
         "YoutubeSheet",
+    ),
+    "youtube.auth": (
+        "Google sign-in state changed — signed in, signed out, or an attempt "
+        "failed.",
+        "YoutubeAuthState",
+    ),
+    "youtube.playlists": (
+        "The signed-in user's own playlists arrived, for the add picker.",
+        "YoutubeMyPlaylists",
     ),
     "log": ("A forwarded log line.", "LogEvent"),
 }

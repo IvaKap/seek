@@ -982,6 +982,7 @@ export default function App() {
             engine={engine}
             profile={profile}
             connections={connections}
+            youtube={youtube}
           />
         )}
       </main>

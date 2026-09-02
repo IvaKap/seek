@@ -19,8 +19,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type {
   YoutubeSheet, YoutubeState, YoutubeQuery,
+  YoutubeAuthState, YoutubeMyPlaylist, YoutubeMyPlaylists,
 } from '../../../shared/protocol.ts';
 import { discogsQuery } from '../domain/youtubeMatch.ts';
+
+const SIGNED_OUT: YoutubeAuthState = {
+  configured: false, signedIn: false, account: '', error: '',
+};
 
 export interface YoutubeSession {
   sheets: YoutubeSheet[];
@@ -38,6 +43,20 @@ export interface YoutubeSession {
   /** Redo one row: by re-search, or by a pasted Discogs release URL. */
   rematch(sheetId: string, videoId: string,
           opts: { discogsUrl?: string } | { artist: string; title: string }): void;
+
+  // --- optional Google sign-in (private playlists + liked videos) ---
+  /** Whether sign-in is configured and active. */
+  auth: YoutubeAuthState;
+  /** The signed-in user's own playlists, once loaded. Empty until asked for. */
+  myPlaylists: YoutubeMyPlaylist[];
+  /** Open the browser and run the Google consent flow. Result arrives on `auth`. */
+  signIn(): void;
+  signOut(): void;
+  /** Fetch the user's own playlists (private + liked) for the add picker. */
+  loadMyPlaylists(): void;
+  /** Add a sheet for a picked playlist (or 'LL' for liked). */
+  addLiked(): void;
+  addPlaylist(id: string, title: string): void;
 }
 
 /** The queries for a sheet's still-unmatched rows. Derivation stays in TS. */
@@ -54,6 +73,8 @@ function pendingQueries(sheet: YoutubeSheet): YoutubeQuery[] {
 export function useYoutube(client: SidecarClient | null): YoutubeSession {
   const [sheets, setSheets] = useState<YoutubeSheet[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [auth, setAuth] = useState<YoutubeAuthState>(SIGNED_OUT);
+  const [myPlaylists, setMyPlaylists] = useState<YoutubeMyPlaylist[]>([]);
 
   /* requestId -> what it was, so a discover.parseFailed carrying that id can be
      turned into a message. addSheet/refresh reuse discover.parseFailed for the
@@ -90,11 +111,22 @@ export function useYoutube(client: SidecarClient | null): YoutubeSession {
           : `Could not read that playlist: ${f.reason}`);
     });
 
+    const offAuth = client.on('youtube.auth', (d) => {
+      const state = d as YoutubeAuthState;
+      setAuth(state);
+      if (state.error) setError(`Google sign-in failed: ${state.error}`);
+    });
+    const offPlaylists = client.on('youtube.playlists', (d) => {
+      setMyPlaylists((d as YoutubeMyPlaylists).items);
+    });
+
     void client.request<YoutubeState>('youtube.list').then(
       (s) => setSheets(s.sheets),
     ).catch(() => { /* offline; the fixture replay has no sheets */ });
+    void client.request<YoutubeAuthState>('youtube.authState')
+      .then(setAuth).catch(() => { /* offline */ });
 
-    return () => { offState(); offSheet(); offFailed(); };
+    return () => { offState(); offSheet(); offFailed(); offAuth(); offPlaylists(); };
   }, [client]);
 
   const track = useCallback((cmd: string, params: Record<string, unknown>, label: string) => {
@@ -150,6 +182,38 @@ export function useYoutube(client: SidecarClient | null): YoutubeSession {
     track('youtube.rematch', params, sheetId);
   }, [track]);
 
+  const signIn = useCallback(() => {
+    if (!client) return;
+    void client.request('youtube.signIn', {})
+      .catch((e: Error) => setError(e.message));
+  }, [client]);
+
+  const signOut = useCallback(() => {
+    if (!client) return;
+    void client.request<YoutubeAuthState>('youtube.signOut', {})
+      .then((s) => { setAuth(s); setMyPlaylists([]); })
+      .catch((e: Error) => setError(e.message));
+  }, [client]);
+
+  const loadMyPlaylists = useCallback(() => {
+    if (!client) return;
+    void client.request('youtube.myPlaylists', {})
+      .catch((e: Error) => setError(e.message));
+  }, [client]);
+
+  const addLiked = useCallback(() => {
+    // sourceId is ignored for liked (the sidecar forces 'LL'), but a nullable
+    // field must still be on the wire.
+    track('youtube.addSheet',
+          { source: 'liked', sourceId: 'LL', title: 'Liked videos' }, 'LL');
+  }, [track]);
+
+  const addPlaylist = useCallback((id: string, title: string) => {
+    if (!id.trim()) return;
+    track('youtube.addSheet',
+          { source: 'playlist', sourceId: id, title: title || null }, id);
+  }, [track]);
+
   return {
     sheets,
     available: Boolean(client),
@@ -161,5 +225,12 @@ export function useYoutube(client: SidecarClient | null): YoutubeSession {
     setDownloaded,
     enrichPending,
     rematch,
+    auth,
+    myPlaylists,
+    signIn,
+    signOut,
+    loadMyPlaylists,
+    addLiked,
+    addPlaylist,
   };
 }

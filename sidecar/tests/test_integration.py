@@ -302,6 +302,7 @@ def _settings_patch(**overrides):
         "autoOrganise": None, "autoDigSessions": None,
         "stalledFailMinutes": None, "clearCompletedDays": None,
         "acoustidApiKey": None, "youtubeApiKey": None,
+        "youtubeOauthClientId": None, "youtubeOauthClientSecret": None,
     }
     patch.update(overrides)
     return patch

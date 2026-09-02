@@ -16,6 +16,7 @@ import { SettingsView } from './SettingsView.tsx';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import type { PrefsSession } from '../data/prefsStore.ts';
 import type { EngineSession } from '../data/engineStore.ts';
+import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { ConnectionsSession, ProfileSession } from '../data/profileStore.ts';
 import { IconDownload, IconEmpty, IconLibrary, IconSearch, IconUsers } from '../icons/index.tsx';
 
@@ -47,7 +48,7 @@ function Head({ title, subtitle }: { title: string; subtitle?: string }) {
 }
 
 export function SectionView({
-  section, client, serverState, prefs, engine, profile, connections,
+  section, client, serverState, prefs, engine, profile, connections, youtube,
 }: {
   section: Section;
   client: SidecarClient | null;
@@ -56,6 +57,7 @@ export function SectionView({
   engine: EngineSession;
   profile: ProfileSession;
   connections: ConnectionsSession;
+  youtube: YoutubeSession;
 }) {
   switch (section) {
     case 'downloads':
@@ -144,6 +146,7 @@ export function SectionView({
           engine={engine}
           profile={profile}
           connections={connections}
+          youtube={youtube}
         />
       );
     default:

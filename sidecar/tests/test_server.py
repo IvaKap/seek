@@ -430,6 +430,8 @@ def _event_samples():
             "autoDigSessions": True, "stalledFailMinutes": 0, "clearCompletedDays": 0,
             "acoustidApiKey": False,
             "youtubeApiKey": False,
+            "youtubeOauthClientId": False,
+            "youtubeOauthClientSecret": False,
         },
         "peers.stats": {
             "items": [{"username": "metalheadz2003", "ok": 12, "failed": 1,
@@ -547,6 +549,15 @@ def _event_samples():
         },
         "youtube.sheet": _yt_sheet_sample(),
         "youtube.state": {"sheets": [_yt_sheet_sample()]},
+        "youtube.auth": {
+            "configured": True, "signedIn": True, "account": "My Channel", "error": "",
+        },
+        "youtube.playlists": {
+            "requestId": "r", "items": [
+                {"id": "LL", "title": "Liked videos", "itemCount": 0, "privacy": ""},
+                {"id": "PLx", "title": "Digging", "itemCount": 42, "privacy": "private"},
+            ],
+        },
         # Values copied from a real /users/{u}/wants response, including the
         # trailing space Discogs actually sends in a title and the release with
         # no master (which arrives as 0, normalised to null before it gets here).

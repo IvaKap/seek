@@ -53,7 +53,10 @@ function sheet(rows: YoutubeRow[], over: Partial<YoutubeSheet> = {}): YoutubeShe
   };
 }
 
-function session(sheets: YoutubeSheet[]): YoutubeSession & Record<string, ReturnType<typeof vi.fn>> {
+function session(
+  sheets: YoutubeSheet[],
+  over: Partial<YoutubeSession> = {},
+): YoutubeSession & Record<string, ReturnType<typeof vi.fn>> {
   return {
     sheets,
     available: true,
@@ -65,6 +68,14 @@ function session(sheets: YoutubeSheet[]): YoutubeSession & Record<string, Return
     setDownloaded: vi.fn(),
     enrichPending: vi.fn(),
     rematch: vi.fn(),
+    auth: { configured: false, signedIn: false, account: '', error: '' },
+    myPlaylists: [],
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+    loadMyPlaylists: vi.fn(),
+    addLiked: vi.fn(),
+    addPlaylist: vi.fn(),
+    ...over,
   } as unknown as YoutubeSession & Record<string, ReturnType<typeof vi.fn>>;
 }
 
@@ -162,6 +173,42 @@ describe('the youtube sheet', () => {
     expect(screen.getByText('Alpha track')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: /Beta/ }));
     expect(screen.getByText('Beta track')).toBeTruthy();
+  });
+
+  it('offers the account picker only when signed in', () => {
+    draw(session([sheet([row()])]));
+    expect(screen.queryByText(/From your account/)).toBeNull();
+    cleanup();
+    draw(session([sheet([row()])], {
+      auth: { configured: true, signedIn: true, account: 'Me', error: '' },
+    }));
+    expect(screen.getByText(/From your account/)).toBeTruthy();
+  });
+
+  it('the picker adds Liked videos', () => {
+    const yt = session([sheet([row()])], {
+      auth: { configured: true, signedIn: true, account: 'Me', error: '' },
+      myPlaylists: [{ id: 'LL', title: 'Liked videos', itemCount: 0, privacy: '' }],
+    });
+    draw(yt);
+    fireEvent.click(screen.getByText(/From your account/));
+    expect(yt.loadMyPlaylists).toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Liked videos'));
+    expect(yt.addLiked).toHaveBeenCalled();
+  });
+
+  it('the picker adds a chosen private playlist', () => {
+    const yt = session([sheet([row()])], {
+      auth: { configured: true, signedIn: true, account: 'Me', error: '' },
+      myPlaylists: [
+        { id: 'LL', title: 'Liked videos', itemCount: 0, privacy: '' },
+        { id: 'PLx', title: 'Digging', itemCount: 42, privacy: 'private' },
+      ],
+    });
+    draw(yt);
+    fireEvent.click(screen.getByText(/From your account/));
+    fireEvent.click(screen.getByText('Digging'));
+    expect(yt.addPlaylist).toHaveBeenCalledWith('PLx', 'Digging');
   });
 
   it('a low-confidence match is toned as a warning', () => {

@@ -589,11 +589,20 @@ class AppSettings(TypedDict):
     # been sent.
     acoustidApiKey: bool
     # Whether a key is stored. NEVER the value — same rule as the Discogs
-    # token and the AcoustID key. Reading a public playlist needs only this
-    # simple API key; the OAuth client YouTube also offers is for a user's
-    # PRIVATE data and is deliberately not used, so there is no client secret
-    # to hold.
+    # token and the AcoustID key. Reading a PUBLIC playlist needs only this
+    # simple API key.
     youtubeApiKey: bool
+    # Whether a Google OAuth client id is stored. Optional, and only for the
+    # sign-in that unlocks PRIVATE playlists and liked videos (see
+    # `youtube.signIn`). A client id is not a secret, but it is still reported
+    # as a boolean for consistency with the fields around it.
+    youtubeOauthClientId: bool
+    # Whether the Google OAuth client secret is stored. NEVER the value.
+    # Google issues one for a 'Desktop app' client and its own docs treat it
+    # as non-confidential for an installed app — but it is a credential all
+    # the same, so it does not echo back across the socket, same rule as every
+    # other secret here.
+    youtubeOauthClientSecret: bool
     # Group a burst of want list additions into a digging session. On by
     # default — it only ever adds a grouping, never changes or hides an entry,
     # and it can be switched off here.
@@ -631,6 +640,10 @@ class AppSettingsPatch(TypedDict):
     acoustidApiKey: Optional[str]
     # The key itself, for writing. Empty clears it.
     youtubeApiKey: Optional[str]
+    # The client id, for writing. Empty clears it.
+    youtubeOauthClientId: Optional[str]
+    # The client secret, for writing. Empty clears it.
+    youtubeOauthClientSecret: Optional[str]
     autoDigSessions: Optional[bool]
     stalledFailMinutes: Optional[int]
     clearCompletedDays: Optional[int]
@@ -1261,6 +1274,51 @@ class YoutubeRematchParams(TypedDict):
     title: Optional[str]
     # A Discogs release/master URL to use as-is.
     discogsUrl: Optional[str]
+
+
+class YoutubeAuthState(TypedDict):
+    """
+    Whether the user has signed in to Google, which is what unlocks private
+    playlists and liked videos.
+
+    OPTIONAL and off by default. Public playlists never need this — they run
+    on the plain API key. Sign-in is an OAuth 2.0 loopback flow (see
+    `youtube.signIn`); the refresh token it yields is held sidecar-side and
+    never crosses the socket, so this reports only the FACT of a session,
+    not the token.
+    """
+    # A Google OAuth client id and secret are both stored, so sign-in is
+    # possible. Sign-in is refused until they are.
+    configured: bool
+    # A refresh token is held and usable.
+    signedIn: bool
+    # The signed-in YouTube channel's title, when known. Empty when signed out
+    # or not yet fetched. For display only.
+    account: str
+    # Why the last sign-in attempt failed, developer-facing. Empty when there
+    # is nothing to report.
+    error: str
+
+
+class YoutubeMyPlaylist(TypedDict):
+    """
+    One of the signed-in user's own playlists, for the add picker. 'Liked
+    videos' arrives as a synthetic entry with id 'LL'.
+    """
+    # Playlist id, or 'LL' for liked videos.
+    id: str
+    title: str
+    # How many videos it holds, as YouTube reports.
+    itemCount: int
+    # 'private', 'unlisted' or 'public', verbatim from YouTube. Empty for the
+    # synthetic liked entry.
+    privacy: str
+
+
+class YoutubeMyPlaylists(TypedDict):
+    """The signed-in user's playlists, newest first, with liked videos first."""
+    requestId: str
+    items: List["YoutubeMyPlaylist"]
 
 
 class DiscogsWant(TypedDict):
@@ -2699,6 +2757,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("autoOrganise", "bool", False, False),
         ("acoustidApiKey", "bool", False, False),
         ("youtubeApiKey", "bool", False, False),
+        ("youtubeOauthClientId", "bool", False, False),
+        ("youtubeOauthClientSecret", "bool", False, False),
         ("autoDigSessions", "bool", False, False),
         ("stalledFailMinutes", "int", False, False),
         ("clearCompletedDays", "int", False, False),
@@ -2716,6 +2776,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("autoOrganise", "bool", False, True),
         ("acoustidApiKey", "str", False, True),
         ("youtubeApiKey", "str", False, True),
+        ("youtubeOauthClientId", "str", False, True),
+        ("youtubeOauthClientSecret", "str", False, True),
         ("autoDigSessions", "bool", False, True),
         ("stalledFailMinutes", "int", False, True),
         ("clearCompletedDays", "int", False, True),
@@ -3004,6 +3066,22 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("artist", "str", False, True),
         ("title", "str", False, True),
         ("discogsUrl", "str", False, True),
+    ),
+    "YoutubeAuthState": (
+        ("configured", "bool", False, False),
+        ("signedIn", "bool", False, False),
+        ("account", "str", False, False),
+        ("error", "str", False, False),
+    ),
+    "YoutubeMyPlaylist": (
+        ("id", "str", False, False),
+        ("title", "str", False, False),
+        ("itemCount", "int", False, False),
+        ("privacy", "str", False, False),
+    ),
+    "YoutubeMyPlaylists": (
+        ("requestId", "str", False, False),
+        ("items", "YoutubeMyPlaylist", True, False),
     ),
     "DiscogsWant": (
         ("discogsId", "int", False, False),
@@ -3594,6 +3672,10 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "youtube.setDownloaded": ("YoutubeDownloadedParams", "YoutubeState"),
     "youtube.enrich": ("YoutubeEnrichParams", "RequestAccepted"),
     "youtube.rematch": ("YoutubeRematchParams", "RequestAccepted"),
+    "youtube.signIn": (None, "RequestAccepted"),
+    "youtube.signOut": (None, "YoutubeAuthState"),
+    "youtube.authState": (None, "YoutubeAuthState"),
+    "youtube.myPlaylists": (None, "RequestAccepted"),
     "history.list": (None, "HistoryState"),
     "history.record": ("WishParams", "HistoryState"),
     "history.clear": (None, "HistoryState"),
@@ -3666,6 +3748,8 @@ EVENTS: Dict[str, str] = {
     "discover.browseFailed": "DiscoverFailed",
     "youtube.state": "YoutubeState",
     "youtube.sheet": "YoutubeSheet",
+    "youtube.auth": "YoutubeAuthState",
+    "youtube.playlists": "YoutubeMyPlaylists",
     "log": "LogEvent",
 }
 

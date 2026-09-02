@@ -233,6 +233,10 @@ class _Host:
     def _youtube_key(self):
         return "KEY"
 
+    def _youtube_access_token(self):
+        # Signed out in these tests; the public key path is what runs.
+        return ""
+
     def _discogs_token(self):
         return "TOK"
 
@@ -288,12 +292,12 @@ def _listing(*ids):
 def patched(monkeypatch):
     """playlist_items / video details / discogs search, all stubbed."""
     monkeypatch.setattr(discover, "playlist_items",
-                        lambda pid, key: _listing("a", "b"))
+                        lambda pid, key, access_token=None: _listing("a", "b"))
     monkeypatch.setattr(discover, "youtube_video_details",
-                        lambda ids, key: {v: {"description": f"d{v}",
-                                              "durationSeconds": 100,
-                                              "publishedAt": "2020-01-01T00:00:00Z"}
-                                          for v in ids})
+                        lambda ids, key, access_token=None: {
+                            v: {"description": f"d{v}", "durationSeconds": 100,
+                                "publishedAt": "2020-01-01T00:00:00Z"}
+                            for v in ids})
     monkeypatch.setattr(discover, "discogs_search_release",
                         lambda artist, title, token: {
                             "status": "matched", "discogsId": 1, "artist": artist,
@@ -353,7 +357,7 @@ def test_add_sheet_refused_when_lookups_off():
 
 def test_add_sheet_fetch_failure_surfaces_and_adds_nothing(patched, monkeypatch):
     monkeypatch.setattr(discover, "playlist_items",
-                        lambda pid, key: (_ for _ in ()).throw(
+                        lambda pid, key, access_token=None: (_ for _ in ()).throw(
                             discover.DiscoverError("no key", needs="youtubeApiKey")))
     h = _Host()
     h._cmd_youtube_addSheet({"source": "playlist", "sourceId": "PLabc"})
@@ -492,7 +496,7 @@ def test_refresh_appends_new_videos_and_keeps_existing_rows(patched, monkeypatch
                               "releaseUrl": ""})
 
     monkeypatch.setattr(discover, "playlist_items",
-                        lambda pid, key: _listing("a", "b", "c"))
+                        lambda pid, key, access_token=None: _listing("a", "b", "c"))
     h._cmd_youtube_refreshSheet({"sheetId": sid})
     _run_pending(h)
 

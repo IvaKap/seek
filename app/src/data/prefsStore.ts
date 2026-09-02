@@ -45,6 +45,10 @@ export interface AppSettings {
   acoustidApiKey: boolean;
   /** Whether a YouTube Data API key is stored — never the value. */
   youtubeApiKey: boolean;
+  /** Whether a Google OAuth client id is stored (for private-playlist sign-in). */
+  youtubeOauthClientId: boolean;
+  /** Whether the Google OAuth client secret is stored — never the value. */
+  youtubeOauthClientSecret: boolean;
 }
 
 export interface PeerRecord {
@@ -72,6 +76,8 @@ const DEFAULTS: AppSettings = {
   clearCompletedDays: 0,
   acoustidApiKey: false,
   youtubeApiKey: false,
+  youtubeOauthClientId: false,
+  youtubeOauthClientSecret: false,
 };
 
 /**
@@ -96,6 +102,8 @@ export interface AppSettingsPatch {
   clearCompletedDays?: number;
   acoustidApiKey?: string;
   youtubeApiKey?: string;
+  youtubeOauthClientId?: string;
+  youtubeOauthClientSecret?: string;
 }
 
 export interface PrefsSession {
@@ -144,13 +152,20 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
     // Optimistic for the plain toggles only. `discogsToken` is a string going
     // down and a boolean coming back, so echoing it locally would put the wrong
     // type in state until the reply lands.
-    const { discogsToken, acoustidApiKey, youtubeApiKey, ...echoable } = p;
+    const {
+      discogsToken, acoustidApiKey, youtubeApiKey,
+      youtubeOauthClientId, youtubeOauthClientSecret, ...echoable
+    } = p;
     setSettings((s) => ({
       ...s,
       ...echoable,
       ...(discogsToken === undefined ? {} : { discogsToken: Boolean(discogsToken.trim()) }),
       ...(acoustidApiKey === undefined ? {} : { acoustidApiKey: Boolean(acoustidApiKey.trim()) }),
       ...(youtubeApiKey === undefined ? {} : { youtubeApiKey: Boolean(youtubeApiKey.trim()) }),
+      ...(youtubeOauthClientId === undefined
+        ? {} : { youtubeOauthClientId: Boolean(youtubeOauthClientId.trim()) }),
+      ...(youtubeOauthClientSecret === undefined
+        ? {} : { youtubeOauthClientSecret: Boolean(youtubeOauthClientSecret.trim()) }),
     }));
     setSaving(true);
     void client.request<AppSettings>('app.settings.patch', {
@@ -164,6 +179,8 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       // silently broke every toggle and every key on this screen. Reported from
       // real use as "i pasted and saved the token, now it says token needed".
       youtubeApiKey: null,
+      youtubeOauthClientId: null,
+      youtubeOauthClientSecret: null,
       artworkCacheMb: null,
       embedArtwork: null,
       writeCoverFile: null,

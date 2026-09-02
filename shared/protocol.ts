@@ -679,11 +679,27 @@ export interface AppSettings {
 
   /**
    * Whether a key is stored. NEVER the value — same rule as the Discogs token
-   * and the AcoustID key. Reading a public playlist needs only this simple API
-   * key; the OAuth client YouTube also offers is for a user's PRIVATE data and
-   * is deliberately not used, so there is no client secret to hold.
+   * and the AcoustID key. Reading a PUBLIC playlist needs only this simple API
+   * key.
    */
   youtubeApiKey: boolean;
+
+  /**
+   * Whether a Google OAuth client id is stored. Optional, and only for the
+   * sign-in that unlocks PRIVATE playlists and liked videos (see
+   * `youtube.signIn`). A client id is not a secret, but it is still reported
+   * as a boolean for consistency with the fields around it.
+   */
+  youtubeOauthClientId: boolean;
+
+  /**
+   * Whether the Google OAuth client secret is stored. NEVER the value. Google
+   * issues one for a 'Desktop app' client and its own docs treat it as
+   * non-confidential for an installed app — but it is a credential all the
+   * same, so it does not echo back across the socket, same rule as every other
+   * secret here.
+   */
+  youtubeOauthClientSecret: boolean;
 
   /**
    * Group a burst of want list additions into a digging session. On by default
@@ -733,6 +749,12 @@ export interface AppSettingsPatch {
 
   /** The key itself, for writing. Empty clears it. */
   youtubeApiKey: string | null;
+
+  /** The client id, for writing. Empty clears it. */
+  youtubeOauthClientId: string | null;
+
+  /** The client secret, for writing. Empty clears it. */
+  youtubeOauthClientSecret: string | null;
   autoDigSessions: boolean | null;
   stalledFailMinutes: number | null;
   clearCompletedDays: number | null;
@@ -1527,6 +1549,64 @@ export interface YoutubeRematchParams {
 
   /** A Discogs release/master URL to use as-is. */
   discogsUrl: string | null;
+}
+
+/**
+ * Whether the user has signed in to Google, which is what unlocks private
+ * playlists and liked videos.
+ *
+ * OPTIONAL and off by default. Public playlists never need this — they run on
+ * the plain API key. Sign-in is an OAuth 2.0 loopback flow (see
+ * `youtube.signIn`); the refresh token it yields is held sidecar-side and
+ * never crosses the socket, so this reports only the FACT of a session, not
+ * the token.
+ */
+export interface YoutubeAuthState {
+  /**
+   * A Google OAuth client id and secret are both stored, so sign-in is
+   * possible. Sign-in is refused until they are.
+   */
+  configured: boolean;
+
+  /** A refresh token is held and usable. */
+  signedIn: boolean;
+
+  /**
+   * The signed-in YouTube channel's title, when known. Empty when signed out
+   * or not yet fetched. For display only.
+   */
+  account: string;
+
+  /**
+   * Why the last sign-in attempt failed, developer-facing. Empty when there is
+   * nothing to report.
+   */
+  error: string;
+}
+
+/**
+ * One of the signed-in user's own playlists, for the add picker. 'Liked
+ * videos' arrives as a synthetic entry with id 'LL'.
+ */
+export interface YoutubeMyPlaylist {
+  /** Playlist id, or 'LL' for liked videos. */
+  id: string;
+  title: string;
+
+  /** How many videos it holds, as YouTube reports. */
+  itemCount: number;
+
+  /**
+   * 'private', 'unlisted' or 'public', verbatim from YouTube. Empty for the
+   * synthetic liked entry.
+   */
+  privacy: string;
+}
+
+/** The signed-in user's playlists, newest first, with liked videos first. */
+export interface YoutubeMyPlaylists {
+  requestId: string;
+  items: YoutubeMyPlaylist[];
 }
 
 /**
@@ -3486,6 +3566,26 @@ export interface CommandParams {
    * Replies immediately; the result arrives on `youtube.sheet`.
    */
   'youtube.rematch': YoutubeRematchParams;
+  /**
+   * Sign in to Google to unlock private playlists and liked videos.
+   *
+   * Runs an OAuth 2.0 loopback flow with PKCE: the sidecar opens the system
+   * browser to Google's consent screen, catches the redirect on a transient
+   * 127.0.0.1 listener, and exchanges the code for a refresh token it keeps on
+   * its own side. Needs a Google OAuth client id and secret in Settings first.
+   * Replies immediately; the outcome arrives on `youtube.auth`.
+   */
+  'youtube.signIn': Record<string, never>;
+  /** Forget the Google refresh token. Public playlists keep working. */
+  'youtube.signOut': Record<string, never>;
+  /** Whether Google sign-in is configured and active. */
+  'youtube.authState': Record<string, never>;
+  /**
+   * List the signed-in user's own playlists (private included) plus liked
+   * videos, for the add picker. Replies immediately; the list arrives on
+   * `youtube.playlists`.
+   */
+  'youtube.myPlaylists': Record<string, never>;
   /** Recent searches, newest first. */
   'history.list': Record<string, never>;
   /** Note that a search was run. */
@@ -3611,6 +3711,10 @@ export interface CommandResult {
   'youtube.setDownloaded': YoutubeState;
   'youtube.enrich': RequestAccepted;
   'youtube.rematch': RequestAccepted;
+  'youtube.signIn': RequestAccepted;
+  'youtube.signOut': YoutubeAuthState;
+  'youtube.authState': YoutubeAuthState;
+  'youtube.myPlaylists': RequestAccepted;
   'history.list': HistoryState;
   'history.record': HistoryState;
   'history.clear': HistoryState;
@@ -3711,6 +3815,10 @@ export const COMMAND_NAMES = [
   'youtube.setDownloaded',
   'youtube.enrich',
   'youtube.rematch',
+  'youtube.signIn',
+  'youtube.signOut',
+  'youtube.authState',
+  'youtube.myPlaylists',
   'history.list',
   'history.record',
   'history.clear',
@@ -3865,6 +3973,13 @@ export interface EventPayload {
    * the jitter the brief forbids.
    */
   'youtube.sheet': YoutubeSheet;
+  /**
+   * Google sign-in state changed — signed in, signed out, or an attempt
+   * failed.
+   */
+  'youtube.auth': YoutubeAuthState;
+  /** The signed-in user's own playlists arrived, for the add picker. */
+  'youtube.playlists': YoutubeMyPlaylists;
   /** A forwarded log line. */
   'log': LogEvent;
 }
@@ -3923,6 +4038,8 @@ export const EVENT_NAMES = [
   'discover.browseFailed',
   'youtube.state',
   'youtube.sheet',
+  'youtube.auth',
+  'youtube.playlists',
   'log',
 ] as const satisfies readonly EventName[];
 

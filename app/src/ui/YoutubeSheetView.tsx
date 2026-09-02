@@ -88,6 +88,9 @@ export function YoutubeSheetView({
   const [fixing, setFixing] = useState<string | null>(null);
   const [fixUrl, setFixUrl] = useState('');
 
+  /** The "from your account" picker, shown only when signed in. */
+  const [pickerOpen, setPickerOpen] = useState(false);
+
   const tableRef = useRef<HTMLDivElement>(null);
   const rootPx = useRootFontSize();
   const widthRem = useWidthRem(tableRef, rootPx);
@@ -155,8 +158,55 @@ export function YoutubeSheetView({
           <button type="submit" className="verify pressable" disabled={!draft.trim()}>
             + Add
           </button>
+          {/* When signed in, the user's own playlists (private + liked) can be
+              picked directly rather than pasted. Sign-in itself lives in
+              Settings — this only surfaces what it unlocked. */}
+          {youtube.auth.signedIn && (
+            <button
+              type="button"
+              className="verify pressable"
+              aria-expanded={pickerOpen}
+              onClick={() => {
+                setPickerOpen((v) => !v);
+                if (!pickerOpen) youtube.loadMyPlaylists();
+              }}
+            >
+              From your account ⌄
+            </button>
+          )}
         </form>
       </div>
+
+      {pickerOpen && youtube.auth.signedIn && (
+        <ul className="yt__picker">
+          <li>
+            <button
+              type="button"
+              className="yt__pick pressable"
+              onClick={() => { youtube.addLiked(); setPickerOpen(false); }}
+            >
+              <span className="yt__pickname">Liked videos</span>
+            </button>
+          </li>
+          {youtube.myPlaylists.filter((p) => p.id !== 'LL').map((p) => (
+            <li key={p.id}>
+              <button
+                type="button"
+                className="yt__pick pressable"
+                onClick={() => { youtube.addPlaylist(p.id, p.title); setPickerOpen(false); }}
+              >
+                <span className="yt__pickname">{p.title}</span>
+                <span className="yt__pickmeta tnum">
+                  {p.itemCount}{p.privacy && p.privacy !== 'public' ? ` · ${p.privacy}` : ''}
+                </span>
+              </button>
+            </li>
+          ))}
+          {youtube.myPlaylists.length <= 1 && (
+            <li className="yt__pickempty">Loading your playlists…</li>
+          )}
+        </ul>
+      )}
 
       {!active ? (
         <div className="empty empty--section">

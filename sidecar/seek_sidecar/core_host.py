@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from . import (
     checksums, discover as discover_mod, enrich, library as library_mod,
-    logfile, nicotine_import, registries, translate,
+    logfile, nicotine_import, registries, translate, youtube_oauth,
 )
 from .protocol import PROTOCOL_VERSION
 
@@ -1136,6 +1136,8 @@ class CoreHost:
         "clearCompletedDays": 0,
         "acoustidApiKey": False,
         "youtubeApiKey": False,
+        "youtubeOauthClientId": False,
+        "youtubeOauthClientSecret": False,
     }
 
     def _app_settings(self):
@@ -1152,6 +1154,8 @@ class CoreHost:
         out["discogsToken"] = bool(stored.get("discogsToken"))
         out["acoustidApiKey"] = bool(stored.get("acoustidApiKey"))
         out["youtubeApiKey"] = bool(stored.get("youtubeApiKey"))
+        out["youtubeOauthClientId"] = bool(stored.get("youtubeOauthClientId"))
+        out["youtubeOauthClientSecret"] = bool(stored.get("youtubeOauthClientSecret"))
         return out
 
     def _cmd_app_diagnostics(self, _params):
@@ -1216,6 +1220,13 @@ class CoreHost:
                 stored["youtubeApiKey"] = key
             else:
                 stored.pop("youtubeApiKey", None)
+        for field in ("youtubeOauthClientId", "youtubeOauthClientSecret"):
+            if params.get(field) is not None:
+                value = str(params[field]).strip()
+                if value:
+                    stored[field] = value
+                else:
+                    stored.pop(field, None)
         if params.get("discogsToken") is not None:
             token = str(params["discogsToken"]).strip()
             if token:
@@ -1755,14 +1766,15 @@ class CoreHost:
 
     def _cmd_youtube_addSheet(self, params):
         source = str(params.get("source") or "playlist")
-        source_id = str(params.get("sourceId") or "").strip()
-        title = str(params.get("title") or "").strip() or source_id
+        # Liked videos are the private 'LL' list, whatever id the caller sent.
+        source_id = "LL" if source == "liked" else str(params.get("sourceId") or "").strip()
+        title = str(params.get("title") or "").strip() or ("Liked videos" if source == "liked" else source_id)
         if not source_id:
             raise CommandError("bad_request", "no playlist id")
-        if source == "liked":
+        if source == "liked" and not self._youtube_access_token():
             raise CommandError(
-                "unsupported",
-                "liked videos need Google sign-in, which is not set up",
+                "bad_request",
+                "liked videos need Google sign-in — sign in first",
             )
         if not self._lookups_allowed():
             raise CommandError("unsupported", "external lookups are switched off")
@@ -1775,9 +1787,11 @@ class CoreHost:
     def _run_add_sheet(self, request_id, source, source_id, title):
         try:
             key = self._youtube_key()
-            listing = discover_mod.playlist_items(source_id, key)
+            token = self._youtube_access_token()   # "" unless signed in
+            listing = discover_mod.playlist_items(source_id, key, access_token=token)
             details = discover_mod.youtube_video_details(
-                [it["videoId"] for it in listing["items"] if it.get("videoId")], key
+                [it["videoId"] for it in listing["items"] if it.get("videoId")],
+                key, access_token=token,
             )
         except discover_mod.DiscoverError as error:
             self._youtube_fetch_failed(request_id, source_id, error)
@@ -1818,11 +1832,12 @@ class CoreHost:
             return
         try:
             key = self._youtube_key()
-            listing = discover_mod.playlist_items(sheet["sourceId"], key)
+            token = self._youtube_access_token()
+            listing = discover_mod.playlist_items(sheet["sourceId"], key, access_token=token)
             have = {r["video"]["videoId"] for r in sheet["rows"]}
             fresh = [it["videoId"] for it in listing["items"]
                      if it.get("videoId") and it["videoId"] not in have]
-            details = discover_mod.youtube_video_details(fresh, key)
+            details = discover_mod.youtube_video_details(fresh, key, access_token=token)
         except discover_mod.DiscoverError as error:
             self._youtube_fetch_failed(request_id, sheet["sourceId"], error)
             return
@@ -1956,6 +1971,135 @@ class CoreHost:
         match = dict(_YT_PENDING)
         match["status"] = "error"
         return match
+
+    # -- Google sign-in (optional: private playlists + liked videos) --------
+    #
+    # Public playlists never touch this. Sign-in yields a refresh token kept in
+    # seek-state.json; an access token is derived from it on demand and cached
+    # in memory. Neither token crosses the socket — `youtube.auth` reports only
+    # the FACT of a session. The flow itself is in youtube_oauth.py.
+
+    def _youtube_oauth_creds(self):
+        stored = self._load_state().get("app_settings") or {}
+        return (str(stored.get("youtubeOauthClientId") or ""),
+                str(stored.get("youtubeOauthClientSecret") or ""))
+
+    def _youtube_refresh_token(self):
+        stored = self._load_state().get("youtube_oauth")
+        return str(stored.get("refresh_token") or "") if isinstance(stored, dict) else ""
+
+    def _youtube_access_token(self):
+        """A valid access token, refreshed if the cached one has expired.
+
+        Returns "" when not signed in or the refresh fails — the caller then
+        falls back to the public key path, or refuses a private request.
+        """
+        refresh = self._youtube_refresh_token()
+        if not refresh:
+            return ""
+        if getattr(self, "_yt_access", "") and time.time() < getattr(self, "_yt_access_exp", 0):
+            return self._yt_access
+        client_id, client_secret = self._youtube_oauth_creds()
+        if not client_id or not client_secret:
+            return ""
+        try:
+            payload = youtube_oauth.refresh_token(client_id, client_secret, refresh)
+        except youtube_oauth.OAuthError as error:
+            log.warning("youtube token refresh failed: %s", error)
+            return ""
+        self._yt_access = str(payload.get("access_token") or "")
+        # A minute of slack so a token never expires mid-request.
+        self._yt_access_exp = time.time() + max(0, int(payload.get("expires_in") or 0) - 60)
+        return self._yt_access
+
+    def _youtube_auth_state(self, error=""):
+        client_id, client_secret = self._youtube_oauth_creds()
+        return {
+            "configured": bool(client_id and client_secret),
+            "signedIn": bool(self._youtube_refresh_token()),
+            "account": str(getattr(self, "_yt_account", "") or ""),
+            "error": str(error or ""),
+        }
+
+    def _cmd_youtube_authState(self, _params):
+        return self._youtube_auth_state()
+
+    def _cmd_youtube_signIn(self, _params):
+        client_id, client_secret = self._youtube_oauth_creds()
+        if not client_id or not client_secret:
+            raise CommandError(
+                "bad_request",
+                "add a Google OAuth client id and secret in Settings first",
+            )
+        request_id = registries.transfer_id("youtube.signin", client_id)
+        # A dedicated thread, NOT the discover pool: the loopback blocks for as
+        # long as the user takes to consent, and that must not tie up a worker
+        # the rest of discovery shares.
+        threading.Thread(
+            target=self._run_sign_in, args=(request_id, client_id, client_secret),
+            daemon=True,
+        ).start()
+        return {"requestId": request_id}
+
+    def _run_sign_in(self, _request_id, client_id, client_secret):
+        try:
+            payload = youtube_oauth.run_loopback(client_id, client_secret)
+        except youtube_oauth.OAuthError as error:
+            log.info("youtube sign-in failed: %s", error)
+            self.bridge.broadcast("youtube.auth", self._youtube_auth_state(str(error)))
+            return
+        except Exception as error:                       # noqa: BLE001 - worker
+            log.exception("youtube sign-in crashed")
+            self.bridge.broadcast("youtube.auth", self._youtube_auth_state(str(error)))
+            return
+        self._save_state(youtube_oauth={"refresh_token": payload["refresh_token"]})
+        self._yt_access = str(payload.get("access_token") or "")
+        self._yt_access_exp = time.time() + max(0, int(payload.get("expires_in") or 0) - 60)
+        self._yt_account = self._youtube_account_title()
+        self.bridge.broadcast("youtube.auth", self._youtube_auth_state())
+
+    def _cmd_youtube_signOut(self, _params):
+        self._save_state(youtube_oauth={})
+        self._yt_access = ""
+        self._yt_access_exp = 0
+        self._yt_account = ""
+        state = self._youtube_auth_state()
+        self.bridge.broadcast("youtube.auth", state)
+        return state
+
+    def _youtube_account_title(self):
+        """The signed-in channel's title, for display. Best-effort."""
+        token = self._youtube_access_token()
+        if not token:
+            return ""
+        try:
+            payload = discover_mod._fetch_json(   # noqa: SLF001 - same module family
+                "https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            items = payload.get("items") or []
+            if items:
+                return str((items[0].get("snippet") or {}).get("title") or "")
+        except Exception:                                # noqa: BLE001
+            log.info("could not read the signed-in channel title", exc_info=True)
+        return ""
+
+    def _cmd_youtube_myPlaylists(self, _params):
+        if not self._youtube_access_token():
+            raise CommandError("bad_request", "not signed in to Google")
+        request_id = registries.transfer_id("youtube.myplaylists", "")
+        self._discover_pool.submit(self._run_my_playlists, request_id)
+        return {"requestId": request_id}
+
+    def _run_my_playlists(self, request_id):
+        # Liked videos first — it is the one everyone wants and is not returned
+        # by the playlists list, so it is synthesised here.
+        items = [{"id": "LL", "title": "Liked videos", "itemCount": 0, "privacy": ""}]
+        try:
+            items.extend(discover_mod.youtube_my_playlists(self._youtube_access_token()))
+        except Exception as error:                       # noqa: BLE001 - worker
+            log.warning("could not list playlists: %s", error)
+        self.bridge.broadcast("youtube.playlists", {"requestId": request_id, "items": items})
 
     def _cmd_discover_fingerprint(self, params):
         if not self._lookups_allowed():

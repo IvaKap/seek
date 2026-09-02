@@ -3345,6 +3345,30 @@
 }
 .linkish:hover { text-decoration: underline; }
 
+/* The signed-in-to-account playlist picker. */
+.yt__picker {
+  list-style: none; margin: 0 var(--sp-4); padding: var(--sp-1);
+  border: 0.5px solid var(--separator); border-radius: var(--radius-md);
+  background: var(--bg-raised); max-width: 30rem;
+  max-height: 18rem; overflow-y: auto;
+}
+.yt__pick {
+  display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3);
+  width: 100%; padding: var(--sp-2) var(--sp-3);
+  border: none; background: none; font: inherit; color: var(--text-primary);
+  cursor: pointer; text-align: left; border-radius: var(--radius-sm);
+}
+@media (hover: hover) and (pointer: fine) { .yt__pick:hover { background: var(--bg-hover); } }
+.yt__pickname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt__pickmeta { font-size: var(--fs-caption); color: var(--text-tertiary); flex: none; }
+.yt__pickempty {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+
+/* "Signed in as …" beside the Google sign-out button. */
+.settings__ok { color: var(--success); font-size: var(--fs-secondary); }
+
 /* ------------------------------------------------------------------- grid */
 
 .libgrid {
