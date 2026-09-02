@@ -833,8 +833,14 @@ export function SettingsView({
                       <button
                         type="button"
                         className="btn pressable"
-                        disabled={!prefs.available || !youtube.auth.configured}
-                        title={youtube.auth.configured
+                        /* Enabled from the STORED-credential booleans, which
+                           update the moment the id and secret are saved —
+                           `youtube.auth.configured` is only refreshed at mount
+                           and on an auth event, so it lagged a just-pasted
+                           credential and left this button dead. */
+                        disabled={!prefs.available
+                          || !(settings.youtubeOauthClientId && settings.youtubeOauthClientSecret)}
+                        title={settings.youtubeOauthClientId && settings.youtubeOauthClientSecret
                           ? 'Open the browser and sign in to Google'
                           : 'Add a client id and secret first'}
                         onClick={() => youtube.signIn()}

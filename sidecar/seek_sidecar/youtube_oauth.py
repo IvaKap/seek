@@ -36,6 +36,8 @@ import json
 import logging
 import os
 import secrets
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
@@ -57,6 +59,32 @@ CONSENT_TIMEOUT = 300
 
 class OAuthError(Exception):
     """A sign-in that could not complete. Message is developer-facing."""
+
+
+def open_in_browser(url):
+    """Open the consent page, robustly, from a frozen background process.
+
+    `webbrowser.open` is the first try, but in a PyInstaller build with no
+    controlling terminal it can pick a text browser or quietly do nothing, so
+    the platform opener is the fallback that actually works — `open` on macOS,
+    `xdg-open` on Linux, `os.startfile` on Windows. Returns True if any path
+    reported success.
+    """
+    try:
+        if webbrowser.open(url, new=2):
+            return True
+    except Exception:                                     # noqa: BLE001
+        pass
+    try:
+        if sys.platform == "darwin":
+            return subprocess.run(["/usr/bin/open", url], check=False).returncode == 0
+        if sys.platform.startswith("win"):
+            os.startfile(url)                             # noqa: S606 - platform opener
+            return True
+        return subprocess.run(["xdg-open", url], check=False).returncode == 0
+    except Exception as error:                            # noqa: BLE001
+        log.warning("could not open a browser: %s", error)
+        return False
 
 
 def _b64url(raw):
@@ -191,7 +219,7 @@ def _loopback_server(host="127.0.0.1"):
     return server, result
 
 
-def run_loopback(client_id, client_secret, *, open_browser=webbrowser.open,
+def run_loopback(client_id, client_secret, *, open_browser=open_in_browser,
                  post=_post, timeout=CONSENT_TIMEOUT, host="127.0.0.1"):
     """The whole sign-in: consent in the browser, then exchange the code.
 

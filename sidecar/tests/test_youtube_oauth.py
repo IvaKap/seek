@@ -143,6 +143,24 @@ def test_loopback_needs_client_credentials():
         oa.run_loopback("", "", open_browser=lambda u: True, post=lambda u, p: {})
 
 
+def test_open_in_browser_uses_webbrowser_when_it_works(monkeypatch):
+    monkeypatch.setattr(oa.webbrowser, "open", lambda url, new=0: True)
+    assert oa.open_in_browser("https://x") is True
+
+
+def test_open_in_browser_falls_back_to_the_platform_opener(monkeypatch):
+    # In a frozen build webbrowser.open can quietly fail; the platform opener is
+    # what actually raises a browser, so the fallback must be taken.
+    monkeypatch.setattr(oa.webbrowser, "open", lambda url, new=0: False)
+    calls = []
+
+    class _Done:
+        returncode = 0
+    monkeypatch.setattr(oa.subprocess, "run", lambda *a, **k: calls.append(a) or _Done())
+    assert oa.open_in_browser("https://x") is True
+    assert calls   # the platform opener was invoked
+
+
 # ----------------------------------------------------- CoreHost handlers
 
 class _AuthHost:

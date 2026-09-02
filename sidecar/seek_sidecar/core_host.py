@@ -1220,6 +1220,7 @@ class CoreHost:
                 stored["youtubeApiKey"] = key
             else:
                 stored.pop("youtubeApiKey", None)
+        oauth_changed = False
         for field in ("youtubeOauthClientId", "youtubeOauthClientSecret"):
             if params.get(field) is not None:
                 value = str(params[field]).strip()
@@ -1227,6 +1228,7 @@ class CoreHost:
                     stored[field] = value
                 else:
                     stored.pop(field, None)
+                oauth_changed = True
         if params.get("discogsToken") is not None:
             token = str(params["discogsToken"]).strip()
             if token:
@@ -1242,6 +1244,11 @@ class CoreHost:
 
         state = self._app_settings()
         self.bridge.broadcast("app.settings", state)
+        # Keep the Google-auth state in step: adding or clearing the client
+        # credentials changes whether sign-in is possible, and anything reading
+        # `youtube.auth` (or a stale cached one) must hear about it.
+        if oauth_changed:
+            self.bridge.broadcast("youtube.auth", self._youtube_auth_state())
         return state
 
     #: How many per-transfer outcomes to remember. Comfortably more than the
