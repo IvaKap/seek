@@ -20,6 +20,7 @@ import type { SearchTabs } from '../data/searchTabs.ts';
 import { FilterBar } from './FilterBar.tsx';
 import { ResultList } from './ResultList.tsx';
 import type { TransferSession } from '../data/transferStore.ts';
+import { buildQueueMaps } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
 import { judge, pickSource } from '../domain/preferences.ts';
@@ -31,13 +32,18 @@ import { DiscoverPreviewCard } from './DiscoverPreview.tsx';
 import type { DiscoverSession } from '../data/discoverStore.ts';
 import type { PeerLookup } from './PeerHistory.tsx';
 import {
-  IconChevronDown, IconEmpty, IconRelease, IconSearch, IconStar, IconTrack, IconUser,
+  IconChevronDown, IconEmpty, IconList, IconRelease, IconSearch, IconStar, IconTrack,
 } from '../icons/index.tsx';
 
+/* "User" is gone: grouping a result set by who is sharing buried the music under
+ * the peer, and browsing a peer's whole library is what the Browse view and the
+ * per-row "Browse …" menu are for. "Files" is the classic Nicotine+ flat list —
+ * one row per file — and it forces table density (see the onChange below), which
+ * is the only density that gives it the dense, columnar layout it exists for. */
 const GROUPS: Array<{ value: GroupBy; label: string; icon: React.ReactNode }> = [
   { value: 'track', label: 'Track', icon: <IconTrack size={14} painted={1.5} /> },
   { value: 'release', label: 'Release', icon: <IconRelease size={14} painted={1.5} /> },
-  { value: 'user', label: 'User', icon: <IconUser size={14} painted={1.5} /> },
+  { value: 'file', label: 'Files', icon: <IconList size={14} painted={1.5} /> },
 ];
 
 const SORTS: Array<{ value: SortKey; label: string }> = [
@@ -178,9 +184,12 @@ export function SearchView({
         void transfers.enqueue(chosen.user, chosen.path, chosen.size);
         break;
       }
-      case 'source': {
-        // An explicit choice of source still respects the hard filters — but
+      case 'source':
+      case 'file': {
+        // An explicit choice of file still respects the hard filters — but
         // never the "prefer lossless" pick, because the user named this file.
+        // A 'file' row is the classic flat list's leaf; it queues exactly like
+        // a source row.
         const verdict = judge(row.source, rules);
         if (!verdict.allowed) { setRefused(verdict.reason ?? null); return; }
         setRefused(null);
@@ -204,6 +213,14 @@ export function SearchView({
 
   const active = filtersActive(session.filters);
   const available = new Set(session.availableFormats);
+
+  /* Index the live downloads so each result's Get button can show whether the
+     file it queued is queued / downloading / done. Rebuilt when the transfer
+     store ticks; one cheap pass over transfers already in memory. */
+  const { files: queueStates, folders: folderStates } = useMemo(
+    () => buildQueueMaps(transfers.all),
+    [transfers.all],
+  );
 
   /* Run the search the preview card implies, and put that text in the field:
    * the user must be able to see what was actually searched for, and correct it
@@ -501,7 +518,17 @@ export function SearchView({
               label="Group results by"
               segments={GROUPS}
               value={session.groupBy}
-              onChange={session.setGroupBy}
+              /* The classic flat list only reads right in the columnar table
+               * density, so choosing it switches density too. The density
+               * control stays live afterwards — the user can leave table if they
+               * want, and picking Files again brings it back. */
+              onChange={(g) => {
+                session.setGroupBy(g);
+                if (g === 'file') onDensity('table');
+                // Grid shows covers, which only release rows have — so leaving
+                // the release grouping leaves grid behind too.
+                else if (g !== 'release' && density === 'grid') onDensity('comfortable');
+              }}
             />
             <Select
               label="Sort results"
@@ -521,7 +548,14 @@ export function SearchView({
             )}
             <ViewMenu
               density={density}
-              onDensity={onDensity}
+              /* Grid is a wall of covers, and only releases have covers, so
+                 choosing it groups by release too (the inverse guard is on the
+                 grouping control below). */
+              onDensity={(d) => {
+                onDensity(d);
+                if (d === 'grid') session.setGroupBy('release');
+              }}
+              densities={['comfortable', 'compact', 'table', 'grid']}
               columns={columns}
               onColumns={onColumns}
             />
@@ -543,6 +577,8 @@ export function SearchView({
         artwork={artwork}
         library={library}
         peers={peers}
+        queueStates={queueStates}
+        folderStates={folderStates}
         onContext={onContext}
         pendingCount={session.pendingCount}
         onFoldIn={session.foldInPending}

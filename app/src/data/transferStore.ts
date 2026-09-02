@@ -135,6 +135,73 @@ function groupOf(t: Transfer): string {
   return `${t.username}\0${splitPath(t.path).folder}`;
 }
 
+/* ------------------------------------------------------------- queue badges
+ *
+ * A search row's Get button reflects what actually happened to the file it
+ * queued. The transport keys a transfer on `username + virtual_path`, so the
+ * same pair recovered from a search source finds its transfer — if one exists.
+ * These derivations are pure so the button's states can be pinned by a test
+ * rather than discovered by clicking.
+ */
+
+/** What a Get button shows. `idle` = nothing queued (or it was removed). */
+export type QueueBadge = 'idle' | 'queued' | 'downloading' | 'paused' | 'done' | 'failed';
+
+/** The stable key for one file: peer + path, on the backslash Soulseek uses. */
+export function transferKey(username: string, path: string): string {
+  return `${username}\0${path.replace(/\//g, '\\')}`;
+}
+
+/** The same key for a whole folder — a release card queues one of these. */
+export function folderKey(username: string, folderPath: string): string {
+  return `${username}\0${folderPath.replace(/\//g, '\\')}`;
+}
+
+/**
+ * One file's badge. `cancelled`/`filtered` map to `idle`, not `failed`: a
+ * cancel is a stop-and-remove (the row is gone), so the button returns to
+ * grabbable rather than claiming a failure that no longer exists.
+ */
+export function queueBadge(state: TransferState | undefined): QueueBadge {
+  if (!state) return 'idle';
+  if (state === 'finished') return 'done';
+  if (isFailed(state)) return 'failed';
+  if (isCancelled(state)) return 'idle';
+  if (state === 'paused') return 'paused';
+  if (state === 'transferring') return 'downloading';
+  return 'queued'; // queued, getting_status
+}
+
+/* How badges combine for a folder: the liveliest one wins, so a release with
+ * one file still coming down reads "downloading" even as others finish. */
+const BADGE_RANK: Record<QueueBadge, number> = {
+  downloading: 5, queued: 4, paused: 3, failed: 2, done: 1, idle: 0,
+};
+
+export interface QueueMaps {
+  /** By `transferKey` — one file's exact state, for a track/source/file row. */
+  files: Map<string, TransferState>;
+  /** By `folderKey` — the liveliest badge across a folder, for a release card. */
+  folders: Map<string, QueueBadge>;
+}
+
+/**
+ * Index every live transfer for O(1) lookup from a search row. Rebuilt each
+ * store tick; cheap, because it is one pass over the transfers already in hand.
+ */
+export function buildQueueMaps(all: Transfer[]): QueueMaps {
+  const files = new Map<string, TransferState>();
+  const folders = new Map<string, QueueBadge>();
+  for (const t of all) {
+    files.set(transferKey(t.username, t.path), t.state);
+    const fk = `${t.username}\0${splitPath(t.path).folder}`;
+    const next = queueBadge(t.state);
+    const cur = folders.get(fk);
+    if (cur === undefined || BADGE_RANK[next] > BADGE_RANK[cur]) folders.set(fk, next);
+  }
+  return { files, folders };
+}
+
 /**
  * Group into releases, and decide which have gone quiet.
  *

@@ -21,9 +21,10 @@ import { hitTarget } from './controls.tsx';
 import { PeerHistory } from './PeerHistory.tsx';
 import { Flag } from './Flag.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
-import { FormatBadge } from './rows.tsx';
+import { FormatBadge, QueueButton } from './rows.tsx';
 import type { ArtState } from '../data/artworkStore.ts';
-import { IconChevronDown, IconDownload, IconRelease, IconUsers } from '../icons/index.tsx';
+import type { QueueBadge } from '../data/transferStore.ts';
+import { IconChevronDown, IconRelease, IconUsers } from '../icons/index.tsx';
 
 /**
  * A deterministic two-tone mark derived from the release name. Flat, no letters,
@@ -61,6 +62,7 @@ export function ReleaseCard({
   art,
   owned,
   release, expanded, onToggle, onQueue, density, peers, copyCount = 1, onCompare,
+  queueBadge = 'idle',
 }: {
   /** Cover state for this release, if one has been asked for. */
   art?: ArtState;
@@ -71,6 +73,8 @@ export function ReleaseCard({
   onToggle(): void;
   onQueue(): void;
   density: 'comfortable' | 'compact' | 'table';
+  /** The folder's live transfer badge, so Get reflects what happened. */
+  queueBadge?: QueueBadge;
   /** How this peer has actually treated you. Absent means never met. */
   peers?: PeerLookup;
   /** How many copies of this record are in the results, this one included. */
@@ -236,18 +240,13 @@ export function ReleaseCard({
       </div>
 
       <span className="card__actions">
-        <button
-          type="button"
-          className="action action--primary pressable"
-          onPointerDown={(e) => { e.stopPropagation(); onQueue(); }}
-          aria-label={
-            `Download all ${release.trackCount} tracks of ${release.title} from ${release.user}`
-          }
-          title={`Grab this folder from ${release.user}`}
-        >
-          <IconDownload size={15} painted={1.6} />
-          <span>Get</span>
-        </button>
+        <QueueButton
+          badge={queueBadge}
+          onQueue={onQueue}
+          label={`all ${release.trackCount} tracks of ${release.title} from ${release.user}`}
+          className="action action--primary pressable qbtn"
+          withText
+        />
       </span>
     </article>
   );

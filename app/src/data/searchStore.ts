@@ -46,6 +46,10 @@ export type Row =
   | { kind: 'track'; id: string; track: TrackCluster; tick: number }
   | { kind: 'release'; id: string; release: Release; tick: number }
   | { kind: 'user'; id: string; group: UserGroup; tick: number }
+  /* One row per file — the classic Nicotine+ flat list. A leaf, like a source
+   * row, but top-level: it never expands and it participates in the column
+   * grid directly (see FileRow in rows.tsx). */
+  | { kind: 'file'; id: string; source: SourceFile; tick: number }
   | {
       kind: 'source'; id: string; source: SourceFile; parentId: string;
       last: boolean; tick: number;
@@ -92,10 +96,22 @@ function userValue(u: UserGroup, key: SortKey): number | string {
   }
 }
 
+function fileValue(s: SourceFile, key: SortKey): number | string {
+  switch (key) {
+    case 'quality': return -TIER_RANK[s.quality.tier] * 1000 - s.quality.score;
+    case 'speed': return -s.peer.advertisedSpeed;
+    case 'queue': return s.peer.queueLength;
+    case 'size': return -s.size;
+    case 'name': return `${s.parsed.displayArtist ?? ''} ${s.parsed.displayTitle}`.toLowerCase();
+    default: return -s.score;
+  }
+}
+
 function rowValue(row: Row, key: SortKey): number | string {
   if (row.kind === 'track') return trackValue(row.track, key);
   if (row.kind === 'release') return releaseValue(row.release, key);
   if (row.kind === 'user') return userValue(row.group, key);
+  if (row.kind === 'file') return fileValue(row.source, key);
   return 0;
 }
 
@@ -343,7 +359,12 @@ export function useSearchSession(
       for (const t of grouper.tracks(kept)) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
     } else if (groupBy === 'release') {
       for (const r of grouper.releases(kept)) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
+    } else if (groupBy === 'file') {
+      // No grouper method — one row per kept file, already the filtered list.
+      for (const s of kept) out.push({ kind: 'file', id: s.id, source: s, tick: s.tick });
     } else {
+      // 'user' is dormant (removed from the picker) but still restorable from a
+      // saved tab, so the branch stays.
       for (const u of grouper.users(kept)) out.push({ kind: 'user', id: u.id, group: u, tick: u.tick });
     }
 

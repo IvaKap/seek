@@ -12,17 +12,27 @@
  * thing the brief says destroys the calm.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
-import { fileName, isActive, isFailed } from '../data/transferStore.ts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
+import { fileName, isActive, isFailed, isTerminal } from '../data/transferStore.ts';
+import { ContextMenu } from './ContextMenu.tsx';
+import type { MenuItem, MenuRequest } from './ContextMenu.tsx';
+import { fileMenuItems } from './downloadMenu.ts';
+import { nextSelection } from '../domain/select.ts';
+import type { Mods } from '../domain/select.ts';
+import { copyText } from '../data/clipboard.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
 import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
-import { matchesQuery, sortGroups } from '../domain/transferOrder.ts';
-import type { SortKey } from '../domain/transferOrder.ts';
+import {
+  FINISHED_WINDOW_LABELS, matchesQuery, sortGroups, withinFinishedWindow,
+} from '../domain/transferOrder.ts';
+import type { FinishedWindow, SortKey } from '../domain/transferOrder.ts';
+import { SegmentedControl } from './controls.tsx';
+import type { Segment } from './controls.tsx';
 import type { Density } from './ViewMenu.tsx';
 import type { AnalysisSession } from '../data/analysisStore.ts';
 import type { ChecksumSession } from '../data/checksumStore.ts';
@@ -176,14 +186,19 @@ function HashButton({
  * is trapped in that column however wide the content wants to be.
  */
 function FileRow({
-  t, analysis, client, spectrumOpen, onToggleSpectrum, preview,
+  t, session, analysis, client, spectrumOpen, onToggleSpectrum, preview,
+  selected, onSelect, onContext,
 }: {
   t: TransferGroup['transfers'][number];
+  session: TransferSession;
   analysis: AnalysisSession;
   client: SidecarClient | null;
   spectrumOpen: boolean;
   onToggleSpectrum(): void;
   preview: PreviewSession;
+  selected: boolean;
+  onSelect(mods: Mods): void;
+  onContext(e: React.MouseEvent): void;
 }) {
   const meta = useMetadata(client, t.id);
   const spectrum = analysis.byTransfer.get(t.id)?.result;
@@ -191,7 +206,18 @@ function FileRow({
 
   return (
     <>
-      <li className="dl__file" data-state={t.state}>
+      <li
+        className="dl__file"
+        data-state={t.state}
+        data-selected={selected ? 'true' : undefined}
+        /* Click to select; the action buttons inside opt out so pressing one is
+           not also a selection. Modifier keys do multi-select (see select.ts). */
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          onSelect({ meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
+        }}
+        onContextMenu={onContext}
+      >
         <span className="dl__name">
           {fileName(t.path)}
           {/* Per-file progress. A folder download shows one bar for the whole
@@ -226,7 +252,22 @@ function FileRow({
           {status.text}
         </span>
         <span className="dl__verify">
-          {t.state === 'finished' && <PreviewButton id={t.id} preview={preview} />}
+          {t.state === 'finished'
+            ? <PreviewButton id={t.id} preview={preview} />
+            /* The one inline per-file control: stop and remove a single track
+               mid-download (a folder's Cancel is on the group). Everything
+               else per-file — retry, pause, clear — is on the right-click
+               menu, so the row stays quiet. Terminal files show nothing here. */
+            : !isTerminal(t.state) && (
+              <button
+                type="button"
+                className="verify pressable"
+                title="Stop and remove this file"
+                onPointerDown={(e) => { e.stopPropagation(); session.cancel([t.id]); }}
+              >
+                Cancel
+              </button>
+            )}
         </span>
         <span className="dl__verify">
           {t.state === 'finished' && <MetadataTrigger m={meta} />}
@@ -423,7 +464,7 @@ function TableRow({
 
 function Group({
   g, session, analysis, checksums, client, preview, density, filter, discovery,
-  open, onOpenChange,
+  open, onOpenChange, selected, onFileSelect, onFileContext,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -439,6 +480,10 @@ function Group({
      speak for all of them. */
   open: boolean;
   onOpenChange(next: boolean): void;
+  /** The whole view's file selection, and the two gestures that change it. */
+  selected: ReadonlySet<string>;
+  onFileSelect(id: string, order: string[], mods: Mods): void;
+  onFileContext(t: Transfer, e: React.MouseEvent): void;
 }) {
   const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(fn(open));
   /** Whether the Related shelf is showing for this release. */
@@ -497,17 +542,24 @@ function Group({
     <ChecksumPanel report={hashEntry.report!} />
   );
 
+  /* The id order a shift-range is measured in — this release's files, in the
+     order they render. Range selection is within a group by design (select.ts). */
+  const fileOrder = g.transfers.map((t) => t.id);
   const files = open && (
     <ul className="dl__files">
       {g.transfers.map((t) => (
         <FileRow
           key={t.id}
           t={t}
+          session={session}
           analysis={analysis}
           client={client}
           spectrumOpen={spectrumFor === t.id}
           onToggleSpectrum={() => setSpectrumFor((cur) => (cur === t.id ? null : t.id))}
           preview={preview}
+          selected={selected.has(t.id)}
+          onSelect={(mods) => onFileSelect(t.id, fileOrder, mods)}
+          onContext={(e) => onFileContext(t, e)}
         />
       ))}
     </ul>
@@ -682,6 +734,12 @@ const TITLES: Record<'active' | 'finished' | 'failed', string> = {
   active: 'Downloads', finished: 'Completed', failed: 'Failed',
 };
 
+/** The Completed date-window presets, newest-window first. */
+const FINISHED_WINDOWS: Segment<FinishedWindow>[] =
+  (['all', 'week', 'month', 'year'] as const).map((v) => ({
+    value: v, label: FINISHED_WINDOW_LABELS[v],
+  }));
+
 /** Column labels, per lens. The header and the rows share one track list. */
 function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
   return (
@@ -721,6 +779,9 @@ export function DownloadsView({
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortKey>('default');
   const [descending, setDescending] = useState(false);
+  /* Completed-lens only: a rolling date window. View-only — it hides rows, it
+   * never clears them (that is Settings' retention job). */
+  const [finishedWindow, setFinishedWindow] = useState<FinishedWindow>('all');
 
   /* Which releases are open, by key rather than by index — the list re-sorts
      and re-filters under you, and an index would open whatever moved into that
@@ -733,6 +794,95 @@ export function DownloadsView({
       return s2;
     });
   }, []);
+
+  /* ---- per-file selection + right-click menu ---- */
+
+  /* Selected file ids, across every open release. Cmd/Ctrl-click toggles one,
+     shift-click ranges within a release; the pure model is in select.ts. */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /* The pivot a shift-range measures from. A ref, not state: it changes on the
+     same click that sets the selection and nothing renders off it. */
+  const anchor = useRef<string | null>(null);
+  const [menu, setMenu] = useState<MenuRequest | null>(null);
+
+  /* Every transfer by id, so a menu built over a selection can read each file's
+     state without hunting through the groups. */
+  const allById = useMemo(() => {
+    const m = new Map<string, Transfer>();
+    for (const grp of session.groups) for (const t of grp.transfers) m.set(t.id, t);
+    return m;
+  }, [session.groups]);
+
+  /* Drop ids that no longer exist: a cancelled or cleared file is gone from the
+     store, and a selection pointing at nothing would act on nothing. */
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const live = new Set<string>();
+      for (const id of prev) if (allById.has(id)) live.add(id);
+      return live.size === prev.size ? prev : live;
+    });
+  }, [allById]);
+
+  const clearSelection = useCallback(() => {
+    anchor.current = null;
+    setSelected((prev) => (prev.size === 0 ? prev : new Set()));
+  }, []);
+
+  const onFileSelect = useCallback((id: string, order: string[], mods: Mods) => {
+    setSelected((prev) => {
+      const r = nextSelection(prev, order, id, anchor.current, mods);
+      anchor.current = r.anchor;
+      return r.selected;
+    });
+  }, []);
+
+  /* Escape drops the selection and closes the menu — the standard "never mind".
+     Bound while anything is selected or open, so it does not fight the app's
+     other Escape handlers the rest of the time. */
+  useEffect(() => {
+    if (selected.size === 0 && !menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (menu) setMenu(null); else clearSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selected.size, menu, clearSelection]);
+
+  /* The actions a right-click offers, computed from the target files' states so
+     a menu never shows Retry for something that is running. The rule itself lives
+     in downloadMenu.ts (pure, tested); here we only inject the session. */
+  const buildFileMenu = useCallback(
+    (targets: Transfer[]): MenuItem[] => fileMenuItems(targets, {
+      pause: session.pause,
+      resume: session.resume,
+      retry: session.retry,
+      cancel: session.cancel,
+      clear: session.clear,
+      copy: (text) => { void copyText(text); },
+    }),
+    [session],
+  );
+
+  const onFileContext = useCallback((t: Transfer, e: React.MouseEvent) => {
+    e.preventDefault();
+    // Right-click inside a multi-selection acts on the whole selection; elsewhere
+    // it selects just that row first, so the menu always matches what is lit.
+    let ids: string[];
+    if (selected.has(t.id) && selected.size > 1) {
+      ids = [...selected];
+    } else {
+      ids = [t.id];
+      anchor.current = t.id;
+      setSelected(new Set([t.id]));
+    }
+    const targets = ids.map((id) => allById.get(id)).filter((x): x is Transfer => x !== undefined);
+    const items = buildFileMenu(targets);
+    if (items.length === 0) return;
+    const title = targets.length > 1 ? `${targets.length} files` : fileName(targets[0].path);
+    setMenu({ x: e.clientX, y: e.clientY, title, items });
+  }, [selected, allById, buildFileMenu]);
 
   /* Grid is for picking through a pile of records you already have or already
      lost. While a download is running the useful information is progress and
@@ -765,9 +915,14 @@ export function DownloadsView({
   ));
 
   const groups = useMemo(
-    () => sortGroups(lens.filter((g) => matchesQuery(g, query)), sort, descending),
+    () => sortGroups(
+      lens.filter((g) => matchesQuery(g, query)
+        // The date window only applies to Completed; the other lenses ignore it.
+        && (filter !== 'finished' || withinFinishedWindow(g, finishedWindow, Date.now()))),
+      sort, descending,
+    ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lens, query, sort, descending],
+    [lens, query, sort, descending, finishedWindow, filter],
   );
 
   /* Counted off the FILTERED list, so the subtitle describes what is on screen.
@@ -808,6 +963,17 @@ export function DownloadsView({
             placeholder={filter === 'failed' ? 'Filter by release or peer…' : 'Filter these…'}
             aria-label="Filter by release name or peer"
             onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+        {filter === 'finished' && (lens.length > 0 || finishedWindow !== 'all') && (
+          /* Completed only, mirroring how "Clear N failed" is gated to Failed.
+             A view filter, deliberately worded and placed as one — never a
+             Clear. */
+          <SegmentedControl<FinishedWindow>
+            label="Show completed from"
+            segments={FINISHED_WINDOWS}
+            value={finishedWindow}
+            onChange={setFinishedWindow}
           />
         )}
         {groups.length > 0 && (
@@ -867,12 +1033,15 @@ export function DownloadsView({
             <p className="empty__body">
               {integer(lens.length)}
               {lens.length === 1 ? ' release is' : ' releases are'} here, but none
-              match “{query}”.
+              {query && ` match “${query}”`}
+              {query && finishedWindow !== 'all' && ' and none'}
+              {finishedWindow !== 'all'
+                && ` finished in the ${FINISHED_WINDOW_LABELS[finishedWindow].toLowerCase()}`}.
             </p>
             <button
               type="button"
               className="btn pressable"
-              onClick={() => setQuery('')}
+              onClick={() => { setQuery(''); setFinishedWindow('all'); }}
             >
               Clear the filter
             </button>
@@ -917,7 +1086,16 @@ export function DownloadsView({
     <>
       {header}
       <div className="pane__scroll">
-        <div className="dls" data-density={shownDensity} data-filter={filter}>
+        <div
+          className="dls"
+          data-density={shownDensity}
+          data-filter={filter}
+          /* Click empty space (not a row, not a button) to drop the selection —
+             the standard "click away to deselect". */
+          onClick={(e) => {
+            if (!(e.target as HTMLElement).closest('.dl__file, button')) clearSelection();
+          }}
+        >
           {session.note && !session.error && (
             <p className="dls__note" role="status">{session.note}</p>
           )}
@@ -939,10 +1117,14 @@ export function DownloadsView({
               discovery={discovery}
               open={openKeys.has(g.key)}
               onOpenChange={(next) => setOpenFor(g.key, next)}
+              selected={selected}
+              onFileSelect={onFileSelect}
+              onFileContext={onFileContext}
             />
           ))}
         </div>
       </div>
+      <ContextMenu request={menu} onClose={() => setMenu(null)} />
     </>
   );
 }

@@ -28,7 +28,7 @@ import type { ColumnSpec as GenericColumnSpec } from './columns.ts';
 
 export type ColumnId =
   | 'name' | 'format' | 'spec' | 'time' | 'size' | 'speed' | 'queue' | 'check'
-  | 'user' | 'bitrate' | 'year' | 'files' | 'country';
+  | 'user' | 'bitrate' | 'year' | 'files' | 'country' | 'folder';
 
 /* The pure algorithm — fitting, ordering, normalising — now lives in
  * `columns.ts` and is shared with the YouTube sheet. This file is that engine's
@@ -52,6 +52,11 @@ const SPECS: ColumnSpec[] = [
   { id: 'year', label: 'Year', track: '3.5rem', rem: 3.5, priority: 0, extra: true },
   { id: 'files', label: 'Files', track: '4rem', rem: 4, priority: 0, extra: true },
   { id: 'country', label: 'From', track: '3rem', rem: 3, priority: 0, extra: true },
+  // The remote folder — only the flat "Files" list has a single one to show
+  // (a grouped row spans many), so it is an opt-in extra like the others, most
+  // at home in that list and one click away in the column picker. Wide, because
+  // a Soulseek folder path carries the catalogue number and the year.
+  { id: 'folder', label: 'Folder', track: 'minmax(6rem, 12rem)', rem: 6, priority: 0, extra: true },
 ];
 
 export const COLUMNS: Record<ColumnId, ColumnSpec> = Object.fromEntries(

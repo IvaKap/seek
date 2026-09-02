@@ -20,12 +20,15 @@
  */
 
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import type { Release, SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
 import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/format.ts';
 import {
-  IconChevronDown, IconDownload, IconRelease, IconUser,
+  IconCheck, IconChevronDown, IconDownload, IconHistory, IconRelease, IconUser, IconWarning,
 } from '../icons/index.tsx';
+import { queueBadge, transferKey } from '../data/transferStore.ts';
+import type { QueueBadge, TransferState } from '../data/transferStore.ts';
 import { assess, worstAssessment } from '../domain/assessment.ts';
 import { QualityIndicator } from './QualityIndicator.tsx';
 import { hitTarget } from './controls.tsx';
@@ -108,16 +111,102 @@ function AdvertisedSpeed({ bytesPerSec }: { bytesPerSec: number }) {
   );
 }
 
+/* --------------------------------------------------------------- get button */
+
+const QBTN_ICON: Record<QueueBadge, ReactNode> = {
+  idle: <IconDownload size={16} painted={1.6} />,
+  queued: <IconHistory size={16} painted={1.6} />,
+  downloading: <IconDownload size={16} painted={1.6} />,
+  paused: <IconDownload size={16} painted={1.6} />,
+  done: <IconCheck size={16} painted={1.9} />,
+  failed: <IconWarning size={16} painted={1.7} />,
+};
+
+function qbtnTitle(b: QueueBadge, label: string): string {
+  switch (b) {
+    case 'queued': return 'Queued — waiting for the peer';
+    case 'downloading': return 'Downloading…';
+    case 'paused': return 'Paused';
+    case 'done': return 'Downloaded';
+    case 'failed': return 'Download failed — press to try again';
+    default: return `Queue ${label}`;
+  }
+}
+
+/** The short label beside the icon when a button shows text (the card's Get). */
+const QBTN_TEXT: Record<QueueBadge, string> = {
+  idle: 'Get',
+  queued: 'Queued',
+  downloading: 'Downloading',
+  paused: 'Paused',
+  done: 'Downloaded',
+  failed: 'Retry',
+};
+
+/**
+ * The Get button, which tells the truth about the file it queued.
+ *
+ * `badge` is the file's real state from the transfer store (`idle` when nothing
+ * is queued). Pressing it queues AND flips to an optimistic `queued` at once,
+ * because the store only publishes on a ~400ms tick and a button that sits dead
+ * for that long reads as a button that did nothing. The store then takes over —
+ * `queued` → `downloading` → `done` — and the optimism is dropped the moment a
+ * real state arrives. A press that never produces a transfer (a rejected
+ * enqueue) reverts after a few seconds rather than lying "queued" forever.
+ *
+ * Already-working states swallow a second press so a folder is not double
+ * queued; `failed` re-queues; `done` is inert.
+ */
+export function QueueButton({
+  badge, onQueue, label, className = 'action pressable qbtn', withText = false,
+}: {
+  badge: QueueBadge;
+  onQueue(): void;
+  /** What is being queued, for the idle aria-label ("Queue <label>"). */
+  label: string;
+  className?: string;
+  /** Show a short text label beside the icon (the release card's "Get"). */
+  withText?: boolean;
+}) {
+  const [pressed, setPressed] = useState(false);
+  // Once the store reflects any real state, stop being optimistic and follow it.
+  useEffect(() => { if (badge !== 'idle') setPressed(false); }, [badge]);
+  const shown: QueueBadge = badge === 'idle' && pressed ? 'queued' : badge;
+
+  const act = () => {
+    if (shown === 'queued' || shown === 'downloading' || shown === 'paused' || shown === 'done') return;
+    setPressed(true);
+    onQueue();
+    window.setTimeout(() => setPressed(false), 6000);
+  };
+
+  return (
+    <button
+      type="button"
+      className={className}
+      data-q={shown}
+      aria-label={qbtnTitle(shown, label)}
+      title={qbtnTitle(shown, label)}
+      onPointerDown={(e) => { e.stopPropagation(); act(); }}
+    >
+      {QBTN_ICON[shown]}
+      {withText && <span>{QBTN_TEXT[shown]}</span>}
+    </button>
+  );
+}
+
 /* ------------------------------------------------------------- track row */
 
 export function TrackRow({
-  track, expanded, onToggle, onQueue, selected,
+  track, expanded, onToggle, onQueue, selected, queueStates,
 }: {
   track: TrackCluster;
   expanded: boolean;
   onToggle(): void;
   onQueue(): void;
   selected: boolean;
+  /** File states from the transfer store, so Get reflects what happened. */
+  queueStates?: Map<string, TransferState>;
 }) {
   const best = track.best;
   const spec = audioSpec(best.sampleRate, best.bitDepth);
@@ -196,15 +285,108 @@ export function TrackRow({
       </div>
 
       <span className="row__actions">
-        <button
-          type="button"
-          className="action pressable"
-          onPointerDown={(e) => { e.stopPropagation(); onQueue(); }}
-          aria-label={`Queue ${track.displayTitle} from ${best.user}`}
-          title="Queue from the best source"
-        >
-          <IconDownload size={16} painted={1.6} />
-        </button>
+        <QueueButton
+          badge={queueBadge(queueStates?.get(transferKey(best.user, best.path)))}
+          onQueue={onQueue}
+          label={`${track.displayTitle} from ${best.user}`}
+        />
+      </span>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- file row */
+
+/**
+ * One row per file — the classic Nicotine+ flat list, chosen with the "Files"
+ * grouping (which also forces table density, so this only ever renders inside
+ * the shared column grid).
+ *
+ * A leaf, like `SourceRow`, but TOP-LEVEL: it uses `.row__hit` + `.row__title`
+ * + `.meta` (not `.meta--source`) so its cells subscribe to the same `--cols`
+ * grid the header and every other top-level row use, and it carries the `user`
+ * and `folder` columns because in a flat list there is no card above it saying
+ * who it is from or where it lives. Clicking the row queues the file, matching
+ * `SourceRow` — the user named this exact file, so no "prefer lossless" pick.
+ */
+export function FileRow({
+  source, onQueue, queueStates,
+}: {
+  source: SourceFile;
+  onQueue(): void;
+  queueStates?: Map<string, TransferState>;
+}) {
+  const spec = audioSpec(source.sampleRate, source.bitDepth);
+  return (
+    <div className="row row--file">
+      {/* role="button", not <button>: the row contains the quality indicator,
+          which is a button itself. See `hitTarget`. */}
+      <div
+        className="row__hit"
+        {...hitTarget(onQueue)}
+        onPointerDown={(e) => { if (e.button === 0) onQueue(); }}
+        aria-label={`${source.parsed.displayArtist ? `${source.parsed.displayArtist}, ` : ''}${source.parsed.displayTitle}. ${source.user}. ${source.quality.description}. ${source.peer.queueLength} queued.`}
+      >
+        <span className="row__main">
+          <span className="row__title">
+            {source.parsed.displayArtist && (
+              <>
+                <span className="row__artist">{source.parsed.displayArtist}</span>
+                <span className="row__dash" aria-hidden> — </span>
+              </>
+            )}
+            <span className="row__name" data-raw={source.parsed.fallback ? 'true' : undefined}>
+              {source.parsed.displayTitle}
+            </span>
+            {source.parsed.fallback && (
+              <span
+                className="row__unparsed"
+                title="Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it."
+              >
+                unparsed
+              </span>
+            )}
+          </span>
+
+          <span className="meta">
+            <Meta col="format">
+              <FormatBadge
+                label={source.quality.label}
+                tier={source.quality.tier}
+                title={source.quality.description}
+              />
+            </Meta>
+            <Meta col="spec" dim>{spec ?? ''}</Meta>
+            <Meta col="time"><span className="tnum">{duration(source.duration)}</span></Meta>
+            <Meta col="size"><span className="tnum">{fileSize(source.size)}</span></Meta>
+            <AdvertisedSpeed bytesPerSec={source.peer.advertisedSpeed} />
+            <Meta col="queue" dim={source.peer.queueLength === 0}>
+              <span className="tnum">{source.peer.queueLength}</span> queued
+            </Meta>
+            <Meta col="bitrate" dim>
+              {source.bitrate ? <span className="tnum">{source.bitrate} kbps</span> : ''}
+            </Meta>
+            <Meta col="folder" dim title={source.parsed.folderPath}>{source.parsed.folder}</Meta>
+            <Meta col="user" dim>
+              <Flag code={source.peer.country} />
+              {source.user}
+            </Meta>
+            <Meta col="check"><Quality file={source} /></Meta>
+          </span>
+        </span>
+
+        <span className="row__tail">
+          {source.private && <PrivateMark />}
+          {source.peer.freeSlots && <span className="row__free">free</span>}
+        </span>
+      </div>
+
+      <span className="row__actions">
+        <QueueButton
+          badge={queueBadge(queueStates?.get(transferKey(source.user, source.path)))}
+          onQueue={onQueue}
+          label={`${source.parsed.displayTitle} from ${source.user}`}
+        />
       </span>
     </div>
   );
@@ -380,7 +562,7 @@ function bestLabel(group: UserGroup): string {
 /* ------------------------------------------------------------- source row */
 
 export function SourceRow({
-  source, last, onQueue, context = 'peers', peers,
+  source, last, onQueue, context = 'peers', peers, queueStates,
 }: {
   source: SourceFile;
   last: boolean;
@@ -389,6 +571,7 @@ export function SourceRow({
   context?: 'peers' | 'files';
   /** How this peer has actually treated you. Absent means never met. */
   peers?: PeerLookup;
+  queueStates?: Map<string, TransferState>;
 }) {
   const spec = audioSpec(source.sampleRate, source.bitDepth);
   return (
@@ -450,15 +633,11 @@ export function SourceRow({
         </span>
       </div>
       <span className="row__actions">
-        <button
-          type="button"
-          className="action pressable"
-          onPointerDown={(e) => { e.stopPropagation(); onQueue(); }}
-          aria-label={`Queue from ${source.user}`}
-          title={`Queue from ${source.user}`}
-        >
-          <IconDownload size={16} painted={1.6} />
-        </button>
+        <QueueButton
+          badge={queueBadge(queueStates?.get(transferKey(source.user, source.path)))}
+          onQueue={onQueue}
+          label={`from ${source.user}`}
+        />
       </span>
     </div>
   );

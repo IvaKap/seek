@@ -28,7 +28,7 @@ import {
   ChevronDown, ChevronRight, ChevronUp, X, AlertTriangle, HelpCircle,
   Zap, Users, Download, ArrowUp, SlidersHorizontal, Circle, Inbox,
   MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Info,
-  FolderCheck, Clover,
+  FolderCheck, Clover, List,
 } from 'lucide-react';
 
 /** Painted stroke, in CSS px. The brief's range is 1.5–1.75. */
@@ -192,6 +192,7 @@ export const IconFilters = wrap(SlidersHorizontal, 'Filters');
 export const IconStar = wrap(Star, 'Star');
 export const IconEmpty = wrap(Inbox, 'Empty');
 export const IconFolderOpen = wrap(FolderOpen, 'FolderOpen');
+export const IconList = wrap(List, 'List');
 export const IconPlus = wrap(Plus, 'Plus');
 /* Distinct from IconUnknown, which is the quality indicator's "we don't know".
  * This one opens an explanation that exists. */

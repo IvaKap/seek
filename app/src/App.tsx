@@ -100,13 +100,6 @@ function storedColumns(): ColumnId[] {
   }
 }
 
-/* Grid is a Downloads layout only, so a stored 'grid' reaching the search list
- * — from an older build, or a hand-edited localStorage — resolves to the
- * roomiest thing search does have rather than to a layout it cannot render. */
-function searchDensity(d: Density): SearchDensity {
-  return d === 'grid' ? 'comfortable' : d;
-}
-
 function storedDensity(key: string, fallback: Density): Density {
   try {
     const raw = localStorage.getItem(key);
@@ -155,8 +148,13 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
 
 export default function App() {
   const [section, setSection] = useState<Section>('search');
+  /* Table by default for search too: the people who live in Seek are collectors
+     who read long result lists, and the airy card density fights that habit
+     (r/tauri feedback). The rest of the UI stays as designed — this is the one
+     screen where density is function, not decoration. A stored choice still
+     wins, so only fresh installs land here. */
   const [density, setDensity] = useState<SearchDensity>(
-    () => searchDensity(storedDensity(DENSITY_KEY, 'comfortable')),
+    () => storedDensity(DENSITY_KEY, 'table'),
   );
   /* Table by default here, unlike search. A transfer list is a status board:
      the question is "what is happening to all of it", and the card layout
@@ -179,6 +177,16 @@ export default function App() {
     () => storedDensity(LIB_DENSITY_KEY, 'grid'),
   );
   const searchRef = useRef<HTMLInputElement>(null);
+  /* Entering Search readies the field — focus and select, so you can just type
+   * and the last query is replaced. Same as the ⌘F handler, but on section
+   * entry however it was reached (sidebar, ⌘1, palette, a search-from-elsewhere).
+   * Idempotent, so StrictMode's double mount is harmless; on first load it
+   * selects the seeded fixture query, which is the same "ready to type" state. */
+  useEffect(() => {
+    if (section !== 'search') return;
+    searchRef.current?.focus();
+    searchRef.current?.select();
+  }, [section]);
   /* Prefs first: the search session scores sources using real transfer
    * history, so the lookup has to exist before the session that reads it. */
   const [prefsClient, setPrefsClient] = useState<SidecarClient | null>(null);
@@ -430,9 +438,9 @@ export default function App() {
   }, [session.client, go]);
 
   const changeDensity = useCallback((d: Density) => {
-    // The search menu never offers Grid, so this narrowing is a formality —
-    // but it is the one place the two density spaces meet, so it is stated.
-    setDensity(searchDensity(d));
+    // Search now supports every density, Grid included, so the value is stored
+    // and applied as-is.
+    setDensity(d);
     try {
       localStorage.setItem(DENSITY_KEY, d);
     } catch {
@@ -634,7 +642,10 @@ export default function App() {
       },
       { id: 'group.track', group: 'Group by', label: 'Track', run: () => session.setGroupBy('track') },
       { id: 'group.release', group: 'Group by', label: 'Release', run: () => session.setGroupBy('release') },
-      { id: 'group.user', group: 'Group by', label: 'User', run: () => session.setGroupBy('user') },
+      // "Files" is the classic flat list; like the pane's own control it forces
+      // table density, the only one it reads right in.
+      { id: 'group.file', group: 'Group by', label: 'Files (classic list)',
+        run: () => { session.setGroupBy('file'); setDensity('table'); } },
       { id: 'sort.best', group: 'Sort by', label: 'Best', run: () => session.setSort('best') },
       { id: 'sort.quality', group: 'Sort by', label: 'Quality', run: () => session.setSort('quality') },
       { id: 'sort.speed', group: 'Sort by', label: 'Speed', run: () => session.setSort('speed') },
@@ -738,7 +749,9 @@ export default function App() {
         { id: 'copyfolder', label: 'Copy folder path', separated: true, run: copy(r.folderPath) },
         { id: 'copyuser', label: 'Copy username', run: copy(who) },
       );
-    } else if (row.kind === 'track' || row.kind === 'source') {
+    } else if (row.kind === 'track' || row.kind === 'source' || row.kind === 'file') {
+      // A 'file' row (the classic flat list) carries its source just like a
+      // 'source' row, so the whole file menu applies unchanged.
       const file = row.kind === 'track' ? row.track.best : row.source;
       const who = file.user;
       const label = row.kind === 'track'

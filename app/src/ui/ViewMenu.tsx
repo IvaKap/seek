@@ -21,10 +21,10 @@ import type { ColumnSet } from '../domain/columns.ts';
 
 export type Density = 'comfortable' | 'compact' | 'table' | 'grid';
 
-/* What the SEARCH list supports. Grid is deliberately not in it — see the note
- * on DEFAULT_DENSITIES below — and saying so in the type means the result list
- * never has to carry a row height for a layout it does not have. */
-export type SearchDensity = Exclude<Density, 'grid'>;
+/* Search now supports every density, Grid included: a wall of covers is how a
+ * collector picks a record out of a pile, so it earns its place once results
+ * are grouped by release (the result list forces that pairing). */
+export type SearchDensity = Density;
 
 const OPTIONS: Array<{ value: Density; label: string; hint: string }> = [
   { value: 'comfortable', label: 'Comfortable', hint: 'Full release cards' },

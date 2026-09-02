@@ -982,6 +982,35 @@
 }
 @media (hover: hover) and (pointer: fine) { .action--primary:hover { background: var(--accent-hover); color: var(--text-on-accent); } }
 
+/* --- the Get button's states -------------------------------------------------
+   The button reports what happened to the file it queued. A non-idle state must
+   stay visible WITHOUT hover — a hidden button cannot report anything — so it
+   overrides the hover-reveal on its container. Colour follows meaning; the
+   pulse (waiting) and bounce (moving) are transform/opacity only. */
+.row__actions:has(.qbtn:not([data-q='idle'])),
+.card__actions:has(.qbtn:not([data-q='idle'])) { opacity: 1; }
+
+.qbtn[data-q='queued']      { color: var(--text-secondary); }
+.qbtn[data-q='downloading'] { color: var(--accent); }
+.qbtn[data-q='done']        { color: var(--success); }
+.qbtn[data-q='failed']      { color: var(--warn); }
+
+/* The card's primary Get tints the whole pill so the state reads across a grid. */
+.action--primary.qbtn[data-q='queued']      { background: var(--bg-active); color: var(--text-primary); }
+.action--primary.qbtn[data-q='downloading'] { background: var(--accent); color: var(--text-on-accent); }
+.action--primary.qbtn[data-q='done']        { background: var(--success); color: var(--text-on-accent); }
+.action--primary.qbtn[data-q='failed']      { background: var(--warn); color: var(--text-on-accent); }
+
+.qbtn[data-q='queued'] svg      { animation: qpulse 1.3s ease-in-out infinite; }
+.qbtn[data-q='downloading'] svg { animation: qbounce 0.9s ease-in-out infinite; }
+
+@keyframes qpulse  { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
+@keyframes qbounce { 0%, 100% { transform: translateY(-1px); } 50% { transform: translateY(2px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .qbtn[data-q] svg { animation: none !important; }
+}
+
 /* Source rows, nested under an expanded parent. Its own grid: a source row
    carries one column the summary row does not — which peer it came from. */
 .row--source { padding-left: var(--sp-8); background: var(--bg-sunken); border-bottom: none; }
@@ -1981,6 +2010,17 @@
   padding: 0.2rem 0; font-size: var(--fs-caption);
   border-top: 1px solid var(--separator);
   color: var(--text-secondary);
+  /* Rows are click-to-select; without this a shift-click paints a text
+     selection across the list, which is not what shift means here. */
+  user-select: none;
+}
+/* Selected file, same wash the search rows use so selection reads the same
+   everywhere. Negative inset margin lets the highlight reach the list padding
+   edges rather than stopping at the grid box. */
+.dl__file[data-selected='true'] {
+  background: var(--bg-selected);
+  border-radius: var(--radius-sm);
+  border-top-color: transparent;
 }
 .dl__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl__meta { text-align: right; }
@@ -2103,6 +2143,17 @@
 .list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='year'] { order: var(--ord-year, 99); display: var(--vis-year, inline-flex); }
 .list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='files'] { order: var(--ord-files, 99); display: var(--vis-files, inline-flex); }
 .list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='country'] { order: var(--ord-country, 99); display: var(--vis-country, inline-flex); }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='folder'] { order: var(--ord-folder, 99); display: var(--vis-folder, inline-flex); }
+
+/* The folder is a path, not a number: left-align it (header included) and let it
+   ellipsize on the RIGHT, so the artist/album at the front survives and only the
+   `[FLAC]`/year tail is lost when the column is tight. The full path is in the
+   cell's title. Every other value column stays right-aligned. */
+.thead span[data-col='folder'] { text-align: left; }
+.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='folder'] {
+  justify-content: flex-start; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .list-canvas[data-density='table'] .row__title { min-width: 0; }
 .list-canvas[data-density='table'] .meta__cell { justify-content: flex-end; text-align: right; }
@@ -2151,6 +2202,59 @@
 /* Empty dim cells were collapsing to zero width and pulling later columns out
    of line; an explicit min-width keeps the track occupied. */
 .list-canvas[data-density='table'] .meta__cell:empty { min-width: 1px; }
+
+/* ==================================================== search grid ======== */
+/* A wall of covers, for picking a record out of a pile. Not virtualised — the
+   release grouping this pairs with keeps the count small — and every tile gates
+   its own cover on the viewport. About 3 across, each tile a square cover with
+   the title and artist beneath it, so the tile as a whole reads ~3:4. */
+.results-grid {
+  display: grid;
+  /* Aim for about three across (the brief): big enough tiles that the cover is
+     the thing you read, still responsive so a wide window gets four and a narrow
+     one two rather than crushing them. */
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: var(--sp-4);
+  padding: var(--sp-3) 1.25rem var(--sp-6);
+  align-content: start;
+}
+.gridcard { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.gridcard__cover {
+  position: relative; aspect-ratio: 1 / 1; overflow: hidden;
+  border-radius: var(--radius-md); background: var(--bg-sunken);
+  border: 0.5px solid var(--separator);
+}
+.gridcard__cover .art__mark { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gridcard__img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  animation: artIn 250ms var(--ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) { .gridcard__img { animation: none; } }
+.gridcard[data-owned] .gridcard__cover { outline: 1.5px solid var(--accent); outline-offset: -1.5px; }
+.gridcard__owned {
+  position: absolute; top: var(--sp-2); left: var(--sp-2);
+  padding: 0.1rem 0.4rem; border-radius: var(--radius-pill);
+  background: var(--accent-soft); color: var(--accent);
+  font-size: var(--fs-micro); letter-spacing: var(--tr-caption);
+}
+/* Get sits over the cover: revealed on hover, and pinned visible once it has a
+   state to report, so download progress reads across the whole wall. */
+.gridcard__get {
+  position: absolute; right: var(--sp-2); bottom: var(--sp-2);
+  opacity: 0; transition: opacity var(--dur-fast) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .gridcard:hover .gridcard__get { opacity: 1; } }
+.gridcard__get:has(.qbtn:not([data-q='idle'])) { opacity: 1; }
+.gridcard:focus-within .gridcard__get { opacity: 1; }
+.gridcard__cap { display: flex; flex-direction: column; min-width: 0; }
+.gridcard__title {
+  font-size: var(--fs-caption); color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.gridcard__artist {
+  font-size: var(--fs-micro); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* ========================================================== spectrum ===== */
 /* The evidence behind the verdict. An averaged spectrum, not a Spek-style

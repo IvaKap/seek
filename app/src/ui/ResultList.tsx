@@ -27,8 +27,9 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Row } from '../data/searchStore.ts';
 import type { Release } from '../domain/types.ts';
 import { copiesOf } from '../domain/bestSources.ts';
-import { SourceRow, TrackRow, UserRow } from './rows.tsx';
-import { ReleaseCard } from './ReleaseCard.tsx';
+import { FileRow, QueueButton, SourceRow, TrackRow, UserRow } from './rows.tsx';
+import { Placeholder, ReleaseCard } from './ReleaseCard.tsx';
+import { useNearViewport } from './useNearViewport.ts';
 import type { PeerLookup } from './PeerHistory.tsx';
 import type { SearchDensity } from './ViewMenu.tsx';
 import {
@@ -42,6 +43,8 @@ import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
 import { useReducedMotion } from '../motion/prefs.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
+import { folderKey } from '../data/transferStore.ts';
+import type { QueueBadge, TransferState } from '../data/transferStore.ts';
 
 /*
  * Estimates only — the virtualiser measures the real height of every row. They
@@ -51,8 +54,15 @@ import type { LibrarySession } from '../data/libraryStore.ts';
  * rows until measurement catches up.
  */
 const H_SOURCE_REM = 34 / 16;
-const H_ROW_REM: Record<SearchDensity, number> = { comfortable: 52 / 16, compact: 44 / 16, table: 32 / 16 };
-const H_CARD_REM: Record<SearchDensity, number> = { comfortable: 108 / 16, compact: 64 / 16, table: 34 / 16 };
+// `grid` never reaches the virtualiser (it renders as a plain CSS grid, below),
+// but the records are keyed by the full density set, so it carries a value too.
+const H_ROW_REM: Record<SearchDensity, number> = { comfortable: 52 / 16, compact: 44 / 16, table: 32 / 16, grid: 52 / 16 };
+const H_CARD_REM: Record<SearchDensity, number> = { comfortable: 108 / 16, compact: 64 / 16, table: 34 / 16, grid: 108 / 16 };
+
+/** Covers requested at once in grid; also the cap on cards rendered without
+ *  virtualisation. Release grouping collapses a search to far fewer rows than
+ *  this, so the cap is a guard, not a limit anyone reaches. */
+const GRID_CAP = 300;
 
 const EXIT_MS = 180;
 const REFLOW_MS = 260;
@@ -63,7 +73,7 @@ const STAGGER_MAX = 130;
 export function ResultList({
   rows, currentTick, expanded, onToggle, onQueue, onBrowse, onContext, pendingCount, onFoldIn,
   onViewport, emptyState, density, columns = DEFAULT_COLUMNS, artwork, library, peers,
-  copies, onCompare,
+  copies, onCompare, queueStates, folderStates,
 }: {
   rows: Row[];
   currentTick: number;
@@ -83,6 +93,10 @@ export function ResultList({
   copies?: Map<string, Release[]>;
   /** Open the comparison for a release. Downloads nothing by itself. */
   onCompare?(release: Release): void;
+  /** Live per-file transfer states, so a Get button reflects what happened. */
+  queueStates?: Map<string, TransferState>;
+  /** Live per-folder badges, for a release card's Get. */
+  folderStates?: Map<string, QueueBadge>;
   pendingCount: number;
   onFoldIn(): void;
   onViewport(first: number, atTop: boolean): void;
@@ -204,13 +218,15 @@ export function ResultList({
    * first pass. */
   useEffect(() => {
     if (!artwork?.enabled) return;
+    // Grid renders outside the virtualiser; each card gates its own cover.
+    if (density === 'grid') return;
     for (const item of items) {
       const row = display[item.index];
       if (row?.kind === 'release') {
         artwork.want(row.release.id, row.release.artist, row.release.title);
       }
     }
-  }, [items, display, artwork]);
+  }, [items, display, artwork, density]);
 
   /* ---- report the viewport so the store knows what it must not reorder ---- */
   useEffect(() => {
@@ -327,6 +343,26 @@ export function ResultList({
       <div className="scroller" ref={scrollRef} tabIndex={-1}>
         {display.length === 0 ? (
           emptyState
+        ) : density === 'grid' ? (
+          /* A wall of covers, for picking a record out of a pile. Plain CSS grid,
+             not the virtualiser (which is single-lane): release grouping collapses
+             a search to few enough rows that the cap is never reached, and each
+             card gates its own cover on the viewport. */
+          <div className="results-grid">
+            {display.slice(0, GRID_CAP).map((row) => (
+              row.kind === 'release' ? (
+                <GridCard
+                  key={row.id}
+                  release={row.release}
+                  artwork={artwork}
+                  owned={library?.hasRelease(row.release.artist, row.release.title) ?? false}
+                  badge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
+                  onQueue={() => onQueue(row)}
+                  onContext={onContext ? (e) => onContext(row, e.clientX, e.clientY) : undefined}
+                />
+              ) : null
+            ))}
+          </div>
         ) : (
           <div
             className="list-canvas"
@@ -361,7 +397,7 @@ export function ResultList({
                   }}
                 >
                   {renderRow(row, expanded, onToggle, onQueue, density, onBrowse, artwork, peers,
-                    library, copies, onCompare)}
+                    library, copies, onCompare, queueStates, folderStates)}
                 </div>
               );
             })}
@@ -384,6 +420,8 @@ function renderRow(
   library?: LibrarySession,
   copies?: Map<string, Release[]>,
   onCompare?: (release: Release) => void,
+  queueStates?: Map<string, TransferState>,
+  folderStates?: Map<string, QueueBadge>,
 ) {
   switch (row.kind) {
     case 'track':
@@ -394,6 +432,7 @@ function renderRow(
           onToggle={() => onToggle(row.id)}
           onQueue={() => onQueue(row)}
           selected={false}
+          queueStates={queueStates}
         />
       );
     case 'release': {
@@ -407,10 +446,12 @@ function renderRow(
           expanded={expanded.has(row.id)}
           onToggle={() => onToggle(row.id)}
           onQueue={() => onQueue(row)}
-          density={density}
+          // 'grid' renders as GridCard, never here — narrow it away for the card.
+          density={density === 'grid' ? 'comfortable' : density}
           peers={peers}
           copyCount={group.length}
           onCompare={onCompare ? () => onCompare(row.release) : undefined}
+          queueBadge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
         />
       );
     }
@@ -432,7 +473,72 @@ function renderRow(
           context={row.context}
           onQueue={() => onQueue(row)}
           peers={peers}
+          queueStates={queueStates}
+        />
+      );
+    case 'file':
+      return (
+        <FileRow
+          source={row.source}
+          onQueue={() => onQueue(row)}
+          queueStates={queueStates}
         />
       );
   }
+}
+
+/**
+ * One release as a cover tile in the grid — a square of art with the title and
+ * artist beneath it, so a collector reads the pile by sleeve. Aspect ~3:4: the
+ * cover is the 3×3 square, the caption the extra row.
+ *
+ * It gates its OWN cover on the viewport (`useNearViewport`), because the grid
+ * is not virtualised — asking for every cover on mount is minutes of a
+ * rate-limited volunteer API for tiles nobody scrolled to.
+ *
+ * Get is the only control, and it reports state (queued / downloading / done)
+ * like every other Get, so status reads across the whole wall at a glance.
+ */
+function GridCard({
+  release, artwork, owned, badge, onQueue, onContext,
+}: {
+  release: Release;
+  artwork?: ArtworkSession;
+  owned: boolean;
+  badge: QueueBadge;
+  onQueue(): void;
+  onContext?(e: React.MouseEvent): void;
+}) {
+  const [ref, near] = useNearViewport();
+  const art = artwork?.get(release.id);
+  useEffect(() => {
+    if (near && artwork?.enabled) artwork.want(release.id, release.artist, release.title);
+  }, [near, artwork, release.id, release.artist, release.title]);
+
+  return (
+    <article className="gridcard" ref={ref} data-owned={owned ? 'true' : undefined} onContextMenu={onContext}>
+      <div className="gridcard__cover">
+        <Placeholder seed={`${release.artist ?? ''}${release.title}`} />
+        {art?.state === 'ready' && (
+          <img className="gridcard__img" src={art.dataUri} alt="" loading="lazy" />
+        )}
+        {owned && <span className="gridcard__owned">In library</span>}
+        <span className="gridcard__get">
+          <QueueButton
+            badge={badge}
+            onQueue={onQueue}
+            label={`${release.title} from ${release.user}`}
+            className="action action--primary pressable qbtn"
+            withText
+          />
+        </span>
+      </div>
+      <div className="gridcard__cap">
+        <span className="gridcard__title" title={release.title}>{release.title}</span>
+        {release.artist && (
+          <span className="gridcard__artist" title={release.artist}>{release.artist}</span>
+        )}
+      </div>
+    </article>
+  );
 }

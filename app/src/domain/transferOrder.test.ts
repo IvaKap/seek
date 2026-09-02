@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 import { describe, expect, it } from 'vitest';
-import { matchesQuery, sortGroups } from './transferOrder.ts';
-import type { TransferGroup } from '../data/transferStore.ts';
+import { matchesQuery, sortGroups, withinFinishedWindow } from './transferOrder.ts';
+import type { TransferGroup, Transfer } from '../data/transferStore.ts';
 
 function g(over: Partial<TransferGroup> = {}): TransferGroup {
   return {
@@ -107,5 +107,37 @@ describe('matchesQuery', () => {
   it('matches everything when nothing was typed', () => {
     expect(matchesQuery(g(), '')).toBe(true);
     expect(matchesQuery(g(), '   ')).toBe(true);
+  });
+});
+
+describe('withinFinishedWindow — the Completed date filter', () => {
+  const NOW = 1_800_000_000_000; // epoch ms
+  const secAgo = (days: number) => Math.floor(NOW / 1000) - days * 86_400;
+  // finishedAt is read off the group's transfers; the predicate only touches
+  // `.finishedAt`, so a partial transfer stub is enough.
+  const done = (finishedAt: number | null) =>
+    g({ state: 'finished', transfers: [{ finishedAt } as Transfer] });
+
+  it('"all" shows everything, including rows with no known finish time', () => {
+    expect(withinFinishedWindow(done(null), 'all', NOW)).toBe(true);
+    expect(withinFinishedWindow(done(secAgo(9999)), 'all', NOW)).toBe(true);
+  });
+
+  it('"past week" keeps recent completions and drops older ones', () => {
+    expect(withinFinishedWindow(done(secAgo(3)), 'week', NOW)).toBe(true);
+    expect(withinFinishedWindow(done(secAgo(10)), 'week', NOW)).toBe(false);
+  });
+
+  it('"past month" and "past year" have the expected boundaries', () => {
+    expect(withinFinishedWindow(done(secAgo(20)), 'month', NOW)).toBe(true);
+    expect(withinFinishedWindow(done(secAgo(40)), 'month', NOW)).toBe(false);
+    expect(withinFinishedWindow(done(secAgo(300)), 'year', NOW)).toBe(true);
+    expect(withinFinishedWindow(done(secAgo(400)), 'year', NOW)).toBe(false);
+  });
+
+  it('an unknown finish time (null or 0) is hidden by any specific window', () => {
+    // It cannot honestly be placed in a window; only "all" shows it.
+    expect(withinFinishedWindow(done(null), 'week', NOW)).toBe(false);
+    expect(withinFinishedWindow(done(0), 'month', NOW)).toBe(false);
   });
 });

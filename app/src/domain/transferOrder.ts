@@ -140,3 +140,37 @@ export function matchesQuery(g: TransferGroup, query: string): boolean {
   const hay = `${displayName(g)} ${g.title} ${g.username}`.toLowerCase();
   return terms.every((term) => hay.includes(term));
 }
+
+/**
+ * How far back the Completed lens shows. A rolling window, not a calendar one,
+ * and labelled "Past …" to say so — because `finishedAt` is approximate (a
+ * sidecar restart re-stamps it, registries.py), so a precise "this month" would
+ * promise more than the data can honour.
+ */
+export type FinishedWindow = 'all' | 'week' | 'month' | 'year';
+
+export const FINISHED_WINDOW_LABELS: Record<FinishedWindow, string> = {
+  all: 'All', week: 'Past week', month: 'Past month', year: 'Past year',
+};
+
+const WINDOW_DAYS: Record<FinishedWindow, number> = {
+  all: 0, week: 7, month: 30, year: 365,
+};
+
+/**
+ * Is this group's completion within the chosen window? Pure, so the boundaries
+ * are testable. `now` is epoch MILLIS (Date.now); `finishedAt` is epoch SECONDS.
+ *
+ * A group with no known finish time (`finishedAt` 0 — null/approximate) matches
+ * ONLY 'all': it cannot honestly be placed inside a specific window, and putting
+ * it in "past week" would be a guess. This is a VIEW filter — it never deletes,
+ * unlike the Clear buttons or the `clearCompletedDays` retention setting.
+ */
+export function withinFinishedWindow(
+  g: TransferGroup, window: FinishedWindow, now: number,
+): boolean {
+  if (window === 'all') return true;
+  const at = finishedAt(g);
+  if (!at) return false;
+  return at >= now / 1000 - WINDOW_DAYS[window] * 86_400;
+}
