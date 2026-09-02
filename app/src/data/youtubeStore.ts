@@ -114,7 +114,12 @@ export function useYoutube(client: SidecarClient | null): YoutubeSession {
     const offAuth = client.on('youtube.auth', (d) => {
       const state = d as YoutubeAuthState;
       setAuth(state);
+      // A later attempt that succeeds must clear the earlier one's error — a
+      // first sign-in often times out while the user sets up tester access,
+      // and the stale "timed out" banner otherwise outlives the sign-in it
+      // was about.
       if (state.error) setError(`Google sign-in failed: ${state.error}`);
+      else if (state.signedIn) setError(null);
     });
     const offPlaylists = client.on('youtube.playlists', (d) => {
       setMyPlaylists((d as YoutubeMyPlaylists).items);

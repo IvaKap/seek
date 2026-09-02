@@ -11,11 +11,11 @@
 import { StrictMode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { YoutubeSheetView } from './YoutubeSheetView.tsx';
+import { YoutubeSheetView, resizeWidth, MIN_WIDTH } from './YoutubeSheetView.tsx';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { YoutubeRow, YoutubeSheet } from '../../../shared/protocol.ts';
 
-// The column-fit hooks use ResizeObserver, which jsdom does not provide.
+// jsdom provides neither ResizeObserver nor pointer capture.
 beforeAll(() => {
   if (typeof globalThis.ResizeObserver === 'undefined') {
     globalThis.ResizeObserver = class {
@@ -24,9 +24,16 @@ beforeAll(() => {
       disconnect() {}
     } as unknown as typeof ResizeObserver;
   }
+  if (!Element.prototype.setPointerCapture) {
+    Element.prototype.setPointerCapture = () => {};
+    Element.prototype.releasePointerCapture = () => {};
+  }
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  try { localStorage.clear(); } catch { /* jsdom */ }
+});
 
 function row(over: Partial<YoutubeRow['match']> = {}, video: Partial<YoutubeRow['video']> = {}): YoutubeRow {
   return {
@@ -209,6 +216,28 @@ describe('the youtube sheet', () => {
     fireEvent.click(screen.getByText(/From your account/));
     fireEvent.click(screen.getByText('Digging'));
     expect(yt.addPlaylist).toHaveBeenCalledWith('PLx', 'Digging');
+  });
+
+  it('gives every column a resize handle', () => {
+    const { container } = ((): { container: HTMLElement } => {
+      const r = render(
+        <StrictMode>
+          <YoutubeSheetView youtube={session([sheet([row()])])}
+                            onSearch={vi.fn()} onBrowseArtist={vi.fn()} />
+        </StrictMode>,
+      );
+      return { container: r.container };
+    })();
+    // One handle per visible column (the 9 defaults).
+    expect(container.querySelectorAll('.yt__resize').length).toBe(9);
+  });
+
+  it('a drag widens or narrows from the start width, never below the minimum', () => {
+    // The arithmetic behind a resize (jsdom has no PointerEvent to drive the
+    // handle end to end, so the pure function is pinned instead).
+    expect(resizeWidth(260, 60)).toBe(320);
+    expect(resizeWidth(260, -40)).toBe(220);
+    expect(resizeWidth(120, -1000)).toBe(MIN_WIDTH);
   });
 
   it('a low-confidence match is toned as a warning', () => {

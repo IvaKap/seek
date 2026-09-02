@@ -25,24 +25,52 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { YoutubeRow, YoutubeSheet } from '../../../shared/protocol.ts';
 import {
-  YT_COLUMN_SET, YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns, ytTemplateFor,
-  ytVisibleColumns,
+  YT_COLUMN_SET, YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns,
 } from '../domain/youtubeColumns.ts';
 import type { YtColumnId } from '../domain/youtubeColumns.ts';
 import { cleanForDiscogs, discogsQuery } from '../domain/youtubeMatch.ts';
 import { duration } from '../domain/format.ts';
 import { guessUrl } from '../domain/discoverUrl.ts';
 import { ViewMenu } from './ViewMenu.tsx';
-import { useRootFontSize, useWidthRem } from './useColumnFit.ts';
 import { IconSearch, IconEmpty, IconClose } from '../icons/index.tsx';
 
 const COLUMNS_KEY = 'seek.youtube.columns';
+const WIDTHS_KEY = 'seek.youtube.colwidths';
+
+/* Fixed pixel widths, resizable by hand — the Excel model the user asked for.
+ * The table scrolls horizontally past the viewport rather than dropping
+ * columns, so nothing is ever cropped without a way to widen it. */
+const DEFAULT_WIDTH: Record<YtColumnId, number> = {
+  title: 260, search: 52, duration: 66, artist: 170, track: 200,
+  album: 180, style: 150, downloaded: 96, url: 58, published: 100, description: 300,
+};
+export const MIN_WIDTH = 44;
+
+/** A column's width after a drag of `deltaX` from `startW`, clamped. Pure, so
+ *  the arithmetic is testable without jsdom's absent PointerEvent. */
+export function resizeWidth(startW: number, deltaX: number): number {
+  return Math.max(MIN_WIDTH, Math.round(startW + deltaX));
+}
 
 function loadColumns(): YtColumnId[] {
   try {
     return ytNormaliseColumns(JSON.parse(localStorage.getItem(COLUMNS_KEY) ?? 'null'));
   } catch {
     return [...YT_DEFAULT_COLUMNS];
+  }
+}
+
+function loadWidths(): Partial<Record<YtColumnId, number>> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WIDTHS_KEY) ?? '{}');
+    const out: Partial<Record<YtColumnId, number>> = {};
+    for (const id of YT_COLUMNS.all) {
+      const v = raw?.[id];
+      if (typeof v === 'number' && v >= MIN_WIDTH) out[id] = v;
+    }
+    return out;
+  } catch {
+    return {};
   }
 }
 
@@ -91,9 +119,14 @@ export function YoutubeSheetView({
   /** The "from your account" picker, shown only when signed in. */
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const tableRef = useRef<HTMLDivElement>(null);
-  const rootPx = useRootFontSize();
-  const widthRem = useWidthRem(tableRef, rootPx);
+  /** Per-column widths, resizable by hand and persisted. */
+  const [widths, setWidths] = useState<Partial<Record<YtColumnId, number>>>(loadWidths);
+
+  /** The grid, so a drag can repaint `--cols` without re-rendering 1,000 rows. */
+  const gridRef = useRef<HTMLDivElement>(null);
+  /** Mirrors `widths` so the drag handler reads the latest without a dep. */
+  const widthsRef = useRef(widths);
+  widthsRef.current = widths;
 
   const active = sheets.find((s) => s.id === activeId) ?? sheets[0] ?? null;
 
@@ -102,7 +135,34 @@ export function YoutubeSheetView({
     try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
   }, []);
 
-  const shown = useMemo(() => ytVisibleColumns(columns, widthRem), [columns, widthRem]);
+  const shown = columns;
+  const colWidth = useCallback(
+    (id: YtColumnId) => widths[id] ?? DEFAULT_WIDTH[id] ?? 120,
+    [widths],
+  );
+  const template = useMemo(
+    () => shown.map((id) => `${widths[id] ?? DEFAULT_WIDTH[id] ?? 120}px`).join(' '),
+    [shown, widths],
+  );
+
+  /* During a drag, repaint the shared `--cols` custom property directly on the
+     grid — the header and every row inherit it, so a thousand rows reflow
+     through CSS with no React render. State (and localStorage) is committed
+     only when the drag ends. */
+  const previewResize = useCallback((id: YtColumnId, px: number) => {
+    const tmpl = shown
+      .map((c) => `${(c === id ? px : (widthsRef.current[c] ?? DEFAULT_WIDTH[c] ?? 120))}px`)
+      .join(' ');
+    gridRef.current?.style.setProperty('--cols', tmpl);
+  }, [shown]);
+
+  const commitResize = useCallback((id: YtColumnId, px: number) => {
+    setWidths((w) => {
+      const next = { ...w, [id]: px };
+      try { localStorage.setItem(WIDTHS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  }, []);
 
   const add = useCallback(() => {
     const text = draft.trim();
@@ -258,10 +318,17 @@ export function YoutubeSheetView({
             </button>
           </div>
 
-          <div className="yt__grid" ref={tableRef}>
-              <div className="yt__head" style={{ ['--cols' as string]: ytTemplateFor(shown) }}>
+          <div className="yt__grid" ref={gridRef} style={{ ['--cols' as string]: template }}>
+              <div className="yt__head">
                 {shown.map((id) => (
-                  <span key={id} className="yt__h" data-col={id}>{YT_COLUMNS.label(id)}</span>
+                  <ColumnHeader
+                    key={id}
+                    id={id}
+                    label={YT_COLUMNS.label(id)}
+                    width={colWidth(id)}
+                    onPreview={previewResize}
+                    onCommit={commitResize}
+                  />
                 ))}
               </div>
 
@@ -270,7 +337,6 @@ export function YoutubeSheetView({
                   <div
                     className="yt__row"
                     data-tone={rowTone(row)}
-                    style={{ ['--cols' as string]: ytTemplateFor(shown) }}
                   >
                     {shown.map((id) => (
                       <Cell
@@ -329,6 +395,58 @@ export function YoutubeSheetView({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * A header cell with a drag handle on its right edge.
+ *
+ * The drag is direct manipulation, not an animation, so it repaints the shared
+ * `--cols` custom property live (via `onPreview`) rather than going through
+ * React state on every pointer move — that is what keeps a thousand-row sheet
+ * from re-rendering under the cursor. State is committed once, on release.
+ */
+function ColumnHeader({
+  id, label, width, onPreview, onCommit,
+}: {
+  id: YtColumnId;
+  label: string;
+  width: number;
+  onPreview(id: YtColumnId, px: number): void;
+  onCommit(id: YtColumnId, px: number): void;
+}) {
+  const startX = useRef(0);
+  const startW = useRef(0);
+  const dragging = useRef(false);
+
+  const nextWidth = (clientX: number) => resizeWidth(startW.current, clientX - startX.current);
+
+  return (
+    <span className="yt__h" data-col={id}>
+      <span className="yt__hlabel">{label}</span>
+      <span
+        className="yt__resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Resize ${label}`}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          dragging.current = true;
+          startX.current = e.clientX;
+          startW.current = width;
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          if (dragging.current) onPreview(id, nextWidth(e.clientX));
+        }}
+        onPointerUp={(e) => {
+          if (!dragging.current) return;
+          dragging.current = false;
+          onCommit(id, nextWidth(e.clientX));
+          try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already gone */ }
+        }}
+      />
+    </span>
   );
 }
 

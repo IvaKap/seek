@@ -212,6 +212,21 @@ describe('google sign-in', () => {
     expect(box.yt.error).toMatch(/access_denied/);
   });
 
+  it('a later successful sign-in clears the earlier attempt error', async () => {
+    // A first attempt times out while the user sets up tester access; the retry
+    // succeeds, and the stale banner must not outlive it.
+    const { client, emit } = fakeClient();
+    const box = mount(client);
+    await act(async () => {
+      emit('youtube.auth', { configured: true, signedIn: false, account: '', error: 'timed out waiting for the Google sign-in' });
+    });
+    expect(box.yt.error).toMatch(/timed out/);
+    await act(async () => {
+      emit('youtube.auth', { configured: true, signedIn: true, account: 'Me', error: '' });
+    });
+    expect(box.yt.error).toBeNull();
+  });
+
   it('signOut applies the returned state and clears playlists', async () => {
     const { client, emit, replies } = fakeClient();
     replies['youtube.signOut'] = { configured: true, signedIn: false, account: '', error: '' };

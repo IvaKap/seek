@@ -3291,11 +3291,14 @@
   font-size: var(--fs-caption); color: var(--text-tertiary); margin-right: auto;
 }
 
-.yt__grid { container-type: inline-size; overflow-x: auto; padding: 0 var(--sp-4) var(--sp-4); }
+.yt__grid { overflow-x: auto; padding: 0 var(--sp-4) var(--sp-4); }
+/* `--cols` is set once on .yt__grid and INHERITED by the header and every row,
+   so a hand-resize repaints one custom property instead of a thousand rows. */
 .yt__head, .yt__row {
   display: grid; grid-template-columns: var(--cols);
   gap: var(--sp-3); align-items: center;
   padding: var(--sp-2);
+  width: max-content; min-width: 100%;
 }
 .yt__head {
   position: sticky; top: 0; z-index: 1;
@@ -3305,7 +3308,25 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
   text-transform: uppercase; color: var(--text-tertiary);
 }
-.yt__h { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt__h {
+  position: relative; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.yt__hlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The drag handle sits in the column gap on the cell's right edge, so it reads
+   as a boundary between columns rather than part of either. */
+.yt__resize {
+  position: absolute; top: 0; right: calc(var(--sp-3) / -2 - 1px);
+  width: 9px; height: 100%; cursor: col-resize;
+  touch-action: none;
+}
+.yt__resize::after {
+  content: ''; position: absolute; top: 20%; bottom: 20%; left: 4px;
+  width: 1px; background: var(--separator);
+}
+@media (hover: hover) and (pointer: fine) {
+  .yt__resize:hover::after { background: var(--accent); left: 3px; width: 2px; }
+}
 .yt__row {
   border-bottom: 0.5px solid var(--separator);
   /* A thin left edge carries the match verdict without colouring a whole row. */
