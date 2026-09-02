@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { group, silenceSeconds } from './transferStore.ts';
+import { autoRetry, group, MAX_AUTO_RETRIES, silenceSeconds } from './transferStore.ts';
 import type { Transfer } from './transferStore.ts';
 
 const NOW = 1_800_000_000_000;
@@ -140,5 +140,67 @@ describe('group — giving up on a quiet download', () => {
      * it would make both of those lie. */
     const [g] = group([quiet(FIVE_MIN + 1)], FIVE_MIN, NOW);
     expect(g.failed).toBe(0);
+  });
+});
+
+describe('autoRetry — re-asking a peer that did not answer in time', () => {
+  const timedOut = (id: string, over: Partial<Transfer> = {}) =>
+    t({ id, path: `a\\rel\\${id}.flac`, state: 'connection_timeout', ...over });
+
+  it('re-asks a timed-out download and counts the attempt', () => {
+    const { retry, counts } = autoRetry([timedOut('1')], new Map());
+    expect(retry).toEqual(['1']);
+    expect(counts.get('1')).toBe(1);
+  });
+
+  it('only touches connection_timeout, not other failures', () => {
+    // A logged-off peer resumes itself; a dropped connection and a local write
+    // error are not the peer failing to answer. None are re-asked automatically.
+    const transfers = [
+      timedOut('to'),
+      t({ id: 'off', state: 'user_logged_off' }),
+      t({ id: 'closed', state: 'connection_closed' }),
+      t({ id: 'local', state: 'local_file_error' }),
+    ];
+    expect(autoRetry(transfers, new Map()).retry).toEqual(['to']);
+  });
+
+  it('never re-asks an upload', () => {
+    const up = timedOut('u', { direction: 'upload' });
+    expect(autoRetry([up], new Map()).retry).toEqual([]);
+  });
+
+  it('stops at the cap, leaving the file for a manual retry', () => {
+    const at = new Map([['1', MAX_AUTO_RETRIES]]);
+    const { retry, counts } = autoRetry([timedOut('1')], at);
+    expect(retry).toEqual([]);
+    expect(counts.get('1')).toBe(MAX_AUTO_RETRIES);   // not incremented past the cap
+  });
+
+  it('climbs to the cap over repeated sweeps then holds', () => {
+    let counts = new Map<string, number>();
+    const attempts: number[] = [];
+    for (let sweep = 0; sweep < MAX_AUTO_RETRIES + 2; sweep++) {
+      const out = autoRetry([timedOut('1')], counts);
+      attempts.push(out.retry.length);
+      counts = out.counts;
+    }
+    // Retried exactly `cap` times, then silent.
+    expect(attempts).toEqual([1, 1, 1, 0, 0]);
+  });
+
+  it('refreshes the budget once the file actually connects', () => {
+    // Timed out, retried to the cap, then it CONNECTS — a later timeout is a
+    // fresh episode and deserves fresh retries, not a dead row.
+    const capped = new Map([['1', MAX_AUTO_RETRIES]]);
+    const connected = autoRetry([t({ id: '1', state: 'transferring' })], capped);
+    expect(connected.counts.has('1')).toBe(false);
+    // And now a new timeout is re-asked again.
+    expect(autoRetry([timedOut('1')], connected.counts).retry).toEqual(['1']);
+  });
+
+  it('forgets tallies for transfers that are gone', () => {
+    const counts = new Map([['gone', 2]]);
+    expect(autoRetry([timedOut('here')], counts).counts.has('gone')).toBe(false);
   });
 });

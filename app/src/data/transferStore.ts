@@ -213,8 +213,64 @@ export function group(transfers: Transfer[], quietSeconds = 0, now = Date.now())
 const PUBLISH_MS = 400;
 /* How often to re-derive when a give-up threshold is set. A minute is far finer
  * than any threshold worth setting (the smallest offered is 5 minutes), and the
- * work is one grouping pass, so there is nothing to gain by tuning it. */
+ * work is one grouping pass, so there is nothing to gain by tuning it. It is
+ * also the clock the auto-retry below rides, and a minute between re-asks is the
+ * point there too — see `autoRetry`. */
 const QUIET_SWEEP_MS = 60_000;
+
+/* How many times to auto-retry one file the peer never answered for in time
+ * before leaving it for a manual retry. Bounded so a genuinely dead peer is not
+ * re-asked forever; the budget refreshes the moment the file actually connects,
+ * so this only ever bites a file that keeps timing out without transferring. */
+export const MAX_AUTO_RETRIES = 3;
+
+/**
+ * Which timed-out downloads to re-ask now, and the retry tallies to carry
+ * forward. Pure, so the policy is pinned without timers or a live socket.
+ *
+ * ONLY `connection_timeout` — pynicotine's "the peer did not answer in time",
+ * which is explicitly transient and retryable (see domain/transferStatus.ts).
+ * A rejection ("File not shared."), a logged-off peer (which resumes itself)
+ * and a dropped connection are all left alone: re-asking them automatically
+ * would either be futile or hammer a peer that already said no. Uploads are
+ * never touched — a peer giving up on taking a file is not ours to chase.
+ *
+ * Gentle by construction: this runs on the one-a-minute sweep, so a scatter of
+ * timeouts across a big folder is re-asked slowly, never at the fast cadence
+ * that gets a client throttled.
+ */
+export function autoRetry(
+  transfers: Transfer[],
+  counts: Map<string, number>,
+  cap = MAX_AUTO_RETRIES,
+): { retry: string[]; counts: Map<string, number> } {
+  const next = new Map(counts);
+  const retry: string[] = [];
+  const present = new Set<string>();
+
+  for (const t of transfers) {
+    if (t.direction === 'upload') continue;
+    present.add(t.id);
+    // The peer answered — the timeout was transient and is resolved, so the
+    // budget refreshes for any future, independent timeout on this file.
+    if (t.state === 'transferring' || t.state === 'finished') {
+      next.delete(t.id);
+      continue;
+    }
+    if (t.state !== 'connection_timeout') continue;
+    const n = next.get(t.id) ?? 0;
+    if (n >= cap) continue;   // dead peer — leave this one for a manual retry
+    next.set(t.id, n + 1);
+    retry.push(t.id);
+  }
+
+  // Forget tallies for transfers no longer in the list (cleared or removed),
+  // so the map cannot grow without bound across a long session.
+  for (const id of [...next.keys()]) {
+    if (!present.has(id)) next.delete(id);
+  }
+  return { retry, counts: next };
+}
 
 export interface TransferSession {
   /** Downloads, grouped into releases. */
@@ -261,6 +317,8 @@ export function useTransfers(
   quiet.current = quietSeconds;
   const clearDays = useRef(clearCompletedDays);
   clearDays.current = clearCompletedDays;
+  /** How many times each timed-out file has been auto-retried this session. */
+  const autoRetries = useRef<Map<string, number>>(new Map());
 
   const publish = useCallback(() => {
     const list = [...byId.current.values()];
@@ -333,6 +391,18 @@ export function useTransfers(
        * time the setting changed; closing over it without doing so would leave
        * the sweep permanently off for anyone who switched it on after launch. */
       if (quiet.current > 0) publish();
+
+      /* Auto-retry files the peer never answered for in time. On a big folder a
+       * scatter of these is normal churn — the peer is serving a few files at a
+       * time and some connection attempts time out under load — and the state
+       * is transient and retryable, so re-asking once a slot frees usually
+       * works. Bounded per file (`autoRetry`) so a dead peer is left for a
+       * manual retry, and on this one-a-minute clock so it stays gentle. */
+      const decision = autoRetry([...byId.current.values()], autoRetries.current);
+      autoRetries.current = decision.counts;
+      if (decision.retry.length > 0) {
+        void client.request('transfer.retry', { transferIds: decision.retry }).catch(() => {});
+      }
 
       /* Forgetting old completed downloads. Rides the same tick because it
        * needs the same thing — a clock nobody else is reading — and because a
