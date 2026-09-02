@@ -182,6 +182,25 @@ to search for directly — it is a catalogue to browse, and the frontend
 offers a different action for it.
 """
 
+YoutubeSource = Literal["playlist", "liked"]
+"""
+Where a YouTube sheet's videos come from. 'playlist' is any playlist
+addressed by id (public today; private once signed in). 'liked' is the
+per-account 'LL' list, which is private and reachable only with OAuth.
+"""
+
+YoutubeMatchStatus = Literal["pending", "matched", "low", "none", "manual", "error"]
+"""
+How a video was matched to a Discogs release.
+
+This is a DERIVED verdict the sidecar records, not raw data — the match is a
+fuzzy search over a title the frontend parsed, so the app is told how far to
+trust it. 'pending' has not been looked up yet; 'matched' resembled the
+query confidently; 'low' returned a release that did not clearly resemble it
+(show it, but hedged); 'none' found nothing; 'manual' was set by pasting a
+Discogs URL; 'error' means the lookup itself failed and can be retried.
+"""
+
 
 ENUM_VALUES: Dict[str, Tuple[str, ...]] = {
     "ChatScope": ("room", "private",),
@@ -201,6 +220,8 @@ ENUM_VALUES: Dict[str, Tuple[str, ...]] = {
     "WantSource": ("youtube", "bandcamp", "discogs", "manual", "fingerprint",),
     "WantStatus": ("pending", "searching", "found", "downloaded", "not_found",),
     "DiscoverKind": ("track", "release", "artist", "label",),
+    "YoutubeSource": ("playlist", "liked",),
+    "YoutubeMatchStatus": ("pending", "matched", "low", "none", "manual", "error",),
 }
 
 
@@ -1071,6 +1092,175 @@ class DiscoverPlaylist(TypedDict):
     # as DiscoverCatalog: a truncated list that claims to be whole is worse
     # than one that admits it.
     complete: bool
+
+
+class YoutubeVideo(TypedDict):
+    """
+    One video in a YouTube sheet, exactly as YouTube states it.
+
+    Raw facts only — the artist/track split is parseTitle.ts's job on the
+    frontend. `durationSeconds` is the ISO-8601 `PT#H#M#S` from the videos
+    endpoint decoded to a plain integer; TypeScript formats '8 min 34 sec'.
+    `publishedAt` is YouTube's own upload timestamp, verbatim; the video's
+    'liked date' is NOT available without OAuth and is deliberately absent.
+    """
+    # The 11-character id; the row's identity within a sheet.
+    videoId: str
+    # snippet.title, verbatim and unparsed.
+    title: str
+    # The uploader (videoOwnerChannelTitle), not the playlist owner.
+    channel: str
+    # https://www.youtube.com/watch?v={videoId}, built once here.
+    url: str
+    # snippet.description, verbatim. Empty until enriched.
+    description: str
+    # Decoded seconds, or null before the videos call ran / for a video that
+    # states none.
+    durationSeconds: Optional[int]
+    # ISO-8601 upload time, or null. Not the liked date.
+    publishedAt: Optional[str]
+
+
+class YoutubeMatch(TypedDict):
+    """
+    What Discogs says about a video, and how far to trust it.
+
+    The fields mirror the old Apps Script: the search's first confident
+    release, then the release detail for artists/album/genres/styles.
+    `genres` and `styles` are kept as separate arrays (Discogs' own two
+    fields); the frontend joins them for the one 'Style' column. Everything
+    is empty while `status` is 'pending' or 'none'.
+    """
+    status: "YoutubeMatchStatus"
+    # The matched release id, or null.
+    discogsId: Optional[int]
+    # Release artist credit, Discogs' own assembly.
+    artist: str
+    # The search hit's title (usually 'Artist - Release').
+    track: str
+    # Release title.
+    album: str
+    # Discogs genres.
+    genres: List[str]
+    # Discogs styles, the finer classification.
+    styles: List[str]
+    # https://www.discogs.com/release/{id}, or empty.
+    releaseUrl: str
+
+
+class YoutubeRow(TypedDict):
+    """
+    One line of a sheet: a video, its Discogs match, and whether the user
+    has ticked it off.
+    """
+    video: "YoutubeVideo"
+    match: "YoutubeMatch"
+    # A user-set tick, persisted. Distinct from Seek's owned-library detection
+    # — this is the manual checkbox the spreadsheet had.
+    downloaded: bool
+
+
+class YoutubeSheet(TypedDict):
+    """
+    One playlist, as a persisted sheet. The user's own curated state, kept
+    in seek-state.json — never pynicotine's config.
+    """
+    # Stable sheet id, minted by the sidecar.
+    id: str
+    # Display name; falls back to the source id.
+    title: str
+    source: "YoutubeSource"
+    # Playlist id, or 'LL' for liked.
+    sourceId: str
+    # In playlist order.
+    rows: List["YoutubeRow"]
+    # What YouTube says the playlist holds.
+    total: int
+    # False when the sidecar stopped paginating early — same contract as
+    # DiscoverPlaylist.
+    complete: bool
+    # Epoch seconds the sheet was created.
+    addedAt: int
+    # Epoch seconds of the last successful fetch, or null.
+    lastFetchedAt: Optional[int]
+    # True while a Discogs enrichment pass is running for this sheet, so the
+    # UI can show progress rather than a frozen table.
+    enriching: bool
+    # Rows whose match is still 'pending' — the work left.
+    pending: int
+
+
+class YoutubeState(TypedDict):
+    """
+    Every YouTube sheet. Broadcast on structural change (a sheet added,
+    removed, or a tick toggled); per-sheet progress rides `youtube.sheet`.
+    """
+    # In the order they were added.
+    sheets: List["YoutubeSheet"]
+
+
+class YoutubeQuery(TypedDict):
+    """
+    One row's Discogs query, DERIVED on the frontend.
+
+    Enrichment runs in the sidecar (it is rate-gated HTTP), but the artist
+    and title come from parseTitle.ts — so the frontend hands them in rather
+    than the sidecar re-deriving them, keeping the seam intact.
+    """
+    # Which row this query is for.
+    videoId: str
+    # Parsed artist, or empty when the title could not be split.
+    artist: str
+    # Parsed title, or the cleaned whole title as a fallback.
+    title: str
+
+
+class YoutubeAddSheetParams(TypedDict):
+    """
+    Fetch a playlist and add it as a sheet. Replies immediately; the sheet
+    arrives on `youtube.state` once the listing is fetched.
+    """
+    source: "YoutubeSource"
+    # Playlist id, or 'LL' for liked (needs sign-in).
+    sourceId: str
+    # Display title; falls back to the source id.
+    title: Optional[str]
+
+
+class YoutubeSheetParams(TypedDict):
+    """Target one sheet, by id."""
+    sheetId: str
+
+
+class YoutubeDownloadedParams(TypedDict):
+    """Tick or untick one row."""
+    sheetId: str
+    videoId: str
+    downloaded: bool
+
+
+class YoutubeEnrichParams(TypedDict):
+    """
+    Look up Discogs for the given rows. Only the rows listed are searched,
+    so a caller can enrich just the pending ones. Replies immediately;
+    progress arrives on `youtube.sheet`.
+    """
+    sheetId: str
+    # One per row to look up.
+    queries: List["YoutubeQuery"]
+
+
+class YoutubeRematchParams(TypedDict):
+    """
+    Redo one row's match. With `discogsUrl` the release is used verbatim
+    (the manual correction); otherwise `artist`/`title` are searched again.
+    """
+    sheetId: str
+    videoId: str
+    artist: Optional[str]
+    title: Optional[str]
+    # A Discogs release/master URL to use as-is.
+    discogsUrl: Optional[str]
 
 
 class DiscogsWant(TypedDict):
@@ -2746,6 +2936,75 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("total", "int", False, False),
         ("complete", "bool", False, False),
     ),
+    "YoutubeVideo": (
+        ("videoId", "str", False, False),
+        ("title", "str", False, False),
+        ("channel", "str", False, False),
+        ("url", "str", False, False),
+        ("description", "str", False, False),
+        ("durationSeconds", "int", False, True),
+        ("publishedAt", "str", False, True),
+    ),
+    "YoutubeMatch": (
+        ("status", "YoutubeMatchStatus", False, False),
+        ("discogsId", "int", False, True),
+        ("artist", "str", False, False),
+        ("track", "str", False, False),
+        ("album", "str", False, False),
+        ("genres", "str", True, False),
+        ("styles", "str", True, False),
+        ("releaseUrl", "str", False, False),
+    ),
+    "YoutubeRow": (
+        ("video", "YoutubeVideo", False, False),
+        ("match", "YoutubeMatch", False, False),
+        ("downloaded", "bool", False, False),
+    ),
+    "YoutubeSheet": (
+        ("id", "str", False, False),
+        ("title", "str", False, False),
+        ("source", "YoutubeSource", False, False),
+        ("sourceId", "str", False, False),
+        ("rows", "YoutubeRow", True, False),
+        ("total", "int", False, False),
+        ("complete", "bool", False, False),
+        ("addedAt", "int", False, False),
+        ("lastFetchedAt", "int", False, True),
+        ("enriching", "bool", False, False),
+        ("pending", "int", False, False),
+    ),
+    "YoutubeState": (
+        ("sheets", "YoutubeSheet", True, False),
+    ),
+    "YoutubeQuery": (
+        ("videoId", "str", False, False),
+        ("artist", "str", False, False),
+        ("title", "str", False, False),
+    ),
+    "YoutubeAddSheetParams": (
+        ("source", "YoutubeSource", False, False),
+        ("sourceId", "str", False, False),
+        ("title", "str", False, True),
+    ),
+    "YoutubeSheetParams": (
+        ("sheetId", "str", False, False),
+    ),
+    "YoutubeDownloadedParams": (
+        ("sheetId", "str", False, False),
+        ("videoId", "str", False, False),
+        ("downloaded", "bool", False, False),
+    ),
+    "YoutubeEnrichParams": (
+        ("sheetId", "str", False, False),
+        ("queries", "YoutubeQuery", True, False),
+    ),
+    "YoutubeRematchParams": (
+        ("sheetId", "str", False, False),
+        ("videoId", "str", False, False),
+        ("artist", "str", False, True),
+        ("title", "str", False, True),
+        ("discogsUrl", "str", False, True),
+    ),
     "DiscogsWant": (
         ("discogsId", "int", False, False),
         ("masterId", "int", False, True),
@@ -3328,6 +3587,13 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "discover.wantlist": (None, "RequestAccepted"),
     "discover.related": ("RelatedParams", "RequestAccepted"),
     "discover.browse": ("DiscoverBrowseParams", "RequestAccepted"),
+    "youtube.list": (None, "YoutubeState"),
+    "youtube.addSheet": ("YoutubeAddSheetParams", "RequestAccepted"),
+    "youtube.refreshSheet": ("YoutubeSheetParams", "RequestAccepted"),
+    "youtube.removeSheet": ("YoutubeSheetParams", "YoutubeState"),
+    "youtube.setDownloaded": ("YoutubeDownloadedParams", "YoutubeState"),
+    "youtube.enrich": ("YoutubeEnrichParams", "RequestAccepted"),
+    "youtube.rematch": ("YoutubeRematchParams", "RequestAccepted"),
     "history.list": (None, "HistoryState"),
     "history.record": ("WishParams", "HistoryState"),
     "history.clear": (None, "HistoryState"),
@@ -3398,6 +3664,8 @@ EVENTS: Dict[str, str] = {
     "discover.relatedResults": "DiscoverRelated",
     "discover.tracklistParsed": "DiscoverTracklist",
     "discover.browseFailed": "DiscoverFailed",
+    "youtube.state": "YoutubeState",
+    "youtube.sheet": "YoutubeSheet",
     "log": "LogEvent",
 }
 

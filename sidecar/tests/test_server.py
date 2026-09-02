@@ -267,6 +267,33 @@ async def test_every_event_in_the_schema_can_be_broadcast(bridge):
     assert [f["ev"] for f in received] == list(protocol.EVENT_NAMES)
 
 
+def _yt_sheet_sample():
+    return {
+        "id": "sheet1", "title": "Late night", "source": "playlist",
+        "sourceId": "PLabc", "total": 1, "complete": True,
+        "addedAt": 1786300000, "lastFetchedAt": 1786300100,
+        "enriching": False, "pending": 0,
+        "rows": [{
+            "video": {
+                "videoId": "8k_f2QK77ew", "title": "Aural Imbalance - Thought Patterns",
+                "channel": "Found Recordings",
+                "url": "https://www.youtube.com/watch?v=8k_f2QK77ew",
+                "description": "for promo use only", "durationSeconds": 514,
+                "publishedAt": "2013-01-02T03:04:05Z",
+            },
+            "match": {
+                "status": "matched", "discogsId": 1058815,
+                "artist": "Aural Imbalance",
+                "track": "Aural Imbalance - Contented Life / Thought Patterns",
+                "album": "Contented Life / Thought Patterns",
+                "genres": ["Electronic"], "styles": ["Drum n Bass"],
+                "releaseUrl": "https://www.discogs.com/release/1058815",
+            },
+            "downloaded": False,
+        }],
+    }
+
+
 def _file():
     return {"path": "a\\b.flac", "size": 1, "bitrate": None, "duration": 10,
             "sampleRate": 44100, "bitDepth": 16, "isVbr": None}
@@ -518,6 +545,8 @@ def _event_samples():
                 "available": True,
             }],
         },
+        "youtube.sheet": _yt_sheet_sample(),
+        "youtube.state": {"sheets": [_yt_sheet_sample()]},
         # Values copied from a real /users/{u}/wants response, including the
         # trailing space Discogs actually sends in a title and the release with
         # no master (which arrives as 0, normalised to null before it gets here).

@@ -3256,6 +3256,95 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
+/* --------------------------------------------------------- YouTube sheets */
+/*
+ * The sheet reuses the search table's column engine, so it carries the same
+ * `--cols` grid template. Cells are direct grid children rendered in the fitted
+ * order (the sheet is not virtualised, unlike the search list, so it needs none
+ * of that view's order/visibility custom properties).
+ */
+.yt { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-3) 0; }
+
+.yt__strip {
+  display: flex; align-items: center; gap: var(--sp-3);
+  flex-wrap: wrap; padding: 0 var(--sp-4);
+}
+.yt__tabs { display: flex; flex-wrap: wrap; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
+.yt__tab {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 0.5px solid var(--separator); border-radius: 999px;
+  background: var(--bg-raised); color: var(--text-secondary);
+  font-size: var(--fs-secondary); cursor: pointer; max-width: 16rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.yt__tab--on { color: var(--text-primary); border-color: var(--accent); }
+.yt__tabcount { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.yt__add { display: flex; gap: var(--sp-2); flex: 0 1 22rem; min-width: 12rem; }
+.yt__add .settings__input { flex: 1 1 auto; }
+
+.yt__toolbar {
+  display: flex; align-items: center; gap: var(--sp-2);
+  flex-wrap: wrap; padding: 0 var(--sp-4);
+}
+.yt__progress {
+  font-size: var(--fs-caption); color: var(--text-tertiary); margin-right: auto;
+}
+
+.yt__grid { container-type: inline-size; overflow-x: auto; padding: 0 var(--sp-4) var(--sp-4); }
+.yt__head, .yt__row {
+  display: grid; grid-template-columns: var(--cols);
+  gap: var(--sp-3); align-items: center;
+  padding: var(--sp-2);
+}
+.yt__head {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--material-header);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--separator);
+  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.yt__h { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yt__row {
+  border-bottom: 0.5px solid var(--separator);
+  /* A thin left edge carries the match verdict without colouring a whole row. */
+  box-shadow: inset 2px 0 0 0 transparent;
+}
+.yt__row[data-tone='good'] { box-shadow: inset 2px 0 0 0 var(--success); }
+.yt__row[data-tone='warn'] { box-shadow: inset 2px 0 0 0 var(--warn); }
+.yt__row[data-tone='unknown'] { box-shadow: inset 2px 0 0 0 var(--text-quaternary); }
+@media (hover: hover) and (pointer: fine) {
+  .yt__row:hover { background: var(--bg-hover); }
+}
+.yt__cell {
+  min-width: 0;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.yt__title { font-size: var(--fs-secondary); color: var(--text-primary); }
+.yt__muted, .yt__desc { color: var(--text-tertiary); }
+.yt__search, .yt__dl { justify-content: center; }
+.yt__nomatch { display: flex; gap: var(--sp-2); }
+.yt__cell[data-tone='warn'] .linkish { color: var(--warn); }
+
+.yt__fix {
+  display: flex; gap: var(--sp-2); align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+}
+.yt__fix .settings__input { flex: 1 1 auto; }
+
+/* A plain text button — accent, no chrome — for a clickable artist, album, the
+   URL link and inline actions. */
+.linkish {
+  border: none; background: none; padding: 0; margin: 0;
+  color: var(--accent); font: inherit; cursor: pointer;
+  text-align: left; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.linkish:hover { text-decoration: underline; }
+
 /* ------------------------------------------------------------------- grid */
 
 .libgrid {

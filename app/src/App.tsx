@@ -25,6 +25,7 @@ import { useChecksums } from './data/checksumStore.ts';
 import { useBrowse } from './data/browseStore.ts';
 import { useArtwork } from './data/artworkStore.ts';
 import { useLibrary } from './data/libraryStore.ts';
+import { useYoutube } from './data/youtubeStore.ts';
 import { usePrefs } from './data/prefsStore.ts';
 import { useEngine } from './data/engineStore.ts';
 import { useThroughput } from './data/throughputStore.ts';
@@ -216,6 +217,7 @@ export default function App() {
   const checksums = useChecksums(session.client);
   const artwork = useArtwork(session.client);
   const library = useLibrary(session.client);
+  const youtube = useYoutube(session.client);
   const browse = useBrowse(session.client, library.ownedReleases);
   const preview = usePreview(session.client);
   const discover = useDiscover(session.client);
@@ -870,6 +872,11 @@ export default function App() {
             density={libDensity}
             onDensity={changeLibDensity}
             onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
+            youtube={youtube}
+            onBrowseArtist={(artist) => {
+              catalog.browse({ sourceKind: 'discogs', kind: 'artist', name: artist, url: null });
+              go('catalog');
+            }}
           />
         ) : section === 'want' ? (
           <WantListView

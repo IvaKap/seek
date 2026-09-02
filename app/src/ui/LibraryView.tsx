@@ -17,6 +17,8 @@ import { canChooseFolder, chooseFolder } from '../data/choose.ts';
 import { IconLibrary, IconSearch } from '../icons/index.tsx';
 import type { LibraryRelease } from '../data/libraryStore.ts';
 import { StatsView } from './StatsView.tsx';
+import { YoutubeSheetView } from './YoutubeSheetView.tsx';
+import type { YoutubeSession } from '../data/youtubeStore.ts';
 import { SegmentedControl } from './controls.tsx';
 import type { Segment } from './controls.tsx';
 import { ViewMenu } from './ViewMenu.tsx';
@@ -26,9 +28,12 @@ import { useNearViewport } from './useNearViewport.ts';
 import { Placeholder } from './ReleaseCard.tsx';
 import { IconRelease } from '../icons/index.tsx';
 
-const TABS: Segment<'releases' | 'stats'>[] = [
+type LibTab = 'releases' | 'stats' | 'youtube';
+
+const TABS: Segment<LibTab>[] = [
   { value: 'releases', label: 'Releases' },
   { value: 'stats', label: 'Statistics' },
+  { value: 'youtube', label: 'YouTube' },
 ];
 
 /**
@@ -228,7 +233,7 @@ function ReleaseRow({
 }
 
 export function LibraryView({
-  library, onSearch, density, onDensity, artwork,
+  library, onSearch, density, onDensity, artwork, youtube, onBrowseArtist,
 }: {
   library: LibrarySession;
   onSearch(query: string): void;
@@ -237,12 +242,16 @@ export function LibraryView({
    * Picking through records wants covers; auditing what you own wants a table. */
   density: Density;
   onDensity(d: Density): void;
+  /** The YouTube sheets, for the third tab. */
+  youtube: YoutubeSession;
+  /** Browse a Discogs artist's catalogue — a matched row's artist is clickable. */
+  onBrowseArtist(artist: string): void;
   artwork?: ArtworkSession;
 }) {
   const [filter, setFilter] = useState('');
   const [readTags, setReadTags] = useState(true);
   const [dropping, setDropping] = useState(false);
-  const [tab, setTab] = useState<'releases' | 'stats'>('releases');
+  const [tab, setTab] = useState<LibTab>('releases');
 
   /* Drop folders here to scan them as well as the download folder.
    *
@@ -301,59 +310,68 @@ export function LibraryView({
       <header className="header header--plain">
         <h1 className="pane__title">Library</h1>
         <p className="pane__subtitle">
-          {state.scannedAt
-            ? `${state.releaseCount.toLocaleString()} releases, `
-              + `${state.trackCount.toLocaleString()} tracks · scanned ${when(state.scannedAt)}`
-            : 'Not scanned yet.'}
+          {tab === 'youtube'
+            ? 'Playlists, cross-referenced to Discogs.'
+            : state.scannedAt
+              ? `${state.releaseCount.toLocaleString()} releases, `
+                + `${state.trackCount.toLocaleString()} tracks · scanned ${when(state.scannedAt)}`
+              : 'Not scanned yet.'}
         </p>
         <div className="browse__form lib__actions">
-          <button
-            type="button"
-            className="btn btn--primary pressable"
-            disabled={state.scanning || !library.available}
-            onPointerDown={() => library.scan(state.roots, readTags)}
-          >
-            {state.scanning ? 'Scanning…' : state.scannedAt ? 'Rescan' : 'Scan my downloads'}
-          </button>
-          {/* Absent in a plain browser, where there is no native panel — the
-              same contract as the folder settings, which is why this reuses
-              their `chooseFolder` rather than growing a second one. */}
-          {canChooseFolder() && (
-            <button
-              type="button"
-              className="btn pressable"
-              disabled={state.scanning || !library.available}
-              /* onClick, not onPointerDown as the button beside it uses: a
-                 keyboard Enter dispatches a click and never a pointerdown, so
-                 the house pattern here is silently mouse-only. The sidebar has
-                 the same problem and that is why Library cannot be reached from
-                 a keyboard at all — worth fixing broadly, but not by leaving
-                 this one unreachable in the meantime. */
-              onClick={addFolder}
-            >
-              Add a folder…
-            </button>
+          {/* The scan controls belong to the collection, not the YouTube sheet;
+              hidden there so the toolbar reads as one thing. */}
+          {tab !== 'youtube' && (
+            <>
+              <button
+                type="button"
+                className="btn btn--primary pressable"
+                disabled={state.scanning || !library.available}
+                onPointerDown={() => library.scan(state.roots, readTags)}
+              >
+                {state.scanning ? 'Scanning…' : state.scannedAt ? 'Rescan' : 'Scan my downloads'}
+              </button>
+              {/* Absent in a plain browser, where there is no native panel — the
+                  same contract as the folder settings, which is why this reuses
+                  their `chooseFolder` rather than growing a second one. */}
+              {canChooseFolder() && (
+                <button
+                  type="button"
+                  className="btn pressable"
+                  disabled={state.scanning || !library.available}
+                  /* onClick, not onPointerDown as the button beside it uses: a
+                     keyboard Enter dispatches a click and never a pointerdown, so
+                     the house pattern here is silently mouse-only. The sidebar has
+                     the same problem and that is why Library cannot be reached from
+                     a keyboard at all — worth fixing broadly, but not by leaving
+                     this one unreachable in the meantime. */
+                  onClick={addFolder}
+                >
+                  Add a folder…
+                </button>
+              )}
+              {/* Borrowed from the metadata panel — the same shape, a checkbox
+                  with an inline label. */}
+              <label className="mdpanel__embed">
+                <input
+                  type="checkbox"
+                  checked={readTags}
+                  disabled={state.scanning}
+                  onChange={(e) => setReadTags(e.target.checked)}
+                />
+                {/* Stated plainly rather than buried: it is a real trade, and on
+                    a network volume the difference is minutes. */}
+                <span>Read tags — slower, much more accurate</span>
+              </label>
+            </>
           )}
-          {/* Borrowed from the metadata panel — the same shape, a checkbox with
-              an inline label. Renamed along with it when `.meta` was
-              namespaced away from the search row's grid. */}
-          <label className="mdpanel__embed">
-            <input
-              type="checkbox"
-              checked={readTags}
-              disabled={state.scanning}
-              onChange={(e) => setReadTags(e.target.checked)}
-            />
-            {/* Stated plainly rather than buried: it is a real trade, and on a
-                network volume the difference is minutes. */}
-            <span>Read tags — slower, much more accurate</span>
-          </label>
-          {releases.length > 0 && (
-            <SegmentedControl<'releases' | 'stats'>
+          {/* Always reachable once connected — the YouTube tab does not depend
+              on the collection having been scanned. */}
+          {library.available && (
+            <SegmentedControl<LibTab>
               value={tab}
               segments={TABS}
               onChange={setTab}
-              label="What to show about the collection"
+              label="What to show"
             />
           )}
           {releases.length > 0 && tab === 'releases' && (
@@ -380,11 +398,13 @@ export function LibraryView({
       <div
         className="pane__scroll"
         data-dropping={dropping ? 'true' : undefined}
-        onDragOver={(e) => { e.preventDefault(); setDropping(true); }}
-        onDragLeave={() => setDropping(false)}
-        onDrop={onDrop}
+        /* Folder-drop scans the collection; on the YouTube tab there is nothing
+           to scan, so it is off there rather than quietly starting one. */
+        onDragOver={tab === 'youtube' ? undefined : (e) => { e.preventDefault(); setDropping(true); }}
+        onDragLeave={tab === 'youtube' ? undefined : () => setDropping(false)}
+        onDrop={tab === 'youtube' ? undefined : onDrop}
       >
-        {dropping && (
+        {dropping && tab !== 'youtube' && (
           <p className="lib__drop">Drop folders to add them to the scan</p>
         )}
         {!library.available ? (
@@ -393,6 +413,12 @@ export function LibraryView({
             <p className="empty__title">Not connected</p>
             <p className="empty__body">The library is built by the sidecar.</p>
           </div>
+        ) : tab === 'youtube' ? (
+          <YoutubeSheetView
+            youtube={youtube}
+            onSearch={onSearch}
+            onBrowseArtist={onBrowseArtist}
+          />
         ) : releases.length === 0 ? (
           <div className="empty empty--section">
             <span className="empty__icon"><IconLibrary size={28} painted={1.3} /></span>

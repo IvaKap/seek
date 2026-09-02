@@ -1090,6 +1090,112 @@ def browse_discogs(kind, entity_id, name, token, fetch_json=None,
     return name, int(entity_id), releases, complete, image
 
 
+def _release_confident(query, offered):
+    """A gentler test than `_resembles` for a track -> release match.
+
+    `_resembles` asks for containment, which is right for name -> name. Here the
+    query is a track ("Aural Imbalance Thought Patterns") and the offered string
+    is a whole release ("Aural Imbalance - Contented Life / Thought Patterns"),
+    so the query's words are SCATTERED through the offer rather than contiguous
+    — containment would reject the exact match the user's old script trusted.
+    Judge by how many of the query's words are present instead.
+    """
+    wanted = [w for w in (_fuzzy(word) for word in str(query).split()) if w]
+    have = {w for w in (_fuzzy(word) for word in str(offered).split()) if w}
+    if not wanted or not have:
+        return False
+    return sum(1 for w in wanted if w in have) / len(wanted) >= 0.6
+
+
+def _discogs_release_fields(release, track_title):
+    """A Discogs release payload -> a YoutubeMatch's fields (bar `status`)."""
+    release_id = int(release.get("id") or 0)
+    return {
+        "discogsId": release_id or None,
+        "artist": _discogs_credit(release),
+        "track": track_title or str(release.get("title") or ""),
+        "album": str(release.get("title") or ""),
+        # Kept as Discogs' own two separate fields; the frontend joins them for
+        # its one "Style" column, and keeping them apart means it can decide.
+        "genres": [str(g) for g in (release.get("genres") or [])],
+        "styles": [str(s) for s in (release.get("styles") or [])],
+        "releaseUrl": f"https://www.discogs.com/release/{release_id}" if release_id else "",
+    }
+
+
+_NO_RELEASE = {
+    "status": "none", "discogsId": None, "artist": "", "track": "",
+    "album": "", "genres": [], "styles": [], "releaseUrl": "",
+}
+
+
+def discogs_search_release(artist, title, token, fetch_json=None):
+    """The Discogs release a YouTube title most likely names.
+
+    Mirrors the flow the user's old Apps Script trusted: search `type=release`,
+    take the best hit, then fetch that release for its artists/album/genres/
+    styles. Two rate-gated requests.
+
+    It ALWAYS surfaces something when Discogs has anything — that is the 95% the
+    script relied on — but says how far to trust it: a hit whose words match the
+    query is `matched`; anything else Discogs returned is `low` (shown, hedged);
+    only a genuinely empty search is `none`. The verdict is the frontend's to
+    render with the hedge an automatic guess demands.
+    """
+    fetch_json = fetch_json or _fetch_json
+    headers = _discogs_auth(token)
+    query = " ".join(part for part in [(artist or "").strip(), (title or "").strip()] if part)
+    if not query:
+        return dict(_NO_RELEASE)
+
+    search = urllib.parse.urlencode({"q": query, "type": "release", "per_page": 5})
+    payload = fetch_json(f"{DISCOGS_API}/database/search?{search}",
+                         headers=headers, gate=_discogs_gate)
+    results = payload.get("results") or []
+    if not results:
+        return dict(_NO_RELEASE)
+
+    chosen, confident = None, False
+    for result in results:
+        if _release_confident(query, result.get("title")):
+            chosen, confident = result, True
+            break
+    if chosen is None:
+        chosen = results[0]
+
+    release_id = int(chosen.get("id") or 0)
+    detail = fetch_json(f"{DISCOGS_API}/releases/{release_id}",
+                        headers=headers, gate=_discogs_gate)
+    fields = _discogs_release_fields(detail, str(chosen.get("title") or ""))
+    fields["status"] = "matched" if confident else "low"
+    return fields
+
+
+def discogs_release_by_url(url, token, fetch_json=None):
+    """A release resolved from a pasted Discogs URL — the manual correction.
+
+    A master URL is followed to its main release, so the fields line up with the
+    search path. An artist or label URL is refused: it is not a release.
+    """
+    fetch_json = fetch_json or _fetch_json
+    headers = _discogs_auth(token)
+    match = _DISCOGS_PATH.search(url or "")
+    if not match:
+        raise DiscoverError("not a Discogs release URL")
+    kind, entity_id = match.group(1), int(match.group(2))
+    if kind == "master":
+        master = fetch_json(f"{DISCOGS_API}/masters/{entity_id}",
+                            headers=headers, gate=_discogs_gate)
+        entity_id = int(master.get("main_release") or 0) or entity_id
+    elif kind != "release":
+        raise DiscoverError("a release or master URL is needed, not an artist or label")
+    detail = fetch_json(f"{DISCOGS_API}/releases/{entity_id}",
+                        headers=headers, gate=_discogs_gate)
+    fields = _discogs_release_fields(detail, str(detail.get("title") or ""))
+    fields["status"] = "manual"
+    return fields
+
+
 # A wantlist is one person's own list rather than a whole discography, but a
 # serious collector's runs to thousands. Same rule as the catalogue above:
 # capped, and reported INCOMPLETE rather than silently cut.
@@ -1442,3 +1548,65 @@ def playlist_items(playlist_id, api_key, fetch_json=None):
         "total": total,
         "complete": complete,
     }
+
+
+#: The YouTube videos endpoint caps its id list at 50, like playlistItems.
+YOUTUBE_VIDEOS_MAX = 50
+
+_ISO8601_DURATION = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$")
+
+
+def _iso8601_seconds(text):
+    """`PT8M34S` -> 514. None when YouTube states no parseable duration.
+
+    A live or upcoming stream reports `P0D`, which does not match and so returns
+    None — correct, because it has no duration to show.
+    """
+    match = _ISO8601_DURATION.match(str(text or ""))
+    if not match:
+        return None
+    hours, minutes, seconds = (int(g) if g else 0 for g in match.groups())
+    total = hours * 3600 + minutes * 60 + seconds
+    return total or None
+
+
+def youtube_video_details(video_ids, api_key, fetch_json=None):
+    """Duration, description and upload date for up to 50 videos per request.
+
+    `playlistItems` carries none of these — this is the second call the old
+    script made per video, batched 50 at a time. Returns `{videoId: {...}}` for
+    the ids YouTube answered; a private or deleted id simply is not in the reply,
+    which the caller reads as "no detail" rather than an error.
+    """
+    ids = [v for v in (video_ids or []) if v]
+    if not ids:
+        return {}
+    if not api_key:
+        raise DiscoverError(
+            "a YouTube Data API key is needed to read video details",
+            needs="youtubeApiKey",
+        )
+
+    fetch = fetch_json or _fetch_json
+    out = {}
+    for start in range(0, len(ids), YOUTUBE_VIDEOS_MAX):
+        batch = ids[start:start + YOUTUBE_VIDEOS_MAX]
+        params = {
+            "part": "snippet,contentDetails",
+            "id": ",".join(batch),
+            "maxResults": str(YOUTUBE_VIDEOS_MAX),
+            "key": api_key,
+        }
+        payload = fetch(
+            "https://www.googleapis.com/youtube/v3/videos?"
+            + urllib.parse.urlencode(params)
+        )
+        for entry in payload.get("items") or []:
+            snippet = entry.get("snippet") or {}
+            details = entry.get("contentDetails") or {}
+            out[str(entry.get("id") or "")] = {
+                "description": str(snippet.get("description") or ""),
+                "durationSeconds": _iso8601_seconds(details.get("duration")),
+                "publishedAt": str(snippet.get("publishedAt") or "") or None,
+            }
+    return out

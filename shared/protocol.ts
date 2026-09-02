@@ -176,6 +176,25 @@ export type WantStatus = 'pending' | 'searching' | 'found' | 'downloaded' | 'not
  */
 export type DiscoverKind = 'track' | 'release' | 'artist' | 'label';
 
+/**
+ * Where a YouTube sheet's videos come from. 'playlist' is any playlist
+ * addressed by id (public today; private once signed in). 'liked' is the
+ * per-account 'LL' list, which is private and reachable only with OAuth.
+ */
+export type YoutubeSource = 'playlist' | 'liked';
+
+/**
+ * How a video was matched to a Discogs release.
+ *
+ * This is a DERIVED verdict the sidecar records, not raw data — the match is a
+ * fuzzy search over a title the frontend parsed, so the app is told how far to
+ * trust it. 'pending' has not been looked up yet; 'matched' resembled the
+ * query confidently; 'low' returned a release that did not clearly resemble it
+ * (show it, but hedged); 'none' found nothing; 'manual' was set by pasting a
+ * Discogs URL; 'error' means the lookup itself failed and can be retried.
+ */
+export type YoutubeMatchStatus = 'pending' | 'matched' | 'low' | 'none' | 'manual' | 'error';
+
 /* -------------------------------------------------------------- structs */
 
 /**
@@ -1302,6 +1321,212 @@ export interface DiscoverPlaylist {
    * one that admits it.
    */
   complete: boolean;
+}
+
+/**
+ * One video in a YouTube sheet, exactly as YouTube states it.
+ *
+ * Raw facts only — the artist/track split is parseTitle.ts's job on the
+ * frontend. `durationSeconds` is the ISO-8601 `PT#H#M#S` from the videos
+ * endpoint decoded to a plain integer; TypeScript formats '8 min 34 sec'.
+ * `publishedAt` is YouTube's own upload timestamp, verbatim; the video's
+ * 'liked date' is NOT available without OAuth and is deliberately absent.
+ */
+export interface YoutubeVideo {
+  /** The 11-character id; the row's identity within a sheet. */
+  videoId: string;
+
+  /** snippet.title, verbatim and unparsed. */
+  title: string;
+
+  /** The uploader (videoOwnerChannelTitle), not the playlist owner. */
+  channel: string;
+
+  /** https://www.youtube.com/watch?v={videoId}, built once here. */
+  url: string;
+
+  /** snippet.description, verbatim. Empty until enriched. */
+  description: string;
+
+  /**
+   * Decoded seconds, or null before the videos call ran / for a video that
+   * states none.
+   */
+  durationSeconds: number | null;
+
+  /** ISO-8601 upload time, or null. Not the liked date. */
+  publishedAt: string | null;
+}
+
+/**
+ * What Discogs says about a video, and how far to trust it.
+ *
+ * The fields mirror the old Apps Script: the search's first confident release,
+ * then the release detail for artists/album/genres/styles. `genres` and
+ * `styles` are kept as separate arrays (Discogs' own two fields); the frontend
+ * joins them for the one 'Style' column. Everything is empty while `status` is
+ * 'pending' or 'none'.
+ */
+export interface YoutubeMatch {
+  status: YoutubeMatchStatus;
+
+  /** The matched release id, or null. */
+  discogsId: number | null;
+
+  /** Release artist credit, Discogs' own assembly. */
+  artist: string;
+
+  /** The search hit's title (usually 'Artist - Release'). */
+  track: string;
+
+  /** Release title. */
+  album: string;
+
+  /** Discogs genres. */
+  genres: string[];
+
+  /** Discogs styles, the finer classification. */
+  styles: string[];
+
+  /** https://www.discogs.com/release/{id}, or empty. */
+  releaseUrl: string;
+}
+
+/**
+ * One line of a sheet: a video, its Discogs match, and whether the user has
+ * ticked it off.
+ */
+export interface YoutubeRow {
+  video: YoutubeVideo;
+  match: YoutubeMatch;
+
+  /**
+   * A user-set tick, persisted. Distinct from Seek's owned-library detection —
+   * this is the manual checkbox the spreadsheet had.
+   */
+  downloaded: boolean;
+}
+
+/**
+ * One playlist, as a persisted sheet. The user's own curated state, kept in
+ * seek-state.json — never pynicotine's config.
+ */
+export interface YoutubeSheet {
+  /** Stable sheet id, minted by the sidecar. */
+  id: string;
+
+  /** Display name; falls back to the source id. */
+  title: string;
+  source: YoutubeSource;
+
+  /** Playlist id, or 'LL' for liked. */
+  sourceId: string;
+
+  /** In playlist order. */
+  rows: YoutubeRow[];
+
+  /** What YouTube says the playlist holds. */
+  total: number;
+
+  /**
+   * False when the sidecar stopped paginating early — same contract as
+   * DiscoverPlaylist.
+   */
+  complete: boolean;
+
+  /** Epoch seconds the sheet was created. */
+  addedAt: number;
+
+  /** Epoch seconds of the last successful fetch, or null. */
+  lastFetchedAt: number | null;
+
+  /**
+   * True while a Discogs enrichment pass is running for this sheet, so the UI
+   * can show progress rather than a frozen table.
+   */
+  enriching: boolean;
+
+  /** Rows whose match is still 'pending' — the work left. */
+  pending: number;
+}
+
+/**
+ * Every YouTube sheet. Broadcast on structural change (a sheet added, removed,
+ * or a tick toggled); per-sheet progress rides `youtube.sheet`.
+ */
+export interface YoutubeState {
+  /** In the order they were added. */
+  sheets: YoutubeSheet[];
+}
+
+/**
+ * One row's Discogs query, DERIVED on the frontend.
+ *
+ * Enrichment runs in the sidecar (it is rate-gated HTTP), but the artist and
+ * title come from parseTitle.ts — so the frontend hands them in rather than
+ * the sidecar re-deriving them, keeping the seam intact.
+ */
+export interface YoutubeQuery {
+  /** Which row this query is for. */
+  videoId: string;
+
+  /** Parsed artist, or empty when the title could not be split. */
+  artist: string;
+
+  /** Parsed title, or the cleaned whole title as a fallback. */
+  title: string;
+}
+
+/**
+ * Fetch a playlist and add it as a sheet. Replies immediately; the sheet
+ * arrives on `youtube.state` once the listing is fetched.
+ */
+export interface YoutubeAddSheetParams {
+  source: YoutubeSource;
+
+  /** Playlist id, or 'LL' for liked (needs sign-in). */
+  sourceId: string;
+
+  /** Display title; falls back to the source id. */
+  title: string | null;
+}
+
+/** Target one sheet, by id. */
+export interface YoutubeSheetParams {
+  sheetId: string;
+}
+
+/** Tick or untick one row. */
+export interface YoutubeDownloadedParams {
+  sheetId: string;
+  videoId: string;
+  downloaded: boolean;
+}
+
+/**
+ * Look up Discogs for the given rows. Only the rows listed are searched, so a
+ * caller can enrich just the pending ones. Replies immediately; progress
+ * arrives on `youtube.sheet`.
+ */
+export interface YoutubeEnrichParams {
+  sheetId: string;
+
+  /** One per row to look up. */
+  queries: YoutubeQuery[];
+}
+
+/**
+ * Redo one row's match. With `discogsUrl` the release is used verbatim (the
+ * manual correction); otherwise `artist`/`title` are searched again.
+ */
+export interface YoutubeRematchParams {
+  sheetId: string;
+  videoId: string;
+  artist: string | null;
+  title: string | null;
+
+  /** A Discogs release/master URL to use as-is. */
+  discogsUrl: string | null;
 }
 
 /**
@@ -3231,6 +3456,36 @@ export interface CommandParams {
    * thread.
    */
   'discover.browse': DiscoverBrowseParams;
+  /** Every YouTube sheet and its rows. */
+  'youtube.list': Record<string, never>;
+  /**
+   * Fetch a playlist and add it as a sheet. Replies immediately with a
+   * requestId; the sheet arrives on `youtube.state` once fetched, because a
+   * long playlist costs several rate-limited requests. Public playlists need a
+   * YouTube Data API key; 'liked' and private playlists need sign-in.
+   */
+  'youtube.addSheet': YoutubeAddSheetParams;
+  /**
+   * Re-fetch a sheet's playlist, appending videos not already in it (keyed by
+   * videoId) and never disturbing existing rows or their ticks. Replies
+   * immediately; changes arrive on `youtube.sheet`.
+   */
+  'youtube.refreshSheet': YoutubeSheetParams;
+  /** Delete a sheet and everything in it. */
+  'youtube.removeSheet': YoutubeSheetParams;
+  /** Tick or untick one row. */
+  'youtube.setDownloaded': YoutubeDownloadedParams;
+  /**
+   * Run Discogs lookups for the given rows. Replies immediately; each match
+   * arrives on `youtube.sheet` as it completes, because Discogs is gated to
+   * one request per second and a match costs two.
+   */
+  'youtube.enrich': YoutubeEnrichParams;
+  /**
+   * Redo one row's Discogs match, by re-searching or by a pasted release URL.
+   * Replies immediately; the result arrives on `youtube.sheet`.
+   */
+  'youtube.rematch': YoutubeRematchParams;
   /** Recent searches, newest first. */
   'history.list': Record<string, never>;
   /** Note that a search was run. */
@@ -3349,6 +3604,13 @@ export interface CommandResult {
   'discover.wantlist': RequestAccepted;
   'discover.related': RequestAccepted;
   'discover.browse': RequestAccepted;
+  'youtube.list': YoutubeState;
+  'youtube.addSheet': RequestAccepted;
+  'youtube.refreshSheet': RequestAccepted;
+  'youtube.removeSheet': YoutubeState;
+  'youtube.setDownloaded': YoutubeState;
+  'youtube.enrich': RequestAccepted;
+  'youtube.rematch': RequestAccepted;
   'history.list': HistoryState;
   'history.record': HistoryState;
   'history.clear': HistoryState;
@@ -3442,6 +3704,13 @@ export const COMMAND_NAMES = [
   'discover.wantlist',
   'discover.related',
   'discover.browse',
+  'youtube.list',
+  'youtube.addSheet',
+  'youtube.refreshSheet',
+  'youtube.removeSheet',
+  'youtube.setDownloaded',
+  'youtube.enrich',
+  'youtube.rematch',
   'history.list',
   'history.record',
   'history.clear',
@@ -3583,6 +3852,19 @@ export interface EventPayload {
   'discover.tracklistParsed': DiscoverTracklist;
   /** The discography could not be fetched. */
   'discover.browseFailed': DiscoverFailed;
+  /**
+   * The set of YouTube sheets changed — one added, removed, or a tick toggled.
+   * Carries every sheet; per-row enrichment progress rides `youtube.sheet`
+   * instead so a slow match does not re-send the world.
+   */
+  'youtube.state': YoutubeState;
+  /**
+   * One sheet changed — a Discogs match landed, or a refresh added rows.
+   * Throttled during enrichment, on the same ~400ms tick the transfer list
+   * uses, because matches arrive about one a second and redrawing per match is
+   * the jitter the brief forbids.
+   */
+  'youtube.sheet': YoutubeSheet;
   /** A forwarded log line. */
   'log': LogEvent;
 }
@@ -3639,6 +3921,8 @@ export const EVENT_NAMES = [
   'discover.relatedResults',
   'discover.tracklistParsed',
   'discover.browseFailed',
+  'youtube.state',
+  'youtube.sheet',
   'log',
 ] as const satisfies readonly EventName[];
 

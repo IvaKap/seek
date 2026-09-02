@@ -15,8 +15,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { IconCheck, IconFilters } from '../icons/index.tsx';
 import { SORT_LABELS, naturallyDescending } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
-import { ALL_COLUMNS, COLUMNS, reorderColumns, toggleColumn } from '../domain/searchColumns.ts';
+import { SEARCH_COLUMN_SET } from '../domain/searchColumns.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
+import type { ColumnSet } from '../domain/columns.ts';
 
 export type Density = 'comfortable' | 'compact' | 'table' | 'grid';
 
@@ -46,9 +47,9 @@ const DEFAULT_DENSITIES: Density[] = ['comfortable', 'compact', 'table'];
  * exists to remove.
  *
  * Optional, because Search uses this menu too and has its own ordering. */
-export function ViewMenu({
+export function ViewMenu<Id extends string = ColumnId>({
   density, onDensity, densities = DEFAULT_DENSITIES,
-  sort, onSort, descending, onDescending, columns, onColumns,
+  sort, onSort, descending, onDescending, columns, onColumns, columnSet,
   sortLabels = SORT_LABELS,
 }: {
   /* Optional: a list with only one shape offers no density at all. Uploads is
@@ -63,11 +64,15 @@ export function ViewMenu({
   descending?: boolean;
   onDescending?(d: boolean): void;
   /** Chosen table columns, in order. Only meaningful at `table` density. */
-  columns?: ColumnId[];
-  onColumns?(next: ColumnId[]): void;
+  columns?: Id[];
+  onColumns?(next: Id[]): void;
+  /* Which table these columns belong to. Defaults to the search set, so the
+     search call site needs no change; the YouTube sheet passes its own. */
+  columnSet?: ColumnSet<Id>;
   /** Wording for the sort keys. Uploads reverse the sense of `peer`. */
   sortLabels?: Record<SortKey, string>;
 }) {
+  const cols = (columnSet ?? SEARCH_COLUMN_SET) as unknown as ColumnSet<Id>;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -144,9 +149,10 @@ export function ViewMenu({
           {columns && onColumns && density === 'table' && (
             <>
               <div className="viewmenu__section">Columns</div>
-              {ALL_COLUMNS.filter((id) => !COLUMNS[id].pinned).map((id) => {
+              {cols.all.filter((id) => !cols.isPinned(id)).map((id) => {
                 const on = columns.includes(id);
                 const at = columns.indexOf(id);
+                const pinnedCount = columns.filter((c) => cols.isPinned(c)).length;
                 return (
                   <div key={id} className="viewmenu__item viewmenu__item--col">
                     <button
@@ -154,12 +160,12 @@ export function ViewMenu({
                       role="menuitemcheckbox"
                       aria-checked={on}
                       className="viewmenu__coltoggle"
-                      onClick={() => onColumns(toggleColumn(columns, id))}
+                      onClick={() => onColumns(cols.toggle(columns, id))}
                     >
                       <span className="viewmenu__check" aria-hidden>
                         {on && <IconCheck size={13} painted={1.9} />}
                       </span>
-                      <span className="viewmenu__item-label">{COLUMNS[id].label}</span>
+                      <span className="viewmenu__item-label">{cols.label(id)}</span>
                     </button>
                     {/* Buttons rather than a drag handle: dragging inside a
                         popover fights the outside-click dismissal, and two
@@ -168,9 +174,9 @@ export function ViewMenu({
                       <button
                         type="button"
                         className="viewmenu__move"
-                        disabled={!on || at <= 1}
-                        aria-label={`Move ${COLUMNS[id].label} left`}
-                        onClick={() => onColumns(reorderColumns(columns, id, at - 1))}
+                        disabled={!on || at <= pinnedCount}
+                        aria-label={`Move ${cols.label(id)} left`}
+                        onClick={() => onColumns(cols.reorder(columns, id, at - 1))}
                       >
                         ↑
                       </button>
@@ -178,8 +184,8 @@ export function ViewMenu({
                         type="button"
                         className="viewmenu__move"
                         disabled={!on || at === columns.length - 1}
-                        aria-label={`Move ${COLUMNS[id].label} right`}
-                        onClick={() => onColumns(reorderColumns(columns, id, at + 1))}
+                        aria-label={`Move ${cols.label(id)} right`}
+                        onClick={() => onColumns(cols.reorder(columns, id, at + 1))}
                       >
                         ↓
                       </button>

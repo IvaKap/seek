@@ -35,6 +35,7 @@ import {
   ALL_COLUMNS, COLUMNS, DEFAULT_COLUMNS, templateFor, visibleColumns,
 } from '../domain/searchColumns.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
+import { useRootFontSize, useWidthRem } from './useColumnFit.ts';
 import { IconArrowUp } from '../icons/index.tsx';
 import { integer } from '../domain/format.ts';
 import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
@@ -52,55 +53,6 @@ import type { LibrarySession } from '../data/libraryStore.ts';
 const H_SOURCE_REM = 34 / 16;
 const H_ROW_REM: Record<SearchDensity, number> = { comfortable: 52 / 16, compact: 44 / 16, table: 32 / 16 };
 const H_CARD_REM: Record<SearchDensity, number> = { comfortable: 108 / 16, compact: 64 / 16, table: 34 / 16 };
-
-/** The root font size in px, tracked live so text scaling re-measures the list. */
-function useRootFontSize(): number {
-  const [px, setPx] = useState(() =>
-    typeof window === 'undefined'
-      ? 16
-      : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
-  );
-  useEffect(() => {
-    const read = () => {
-      const next = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      setPx((cur) => (Math.abs(cur - next) > 0.5 ? next : cur));
-    };
-    read();
-    const ro = new ResizeObserver(read);
-    ro.observe(document.documentElement);
-    return () => ro.disconnect();
-  }, []);
-  return px;
-}
-
-/**
- * The results container's width in REM, tracked live.
- *
- * Rem rather than pixels, and measured rather than declared in a media query,
- * for the same reason the rules this replaces were container queries: `rem` in
- * a media query resolves against the INITIAL font size, so it never fires when
- * the OS scales text — and a table that keeps nine columns at 200% text is a
- * table that overflows.
- */
-function useWidthRem(ref: React.RefObject<HTMLElement | null>, rootPx: number): number {
-  const [px, setPx] = useState(0);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    if (typeof ResizeObserver !== 'function') {
-      setPx(node.getBoundingClientRect().width);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      setPx(entry.contentRect.width);
-    });
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, [ref]);
-  // 0 before the first measurement: report a very wide container so the first
-  // paint shows every chosen column rather than flashing a stripped-down table.
-  return px === 0 ? Number.POSITIVE_INFINITY : px / rootPx;
-}
 
 const EXIT_MS = 180;
 const REFLOW_MS = 260;

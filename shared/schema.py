@@ -189,6 +189,24 @@ ENUMS = {
         "the frontend offers a different action for it.",
         ["track", "release", "artist", "label"],
     ),
+    "YoutubeSource": (
+        "Where a YouTube sheet's videos come from. 'playlist' is any playlist "
+        "addressed by id (public today; private once signed in). 'liked' is the "
+        "per-account 'LL' list, which is private and reachable only with OAuth.",
+        ["playlist", "liked"],
+    ),
+    "YoutubeMatchStatus": (
+        "How a video was matched to a Discogs release.\n"
+        "\n"
+        "This is a DERIVED verdict the sidecar records, not raw data — the match "
+        "is a fuzzy search over a title the frontend parsed, so the app is told "
+        "how far to trust it. 'pending' has not been looked up yet; 'matched' "
+        "resembled the query confidently; 'low' returned a release that did not "
+        "clearly resemble it (show it, but hedged); 'none' found nothing; "
+        "'manual' was set by pasting a Discogs URL; 'error' means the lookup "
+        "itself failed and can be retried.",
+        ["pending", "matched", "low", "none", "manual", "error"],
+    ),
 }
 
 # --------------------------------------------------------------------------
@@ -1119,6 +1137,142 @@ STRUCTS = {
                 "same contract as DiscoverCatalog: a truncated list that "
                 "claims to be whole is worse than one that admits it.",
             ),
+        ],
+    ),
+    "YoutubeVideo": (
+        "One video in a YouTube sheet, exactly as YouTube states it.\n"
+        "\n"
+        "Raw facts only — the artist/track split is parseTitle.ts's job on the "
+        "frontend. `durationSeconds` is the ISO-8601 `PT#H#M#S` from the videos "
+        "endpoint decoded to a plain integer; TypeScript formats '8 min 34 sec'. "
+        "`publishedAt` is YouTube's own upload timestamp, verbatim; the video's "
+        "'liked date' is NOT available without OAuth and is deliberately absent.",
+        [
+            ("videoId", "str", "The 11-character id; the row's identity within a sheet."),
+            ("title", "str", "snippet.title, verbatim and unparsed."),
+            ("channel", "str", "The uploader (videoOwnerChannelTitle), not the playlist owner."),
+            ("url", "str", "https://www.youtube.com/watch?v={videoId}, built once here."),
+            ("description", "str", "snippet.description, verbatim. Empty until enriched."),
+            ("durationSeconds", "int?", "Decoded seconds, or null before the videos call ran / for a video that states none."),
+            ("publishedAt", "str?", "ISO-8601 upload time, or null. Not the liked date."),
+        ],
+    ),
+    "YoutubeMatch": (
+        "What Discogs says about a video, and how far to trust it.\n"
+        "\n"
+        "The fields mirror the old Apps Script: the search's first confident "
+        "release, then the release detail for artists/album/genres/styles. "
+        "`genres` and `styles` are kept as separate arrays (Discogs' own two "
+        "fields); the frontend joins them for the one 'Style' column. Everything "
+        "is empty while `status` is 'pending' or 'none'.",
+        [
+            ("status", "YoutubeMatchStatus", ""),
+            ("discogsId", "int?", "The matched release id, or null."),
+            ("artist", "str", "Release artist credit, Discogs' own assembly."),
+            ("track", "str", "The search hit's title (usually 'Artist - Release')."),
+            ("album", "str", "Release title."),
+            ("genres", "str[]", "Discogs genres."),
+            ("styles", "str[]", "Discogs styles, the finer classification."),
+            ("releaseUrl", "str", "https://www.discogs.com/release/{id}, or empty."),
+        ],
+    ),
+    "YoutubeRow": (
+        "One line of a sheet: a video, its Discogs match, and whether the user "
+        "has ticked it off.",
+        [
+            ("video", "YoutubeVideo", ""),
+            ("match", "YoutubeMatch", ""),
+            (
+                "downloaded",
+                "bool",
+                "A user-set tick, persisted. Distinct from Seek's owned-library "
+                "detection — this is the manual checkbox the spreadsheet had.",
+            ),
+        ],
+    ),
+    "YoutubeSheet": (
+        "One playlist, as a persisted sheet. The user's own curated state, kept "
+        "in seek-state.json — never pynicotine's config.",
+        [
+            ("id", "str", "Stable sheet id, minted by the sidecar."),
+            ("title", "str", "Display name; falls back to the source id."),
+            ("source", "YoutubeSource", ""),
+            ("sourceId", "str", "Playlist id, or 'LL' for liked."),
+            ("rows", "YoutubeRow[]", "In playlist order."),
+            ("total", "int", "What YouTube says the playlist holds."),
+            (
+                "complete",
+                "bool",
+                "False when the sidecar stopped paginating early — same contract "
+                "as DiscoverPlaylist.",
+            ),
+            ("addedAt", "int", "Epoch seconds the sheet was created."),
+            ("lastFetchedAt", "int?", "Epoch seconds of the last successful fetch, or null."),
+            (
+                "enriching",
+                "bool",
+                "True while a Discogs enrichment pass is running for this sheet, "
+                "so the UI can show progress rather than a frozen table.",
+            ),
+            ("pending", "int", "Rows whose match is still 'pending' — the work left."),
+        ],
+    ),
+    "YoutubeState": (
+        "Every YouTube sheet. Broadcast on structural change (a sheet added, "
+        "removed, or a tick toggled); per-sheet progress rides `youtube.sheet`.",
+        [("sheets", "YoutubeSheet[]", "In the order they were added.")],
+    ),
+    "YoutubeQuery": (
+        "One row's Discogs query, DERIVED on the frontend.\n"
+        "\n"
+        "Enrichment runs in the sidecar (it is rate-gated HTTP), but the artist "
+        "and title come from parseTitle.ts — so the frontend hands them in rather "
+        "than the sidecar re-deriving them, keeping the seam intact.",
+        [
+            ("videoId", "str", "Which row this query is for."),
+            ("artist", "str", "Parsed artist, or empty when the title could not be split."),
+            ("title", "str", "Parsed title, or the cleaned whole title as a fallback."),
+        ],
+    ),
+    "YoutubeAddSheetParams": (
+        "Fetch a playlist and add it as a sheet. Replies immediately; the sheet "
+        "arrives on `youtube.state` once the listing is fetched.",
+        [
+            ("source", "YoutubeSource", ""),
+            ("sourceId", "str", "Playlist id, or 'LL' for liked (needs sign-in)."),
+            ("title", "str?", "Display title; falls back to the source id."),
+        ],
+    ),
+    "YoutubeSheetParams": (
+        "Target one sheet, by id.",
+        [("sheetId", "str", "")],
+    ),
+    "YoutubeDownloadedParams": (
+        "Tick or untick one row.",
+        [
+            ("sheetId", "str", ""),
+            ("videoId", "str", ""),
+            ("downloaded", "bool", ""),
+        ],
+    ),
+    "YoutubeEnrichParams": (
+        "Look up Discogs for the given rows. Only the rows listed are searched, "
+        "so a caller can enrich just the pending ones. Replies immediately; "
+        "progress arrives on `youtube.sheet`.",
+        [
+            ("sheetId", "str", ""),
+            ("queries", "YoutubeQuery[]", "One per row to look up."),
+        ],
+    ),
+    "YoutubeRematchParams": (
+        "Redo one row's match. With `discogsUrl` the release is used verbatim "
+        "(the manual correction); otherwise `artist`/`title` are searched again.",
+        [
+            ("sheetId", "str", ""),
+            ("videoId", "str", ""),
+            ("artist", "str?", ""),
+            ("title", "str?", ""),
+            ("discogsUrl", "str?", "A Discogs release/master URL to use as-is."),
         ],
     ),
     "DiscogsWant": (
@@ -2817,6 +2971,37 @@ COMMANDS = {
         "DiscoverBrowseParams",
         "RequestAccepted",
     ),
+    "youtube.list": ("Every YouTube sheet and its rows.", None, "YoutubeState"),
+    "youtube.addSheet": (
+        "Fetch a playlist and add it as a sheet. Replies immediately with a "
+        "requestId; the sheet arrives on `youtube.state` once fetched, because "
+        "a long playlist costs several rate-limited requests. Public playlists "
+        "need a YouTube Data API key; 'liked' and private playlists need sign-in.",
+        "YoutubeAddSheetParams",
+        "RequestAccepted",
+    ),
+    "youtube.refreshSheet": (
+        "Re-fetch a sheet's playlist, appending videos not already in it (keyed "
+        "by videoId) and never disturbing existing rows or their ticks. Replies "
+        "immediately; changes arrive on `youtube.sheet`.",
+        "YoutubeSheetParams",
+        "RequestAccepted",
+    ),
+    "youtube.removeSheet": ("Delete a sheet and everything in it.", "YoutubeSheetParams", "YoutubeState"),
+    "youtube.setDownloaded": ("Tick or untick one row.", "YoutubeDownloadedParams", "YoutubeState"),
+    "youtube.enrich": (
+        "Run Discogs lookups for the given rows. Replies immediately; each match "
+        "arrives on `youtube.sheet` as it completes, because Discogs is gated to "
+        "one request per second and a match costs two.",
+        "YoutubeEnrichParams",
+        "RequestAccepted",
+    ),
+    "youtube.rematch": (
+        "Redo one row's Discogs match, by re-searching or by a pasted release "
+        "URL. Replies immediately; the result arrives on `youtube.sheet`.",
+        "YoutubeRematchParams",
+        "RequestAccepted",
+    ),
     "history.list": ("Recent searches, newest first.", None, "HistoryState"),
     "history.record": ("Note that a search was run.", "WishParams", "HistoryState"),
     "history.clear": ("Forget the search history.", None, "HistoryState"),
@@ -2955,5 +3140,18 @@ EVENTS = {
         "DiscoverTracklist",
     ),
     "discover.browseFailed": ("The discography could not be fetched.", "DiscoverFailed"),
+    "youtube.state": (
+        "The set of YouTube sheets changed — one added, removed, or a tick "
+        "toggled. Carries every sheet; per-row enrichment progress rides "
+        "`youtube.sheet` instead so a slow match does not re-send the world.",
+        "YoutubeState",
+    ),
+    "youtube.sheet": (
+        "One sheet changed — a Discogs match landed, or a refresh added rows. "
+        "Throttled during enrichment, on the same ~400ms tick the transfer list "
+        "uses, because matches arrive about one a second and redrawing per match "
+        "is the jitter the brief forbids.",
+        "YoutubeSheet",
+    ),
     "log": ("A forwarded log line.", "LogEvent"),
 }

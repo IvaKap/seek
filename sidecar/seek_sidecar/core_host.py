@@ -19,6 +19,7 @@ import base64
 import os
 import platform
 import sys
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -45,6 +46,20 @@ KIB = 1024
 # cap of 400 results per run: high enough that a normal run is remembered whole,
 # low enough that twenty wishes cost tens of kilobytes rather than megabytes.
 WISH_SEEN_CAP = 250
+
+# Guards the read-modify-write of seek-state.json. Until the YouTube tab, every
+# writer ran on pynicotine's main thread and could not race itself; enrichment
+# writes matches from the discover worker pool, so the file's load→mutate→dump
+# now has to be atomic against a concurrent write from either side. Re-entrant
+# because `_save_state` loads inside the same lock. One process, one CoreHost
+# (test_integration.py owns the only instance), so a module lock is enough.
+_STATE_LOCK = threading.RLock()
+
+# A YouTube row before its Discogs lookup has run. Copied per row, never shared.
+_YT_PENDING = {
+    "status": "pending", "discogsId": None, "artist": "", "track": "",
+    "album": "", "genres": [], "styles": [], "releaseUrl": "",
+}
 
 # Components deliberately left out (RECON.md §2):
 #   update_checker  — calls out to pypi.org on start. The brief says no
@@ -900,23 +915,29 @@ class CoreHost:
         return os.path.join(self.data_folder, "seek-state.json")
 
     def _load_state(self):
-        try:
-            with open(self._state_path(), encoding="utf-8") as handle:
-                data = json.load(handle)
-                return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
+        # Under the lock so a read never sees a half-written file mid-dump.
+        with _STATE_LOCK:
+            try:
+                with open(self._state_path(), encoding="utf-8") as handle:
+                    data = json.load(handle)
+                    return data if isinstance(data, dict) else {}
+            except (OSError, ValueError):
+                return {}
 
     def _save_state(self, **updates):
-        state = self._load_state()
-        state.update(updates)
-        try:
-            os.makedirs(self.data_folder, exist_ok=True)
-            with open(self._state_path(), "w", encoding="utf-8") as handle:
-                json.dump(state, handle, indent=2)
-        except OSError:
-            log.exception("could not persist Seek state")
-        return state
+        # The whole load→update→dump is one critical section: a worker writing a
+        # match and the main thread writing a setting must not clobber each
+        # other. RLock, because _load_state re-enters it.
+        with _STATE_LOCK:
+            state = self._load_state()
+            state.update(updates)
+            try:
+                os.makedirs(self.data_folder, exist_ok=True)
+                with open(self._state_path(), "w", encoding="utf-8") as handle:
+                    json.dump(state, handle, indent=2)
+            except OSError:
+                log.exception("could not persist Seek state")
+            return state
 
     def _stored_consent(self):
         """Read the persisted sharing decision.
@@ -1627,6 +1648,314 @@ class CoreHost:
         """
         stored = self._load_state().get("app_settings") or {}
         return str(stored.get("youtubeApiKey") or "")
+
+    # -- YouTube sheets ----------------------------------------------------
+    #
+    # A playlist, fetched once and kept as a persisted "sheet", each row a video
+    # cross-referenced to a Discogs release. Discogs search is rate-gated and
+    # costs two requests a row, so enrichment runs on the discover pool and
+    # dribbles matches back on `youtube.sheet` rather than blocking a command.
+    #
+    # THE SEAM HOLDS: the sidecar fetches and searches, but the artist/title a
+    # row is searched BY is parsed on the frontend (parseTitle.ts) and handed in
+    # via `youtube.enrich` — Python derives nothing from a title here.
+
+    def _yt_enriching(self):
+        """Sheet ids with a live enrichment pass. Runtime only, not persisted."""
+        current = getattr(self, "_yt_enriching_set", None)
+        if current is None:
+            current = set()
+            self._yt_enriching_set = current
+        return current
+
+    def _youtube_sheets(self):
+        stored = self._load_state().get("youtube_sheets")
+        return list(stored) if isinstance(stored, list) else []
+
+    def _mutate_youtube(self, fn):
+        """Read → mutate → save the sheet list as one locked critical section.
+
+        `fn(sheets)` edits the list in place and may return a value. Held under
+        `_STATE_LOCK` for the whole span so a worker's match and a command's
+        edit cannot interleave; a CommandError raised inside `fn` propagates
+        without writing.
+        """
+        with _STATE_LOCK:
+            sheets = self._youtube_sheets()
+            result = fn(sheets)
+            self._save_state(youtube_sheets=sheets)
+            return result
+
+    @staticmethod
+    def _find_sheet(sheets, sheet_id):
+        return next((s for s in sheets if s.get("id") == sheet_id), None)
+
+    def _sheet_view(self, sheet):
+        """The persisted sheet plus the two computed fields the wire wants."""
+        view = dict(sheet)
+        view.setdefault("lastFetchedAt", None)
+        view["pending"] = sum(
+            1 for r in sheet.get("rows", []) if r["match"]["status"] == "pending"
+        )
+        view["enriching"] = sheet.get("id") in self._yt_enriching()
+        return view
+
+    def _youtube_state(self):
+        return {"sheets": [self._sheet_view(s) for s in self._youtube_sheets()]}
+
+    def _youtube_row(self, item, details):
+        vid = str(item.get("videoId") or "")
+        detail = details.get(vid, {})
+        return {
+            "video": {
+                "videoId": vid,
+                "title": str(item.get("title") or ""),
+                "channel": str(item.get("channel") or ""),
+                "url": f"https://www.youtube.com/watch?v={vid}" if vid else "",
+                "description": str(detail.get("description") or ""),
+                "durationSeconds": detail.get("durationSeconds"),
+                "publishedAt": detail.get("publishedAt"),
+            },
+            "match": dict(_YT_PENDING),
+            "downloaded": False,
+        }
+
+    def _broadcast_sheet(self, sheet_id):
+        sheet = self._find_sheet(self._youtube_sheets(), sheet_id)
+        if sheet is not None:
+            self.bridge.broadcast("youtube.sheet", self._sheet_view(sheet))
+
+    def _broadcast_youtube_state(self):
+        self.bridge.broadcast("youtube.state", self._youtube_state())
+
+    def _apply_match(self, sheet_id, video_id, match):
+        """Set one row's match. False if the sheet or row is gone (deleted mid-run)."""
+        def fn(sheets):
+            sheet = self._find_sheet(sheets, sheet_id)
+            if sheet is None:
+                return False
+            for row in sheet["rows"]:
+                if row["video"]["videoId"] == video_id:
+                    row["match"] = match
+                    return True
+            return False
+        return self._mutate_youtube(fn)
+
+    def _youtube_fetch_failed(self, request_id, source_id, error):
+        """Reuse discover.parseFailed — the youtube store keys it by requestId."""
+        self.bridge.broadcast("discover.parseFailed", {
+            "requestId": request_id, "url": source_id, "reason": str(error),
+            "needs": getattr(error, "needs", ""),
+            "unreachable": bool(getattr(error, "unreachable", False)),
+            "unauthorised": bool(getattr(error, "unauthorised", False)),
+        })
+
+    def _cmd_youtube_list(self, _params):
+        return self._youtube_state()
+
+    def _cmd_youtube_addSheet(self, params):
+        source = str(params.get("source") or "playlist")
+        source_id = str(params.get("sourceId") or "").strip()
+        title = str(params.get("title") or "").strip() or source_id
+        if not source_id:
+            raise CommandError("bad_request", "no playlist id")
+        if source == "liked":
+            raise CommandError(
+                "unsupported",
+                "liked videos need Google sign-in, which is not set up",
+            )
+        if not self._lookups_allowed():
+            raise CommandError("unsupported", "external lookups are switched off")
+        request_id = registries.transfer_id("youtube.add", source_id)
+        self._discover_pool.submit(
+            self._run_add_sheet, request_id, source, source_id, title
+        )
+        return {"requestId": request_id}
+
+    def _run_add_sheet(self, request_id, source, source_id, title):
+        try:
+            key = self._youtube_key()
+            listing = discover_mod.playlist_items(source_id, key)
+            details = discover_mod.youtube_video_details(
+                [it["videoId"] for it in listing["items"] if it.get("videoId")], key
+            )
+        except discover_mod.DiscoverError as error:
+            self._youtube_fetch_failed(request_id, source_id, error)
+            return
+        except Exception as error:                       # noqa: BLE001 - worker
+            log.exception("youtube add failed for %s", source_id)
+            self._youtube_fetch_failed(request_id, source_id, error)
+            return
+
+        now = int(time.time())
+        sheet = {
+            "id": uuid.uuid4().hex[:12],
+            "title": title,
+            "source": source,
+            "sourceId": source_id,
+            "rows": [self._youtube_row(it, details) for it in listing["items"]],
+            "total": int(listing.get("total") or 0),
+            "complete": bool(listing.get("complete", True)),
+            "addedAt": now,
+            "lastFetchedAt": now,
+        }
+        self._mutate_youtube(lambda sheets: sheets.append(sheet))
+        self._broadcast_youtube_state()
+
+    def _cmd_youtube_refreshSheet(self, params):
+        if not self._lookups_allowed():
+            raise CommandError("unsupported", "external lookups are switched off")
+        sheet_id = str(params.get("sheetId") or "")
+        if self._find_sheet(self._youtube_sheets(), sheet_id) is None:
+            raise CommandError("not_found", "no such sheet")
+        request_id = registries.transfer_id("youtube.refresh", sheet_id)
+        self._discover_pool.submit(self._run_refresh_sheet, request_id, sheet_id)
+        return {"requestId": request_id}
+
+    def _run_refresh_sheet(self, request_id, sheet_id):
+        sheet = self._find_sheet(self._youtube_sheets(), sheet_id)
+        if sheet is None:
+            return
+        try:
+            key = self._youtube_key()
+            listing = discover_mod.playlist_items(sheet["sourceId"], key)
+            have = {r["video"]["videoId"] for r in sheet["rows"]}
+            fresh = [it["videoId"] for it in listing["items"]
+                     if it.get("videoId") and it["videoId"] not in have]
+            details = discover_mod.youtube_video_details(fresh, key)
+        except discover_mod.DiscoverError as error:
+            self._youtube_fetch_failed(request_id, sheet["sourceId"], error)
+            return
+        except Exception as error:                       # noqa: BLE001 - worker
+            log.exception("youtube refresh failed for %s", sheet_id)
+            self._youtube_fetch_failed(request_id, sheet["sourceId"], error)
+            return
+
+        def fn(sheets):
+            live = self._find_sheet(sheets, sheet_id)
+            if live is None:
+                return
+            seen = {r["video"]["videoId"] for r in live["rows"]}
+            for item in listing["items"]:
+                vid = item.get("videoId") or ""
+                if vid and vid not in seen:
+                    live["rows"].append(self._youtube_row(item, details))
+                    seen.add(vid)
+            live["total"] = int(listing.get("total") or len(live["rows"]))
+            live["complete"] = bool(listing.get("complete", True))
+            live["lastFetchedAt"] = int(time.time())
+        self._mutate_youtube(fn)
+        self._broadcast_sheet(sheet_id)
+
+    def _cmd_youtube_removeSheet(self, params):
+        sheet_id = str(params.get("sheetId") or "")
+
+        def fn(sheets):
+            before = len(sheets)
+            sheets[:] = [s for s in sheets if s.get("id") != sheet_id]
+            if len(sheets) == before:
+                raise CommandError("not_found", "no such sheet")
+        self._mutate_youtube(fn)
+        state = self._youtube_state()
+        self.bridge.broadcast("youtube.state", state)
+        return state
+
+    def _cmd_youtube_setDownloaded(self, params):
+        sheet_id = str(params.get("sheetId") or "")
+        video_id = str(params.get("videoId") or "")
+        value = bool(params.get("downloaded"))
+
+        def fn(sheets):
+            sheet = self._find_sheet(sheets, sheet_id)
+            if sheet is None:
+                raise CommandError("not_found", "no such sheet")
+            for row in sheet["rows"]:
+                if row["video"]["videoId"] == video_id:
+                    row["downloaded"] = value
+                    return
+            raise CommandError("not_found", "no such row")
+        self._mutate_youtube(fn)
+        state = self._youtube_state()
+        self.bridge.broadcast("youtube.state", state)
+        return state
+
+    def _cmd_youtube_enrich(self, params):
+        if not self._lookups_allowed():
+            raise CommandError("unsupported", "external lookups are switched off")
+        sheet_id = str(params.get("sheetId") or "")
+        if self._find_sheet(self._youtube_sheets(), sheet_id) is None:
+            raise CommandError("not_found", "no such sheet")
+        queries = [q for q in (params.get("queries") or []) if q.get("videoId")]
+        request_id = registries.transfer_id("youtube.enrich", sheet_id)
+        self._discover_pool.submit(self._run_enrich, request_id, sheet_id, queries)
+        return {"requestId": request_id}
+
+    def _run_enrich(self, request_id, sheet_id, queries):
+        token = self._discogs_token()
+        self._yt_enriching().add(sheet_id)
+        self._broadcast_sheet(sheet_id)
+        try:
+            for query in queries:
+                # Checked BEFORE the search, not after: a sheet deleted mid-pass
+                # must stop us before we spend the next rate-gated Discogs
+                # request, not merely stop us from storing its result.
+                if self._find_sheet(self._youtube_sheets(), sheet_id) is None:
+                    break
+                video_id = str(query.get("videoId") or "")
+                match = self._match_one(
+                    token, str(query.get("artist") or ""), str(query.get("title") or "")
+                )
+                if not self._apply_match(sheet_id, video_id, match):
+                    break
+                self._broadcast_sheet(sheet_id)
+        finally:
+            self._yt_enriching().discard(sheet_id)
+            self._broadcast_sheet(sheet_id)
+
+    def _cmd_youtube_rematch(self, params):
+        if not self._lookups_allowed():
+            raise CommandError("unsupported", "external lookups are switched off")
+        sheet_id = str(params.get("sheetId") or "")
+        video_id = str(params.get("videoId") or "")
+        if self._find_sheet(self._youtube_sheets(), sheet_id) is None:
+            raise CommandError("not_found", "no such sheet")
+        request_id = registries.transfer_id("youtube.rematch", sheet_id + video_id)
+        self._discover_pool.submit(
+            self._run_rematch, request_id, sheet_id, video_id,
+            str(params.get("artist") or ""), str(params.get("title") or ""),
+            str(params.get("discogsUrl") or "").strip(),
+        )
+        return {"requestId": request_id}
+
+    def _run_rematch(self, request_id, sheet_id, video_id, artist, title, url):
+        token = self._discogs_token()
+        if url:
+            try:
+                match = discover_mod.discogs_release_by_url(url, token)
+            except discover_mod.DiscoverError as error:
+                match = dict(_YT_PENDING)
+                match["status"] = "error"
+                log.info("manual rematch rejected: %s", error)
+            except Exception:                            # noqa: BLE001 - worker
+                log.exception("manual rematch failed")
+                match = dict(_YT_PENDING)
+                match["status"] = "error"
+        else:
+            match = self._match_one(token, artist, title)
+        self._apply_match(sheet_id, video_id, match)
+        self._broadcast_sheet(sheet_id)
+
+    def _match_one(self, token, artist, title):
+        """One Discogs search, turned into a match. Never raises into the pool."""
+        try:
+            return discover_mod.discogs_search_release(artist, title, token)
+        except discover_mod.DiscoverError as error:
+            log.info("discogs match unavailable: %s", error)
+        except Exception:                                # noqa: BLE001 - worker
+            log.exception("discogs match failed")
+        match = dict(_YT_PENDING)
+        match["status"] = "error"
+        return match
 
     def _cmd_discover_fingerprint(self, params):
         if not self._lookups_allowed():
