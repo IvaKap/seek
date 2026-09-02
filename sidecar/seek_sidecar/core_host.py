@@ -3476,9 +3476,24 @@ class CoreHost:
     def _cmd_transfer_cancel(self, params):
         items = self._iter_upstream_transfers(params["transferIds"])
         if items["download"]:
+            # Abort AND clear. Abort alone is not a cancel: upstream files an
+            # aborted download into `failed_users` and leaves it in
+            # `self.transfers` (transfers.py `_abort_transfer` exempts only
+            # FINISHED/FILTERED/PAUSED, so CANCELLED lands in failed), and when
+            # the peer re-offers the next queued file of a folder,
+            # `_transfer_request_downloads` finds it in `failed_users` and
+            # RESTARTS it — so the folder kept downloading through Cancel. Clear
+            # runs `_unfail_transfer` + drops it from `self.transfers`, so the
+            # re-offer is refused and the download truly stops. (This is why
+            # Pause works and Cancel did not: PAUSED is in the exempt set.)
+            #
+            # It also removes the rows, which is the intended "cancel = stop and
+            # remove"; Pause is the keep-for-later path. Partial bytes on disk
+            # are left exactly as `transfer.clear` leaves them — untouched.
             self.core.downloads.abort_downloads(
                 items["download"], self.TransferStatus.CANCELLED
             )
+            self.core.downloads.clear_downloads(items["download"])
         if items["upload"] and self.core.uploads is not None:
             # The denied_message is the difference between telling the peer you
             # stopped and just going quiet on them. Upstream sends it as an
