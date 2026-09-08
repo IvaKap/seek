@@ -1097,8 +1097,10 @@ export interface DiscoverParsed {
   genres: string[];
 
   /**
-   * For releases, when the provider gives one. Discogs does; Bandcamp's oEmbed
-   * does not, and its album page is Phase D4.
+   * For releases, when the provider gives one — a Discogs release, or a
+   * Bandcamp album read from its page's ld+json (per-track byArtist included,
+   * which is what makes a compilation's tracks searchable one by one). Empty
+   * otherwise.
    */
   tracklist: WantTrack[];
 

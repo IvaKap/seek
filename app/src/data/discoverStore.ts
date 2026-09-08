@@ -67,6 +67,10 @@ export interface DiscoverPreview {
   artworkUri: string | null;
   genres: string[];
   trackCount: number;
+  /** Per-track artist + title, for a release that states one (a Bandcamp album,
+   *  a Discogs release). The only way to find a compilation's tracks — its album
+   *  artist is "Various", which matches nothing. Empty otherwise. */
+  tracklist: Array<{ position: number; title: string; artist: string; duration: number | null }>;
   /** 1 when the provider stated the fields outright; a parse score otherwise. */
   confidence: number;
   /** Null when nothing was parsed — the provider simply told us. */
@@ -170,7 +174,7 @@ function skeleton(url: string, provider: UrlProvider | null): DiscoverPreview {
   return {
     url, provider, kind: 'track', rawTitle: '', artist: '', title: '',
     album: null, year: null, label: null, catalogNumber: null,
-    artworkUri: null, genres: [], trackCount: 0,
+    artworkUri: null, genres: [], trackCount: 0, tracklist: [],
     confidence: 0, parsedFrom: null, loading: true, error: null, needs: '',
   };
 }
@@ -246,6 +250,7 @@ export function previewFromWire(d: WireParsed): DiscoverPreview {
     artworkUri: d.artworkUri,
     genres: d.genres ?? [],
     trackCount: (d.tracklist ?? []).length,
+    tracklist: d.tracklist ?? [],
     confidence: stated ? 1 : (parsed?.confidence ?? 0),
     parsedFrom: stated ? null : (parsed?.from ?? null),
     loading: false,
@@ -279,6 +284,18 @@ export function previewQuery(preview: DiscoverPreview | null): string {
     return searchQuery({ artist: '', title: preview.title || preview.artist });
   }
   return searchQuery({ artist: preview.artist, title: preview.title });
+}
+
+/**
+ * The query for ONE track of a release. A compilation's album artist is
+ * "Various", which finds nothing on Soulseek — but each track states its own
+ * artist, so that is what to search. Falls back to the album artist for a
+ * single-artist album whose tracks are not separately credited.
+ */
+export function trackQuery(
+  preview: DiscoverPreview, track: { artist: string; title: string },
+): string {
+  return searchQuery({ artist: track.artist || preview.artist, title: track.title });
 }
 
 export function useDiscover(client: SidecarClient | null): DiscoverSession {
@@ -372,6 +389,7 @@ export function useDiscover(client: SidecarClient | null): DiscoverSession {
         artworkUri: null,
         genres: [],
         trackCount: 0,
+        tracklist: [],
         /* AcoustID's own score, passed through rather than reinterpreted. It
          * is confidence that the FINGERPRINT matched, which is a different
          * claim from "this metadata is right" — the card words it that way. */

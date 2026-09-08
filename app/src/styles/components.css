@@ -239,9 +239,12 @@
   font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
   color: var(--text-secondary);
 }
-.dig__track { display: flex; gap: var(--sp-2); min-width: 0; }
-.dig__track-at { color: var(--text-tertiary); flex: none; }
-.dig__track-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A compilation can be long; keep the searchable list scrollable, not endless. */
+.dig__tracks--scroll { max-height: 15rem; overflow-y: auto; align-self: stretch; }
+.dig__track { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.dig__track-at { color: var(--text-tertiary); flex: none; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dig__track-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dig__track .verify { flex: none; margin-left: auto; }
 .dig__track--more { color: var(--text-tertiary); }
 .dig__kbd {
   font: inherit; font-size: var(--fs-micro);
@@ -1757,6 +1760,17 @@
 /* Not an error: "already in your downloads" is the app answering a question,
    not reporting a fault, and red would say the opposite. */
 .dls__note { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+/* Completed section divider — a quiet label between date/who/format groups. */
+.dls__section {
+  display: flex; align-items: baseline; gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-1) var(--sp-1);
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  text-transform: uppercase; color: var(--text-tertiary);
+}
+.dls__section:first-child { padding-top: var(--sp-1); }
+.dls__section-n { color: var(--text-quaternary); }
+
 .dls__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
 .dls__heading { min-width: 0; }
 

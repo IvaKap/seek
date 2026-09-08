@@ -12,7 +12,7 @@
  * thing the brief says destroys the calm.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed, isTerminal } from '../data/transferStore.ts';
 import { ContextMenu } from './ContextMenu.tsx';
@@ -28,9 +28,10 @@ import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/forma
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
 import {
-  FINISHED_WINDOW_LABELS, matchesQuery, sortGroups, withinFinishedWindow,
+  COMPLETED_GROUP_LABELS, completedSections, FINISHED_WINDOW_LABELS,
+  matchesQuery, sortGroups, withinFinishedWindow,
 } from '../domain/transferOrder.ts';
-import type { FinishedWindow, SortKey } from '../domain/transferOrder.ts';
+import type { CompletedGroupBy, FinishedWindow, SortKey } from '../domain/transferOrder.ts';
 import { SegmentedControl } from './controls.tsx';
 import type { Segment } from './controls.tsx';
 import type { Density } from './ViewMenu.tsx';
@@ -740,6 +741,12 @@ const FINISHED_WINDOWS: Segment<FinishedWindow>[] =
     value: v, label: FINISHED_WINDOW_LABELS[v],
   }));
 
+/** How Completed groups into sections — date by default. */
+const COMPLETED_GROUPS: Segment<CompletedGroupBy>[] =
+  (['date', 'user', 'type'] as const).map((v) => ({
+    value: v, label: COMPLETED_GROUP_LABELS[v],
+  }));
+
 /** Column labels, per lens. The header and the rows share one track list. */
 function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
   return (
@@ -782,6 +789,9 @@ export function DownloadsView({
   /* Completed-lens only: a rolling date window. View-only — it hides rows, it
    * never clears them (that is Settings' retention job). */
   const [finishedWindow, setFinishedWindow] = useState<FinishedWindow>('all');
+  /* Completed-lens only: how the list splits into sections. Date by default —
+   * "what did I pull down lately" is the question you open Completed with. */
+  const [completedGroupBy, setCompletedGroupBy] = useState<CompletedGroupBy>('date');
 
   /* Which releases are open, by key rather than by index — the list re-sorts
      and re-filters under you, and an index would open whatever moved into that
@@ -925,6 +935,15 @@ export function DownloadsView({
     [lens, query, sort, descending, finishedWindow, filter],
   );
 
+  /* Completed splits into labelled sections (date / who / format); every other
+     lens is one unlabelled section, so the render path stays single. */
+  const sections = useMemo(
+    () => (filter === 'finished'
+      ? completedSections(groups, completedGroupBy, Date.now())
+      : [{ key: '_all', label: '', groups }]),
+    [filter, groups, completedGroupBy],
+  );
+
   /* Counted off the FILTERED list, so the subtitle describes what is on screen.
    * `hiddenCount` is what the filter is holding back, and it is stated rather
    * than left implied — an empty list with a stale query in the box is the
@@ -963,6 +982,14 @@ export function DownloadsView({
             placeholder={filter === 'failed' ? 'Filter by release or peer…' : 'Filter these…'}
             aria-label="Filter by release name or peer"
             onChange={(e) => setQuery(e.target.value)}
+          />
+        )}
+        {filter === 'finished' && lens.length > 0 && (
+          <SegmentedControl<CompletedGroupBy>
+            label="Group completed by"
+            segments={COMPLETED_GROUPS}
+            value={completedGroupBy}
+            onChange={setCompletedGroupBy}
           />
         )}
         {filter === 'finished' && (lens.length > 0 || finishedWindow !== 'all') && (
@@ -1103,24 +1130,34 @@ export function DownloadsView({
             <p className="dls__error" role="alert">{session.error}</p>
           )}
           {density === 'table' && <TableHead filter={filter} />}
-          {groups.map((g) => (
-            <Group
-              key={g.key}
-              g={g}
-              session={session}
-              analysis={analysis}
-              checksums={checksums}
-              client={client}
-              preview={preview}
-              density={density}
-              filter={filter}
-              discovery={discovery}
-              open={openKeys.has(g.key)}
-              onOpenChange={(next) => setOpenFor(g.key, next)}
-              selected={selected}
-              onFileSelect={onFileSelect}
-              onFileContext={onFileContext}
-            />
+          {sections.map((sec) => (
+            <Fragment key={sec.key}>
+              {sec.label && (
+                <div className="dls__section">
+                  <span>{sec.label}</span>
+                  <span className="dls__section-n tnum">{integer(sec.groups.length)}</span>
+                </div>
+              )}
+              {sec.groups.map((g) => (
+                <Group
+                  key={g.key}
+                  g={g}
+                  session={session}
+                  analysis={analysis}
+                  checksums={checksums}
+                  client={client}
+                  preview={preview}
+                  density={density}
+                  filter={filter}
+                  discovery={discovery}
+                  open={openKeys.has(g.key)}
+                  onOpenChange={(next) => setOpenFor(g.key, next)}
+                  selected={selected}
+                  onFileSelect={onFileSelect}
+                  onFileContext={onFileContext}
+                />
+              ))}
+            </Fragment>
           ))}
         </div>
       </div>

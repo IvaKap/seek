@@ -1,7 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 import { describe, expect, it } from 'vitest';
-import { matchesQuery, sortGroups, withinFinishedWindow } from './transferOrder.ts';
+import {
+  completedSections, fileFormat, matchesQuery, sortGroups, withinFinishedWindow,
+} from './transferOrder.ts';
 import type { TransferGroup, Transfer } from '../data/transferStore.ts';
 
 function g(over: Partial<TransferGroup> = {}): TransferGroup {
@@ -139,5 +141,67 @@ describe('withinFinishedWindow — the Completed date filter', () => {
     // It cannot honestly be placed in a window; only "all" shows it.
     expect(withinFinishedWindow(done(null), 'week', NOW)).toBe(false);
     expect(withinFinishedWindow(done(0), 'month', NOW)).toBe(false);
+  });
+});
+
+describe('completedSections — grouping the Completed lens', () => {
+  const NOW = 1_800_000_000_000;
+  const secAgo = (days: number) => Math.floor(NOW / 1000) - days * 86_400;
+  const fin = (over: Partial<TransferGroup> & { days?: number; path?: string }) => g({
+    state: 'finished',
+    title: over.title,
+    username: over.username ?? 'peer',
+    transfers: [{
+      finishedAt: over.days == null ? 0 : secAgo(over.days),
+      path: over.path ?? 'music\\rec\\01.flac',
+    } as Transfer],
+  });
+  const labels = (secs: { label: string }[]) => secs.map((s) => s.label);
+
+  it('by date: discrete age buckets, newest section first, undated last', () => {
+    const secs = completedSections([
+      fin({ title: 'a', days: 1 }), fin({ title: 'b', days: 5 }),
+      fin({ title: 'c', days: 20 }), fin({ title: 'd', days: 100 }),
+      fin({ title: 'e', days: 500 }), fin({ title: 'f' }), // undated
+    ], 'date', NOW);
+    expect(labels(secs)).toEqual(['Past few days', 'Past week', 'Past month', 'Past year', 'Older', 'Undated']);
+  });
+
+  it('by date: a five-day-old release lands in Past week, not Past few days', () => {
+    const secs = completedSections([fin({ title: 'x', days: 5 })], 'date', NOW);
+    expect(secs).toHaveLength(1);
+    expect(secs[0].label).toBe('Past week');
+  });
+
+  it('by date: empty buckets do not appear', () => {
+    const secs = completedSections([fin({ title: 'x', days: 2 })], 'date', NOW);
+    expect(labels(secs)).toEqual(['Past few days']);
+  });
+
+  it('by user: one section per peer, in first-seen order, order kept within', () => {
+    const secs = completedSections([
+      fin({ title: 'a', username: 'bravo' }),
+      fin({ title: 'b', username: 'alpha' }),
+      fin({ title: 'c', username: 'bravo' }),
+    ], 'user', NOW);
+    expect(labels(secs)).toEqual(['bravo', 'alpha']);
+    expect(secs[0].groups.map((x) => x.title)).toEqual(['a', 'c']);
+  });
+
+  it('by format: the dominant file extension names the section', () => {
+    const secs = completedSections([
+      fin({ title: 'flacs', path: 'm\\r\\1.flac' }),
+      fin({ title: 'mp3s', path: 'm\\r\\1.mp3' }),
+    ], 'type', NOW);
+    expect(labels(secs).sort()).toEqual(['FLAC', 'MP3']);
+  });
+
+  it('fileFormat picks the most common extension across a release', () => {
+    const mixed = g({ transfers: [
+      { path: 'a\\1.flac' } as Transfer,
+      { path: 'a\\2.flac' } as Transfer,
+      { path: 'a\\cover.jpg' } as Transfer,
+    ] });
+    expect(fileFormat(mixed)).toBe('FLAC');
   });
 });

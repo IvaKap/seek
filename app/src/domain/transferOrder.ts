@@ -174,3 +174,79 @@ export function withinFinishedWindow(
   if (!at) return false;
   return at >= now / 1000 - WINDOW_DAYS[window] * 86_400;
 }
+
+/**
+ * How Completed splits into sections. Date by default — "what did I pull down
+ * lately" is the question you open Completed with. `type` groups by the release's
+ * dominant file extension; `user` by the peer it came from.
+ */
+export type CompletedGroupBy = 'date' | 'user' | 'type';
+
+export const COMPLETED_GROUP_LABELS: Record<CompletedGroupBy, string> = {
+  date: 'Date', user: 'Who from', type: 'Format',
+};
+
+export interface CompletedSection {
+  key: string;
+  label: string;
+  groups: TransferGroup[];
+}
+
+/* Discrete age buckets, tightest first. Cumulative wording, discrete membership:
+ * a five-day-old release is "Past week" (not "Past few days"), because it lands
+ * in the first bucket whose ceiling it clears. finishedAt is approximate (a
+ * restart re-stamps it, registries.py), so an unknown time gets its own bucket
+ * rather than a guessed one. */
+const DATE_BUCKETS: Array<{ key: string; label: string; days: number }> = [
+  { key: 'd3', label: 'Past few days', days: 3 },
+  { key: 'd7', label: 'Past week', days: 7 },
+  { key: 'd31', label: 'Past month', days: 31 },
+  { key: 'd365', label: 'Past year', days: 365 },
+];
+const DATE_ORDER = [...DATE_BUCKETS.map((b) => b.key), 'older', 'undated'];
+
+function dateBucket(g: TransferGroup, now: number): { key: string; label: string } {
+  const at = finishedAt(g);
+  if (!at) return { key: 'undated', label: 'Undated' };
+  const ageDays = (now / 1000 - at) / 86_400;
+  for (const b of DATE_BUCKETS) if (ageDays <= b.days) return { key: b.key, label: b.label };
+  return { key: 'older', label: 'Older' };
+}
+
+/** The release's dominant file extension, uppercased — "the format" in practice. */
+export function fileFormat(g: TransferGroup): string {
+  const counts = new Map<string, number>();
+  for (const t of g.transfers) {
+    const m = /\.([a-z0-9]{1,5})$/i.exec(t.path);
+    const ext = m ? m[1].toUpperCase() : '—';
+    counts.set(ext, (counts.get(ext) ?? 0) + 1);
+  }
+  let best = '—';
+  let top = -1;
+  for (const [ext, c] of counts) if (c > top) { best = ext; top = c; }
+  return best;
+}
+
+/**
+ * Split already-sorted completed releases into labelled sections. Never sorts —
+ * within a section the caller's order is kept; only the SECTIONS are ordered
+ * (chronologically for `date`, first-seen for `user`/`type`, which follows the
+ * sort). Pure, so the bucket boundaries are testable.
+ */
+export function completedSections(
+  groups: TransferGroup[], by: CompletedGroupBy, now: number,
+): CompletedSection[] {
+  const map = new Map<string, CompletedSection>();
+  for (const g of groups) {
+    const [key, label] = by === 'date'
+      ? (({ key: k, label: l }) => [k, l] as const)(dateBucket(g, now))
+      : by === 'user'
+        ? [`u:${g.username}`, g.username] as const
+        : [`t:${fileFormat(g)}`, fileFormat(g)] as const;
+    let sec = map.get(key);
+    if (!sec) { sec = { key, label, groups: [] }; map.set(key, sec); }
+    sec.groups.push(g);
+  }
+  if (by !== 'date') return [...map.values()];
+  return DATE_ORDER.filter((k) => map.has(k)).map((k) => map.get(k)!);
+}

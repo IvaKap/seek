@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DiscoverPreview as Preview, TracklistState } from '../data/discoverStore.ts';
+import { trackQuery } from '../data/discoverStore.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
 import { TITLE_CONFIDENCE_FLOOR } from '../domain/parseTitle.ts';
 import { weakCount } from '../domain/playlistImport.ts';
@@ -97,7 +98,7 @@ function provenance(preview: Preview): string {
 
 export function DiscoverPreviewCard({
   preview, onSearch, onDismiss, onEdit, onOpenSettings, onWant, wanted, onBrowse,
-  tracklist, onFindTracklist, onWantTracklist,
+  tracklist, onFindTracklist, onWantTracklist, onSearchTrack,
   playlist, playlistId, onImportPlaylist, onWantPlaylist,
 }: {
   preview: Preview | null;
@@ -121,6 +122,9 @@ export function DiscoverPreviewCard({
   onWantPlaylist?(): void;
   onFindTracklist?(): void;
   onWantTracklist?(): void;
+  /** Search Soulseek for one track of a release — the only way to reach a
+   *  compilation's tracks, whose album artist is "Various". */
+  onSearchTrack?(query: string): void;
 }) {
   const reduced = useReducedMotion();
   /* Keep rendering the last card through its exit, so dismissing animates out
@@ -249,6 +253,34 @@ export function DiscoverPreviewCard({
               </div>
 
               {detail && <p className="dig__detail tnum">{detail}</p>}
+
+              {/* A release's own tracklist, search each track on its own. The
+                  reason this exists: a compilation's album artist is "Various",
+                  so the album query finds nothing — but each track states its
+                  real artist (Bandcamp `byArtist`, Discogs credits). */}
+              {shown.kind === 'release' && shown.tracklist.length > 0 && onSearchTrack && (
+                <div className="dig__tracklist">
+                  <span className="dig__hint">
+                    <span className="tnum">{shown.tracklist.length}</span> tracks — search any on its own
+                  </span>
+                  <ol className="dig__tracks dig__tracks--scroll">
+                    {shown.tracklist.map((t, i) => (
+                      <li key={t.position || i} className="dig__track">
+                        <span className="dig__track-at">{t.artist || shown.artist || '—'}</span>
+                        <span className="dig__track-text">{t.title}</span>
+                        <button
+                          type="button"
+                          className="verify pressable"
+                          onPointerDown={() => onSearchTrack(trackQuery(shown, t))}
+                          aria-label={`Search for ${t.artist || shown.artist} — ${t.title}`}
+                        >
+                          Search
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
 
               {/* A DJ set's tracklist. Only offered for YouTube, where a
                   description is the only place one could be, and only after

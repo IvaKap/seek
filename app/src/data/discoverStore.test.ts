@@ -11,7 +11,9 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { classifyFailure, previewFromWire, previewQuery } from './discoverStore.ts';
+import {
+  classifyFailure, previewFromWire, previewQuery, trackQuery,
+} from './discoverStore.ts';
 import type { WireParsed } from './discoverStore.ts';
 
 function wire(over: Partial<WireParsed> = {}): WireParsed {
@@ -161,6 +163,28 @@ describe('previewQuery', () => {
   it('an unparseable title still yields something searchable', () => {
     const p = previewFromWire(wire({ rawTitle: 'TRAUMPRINZ All The Things' }));
     expect(previewQuery(p)).toBe('TRAUMPRINZ All The Things');
+  });
+});
+
+describe('trackQuery — the fix for compilations', () => {
+  /* The reported case: a V/A Bandcamp album whose album artist is "Various".
+     previewQuery would search "Various Mers" and find nothing; each track has
+     its own artist, and that is what to search. */
+  const comp = previewFromWire(wire({
+    sourceKind: 'bandcamp', kind: 'release', artist: 'Various', title: 'Mers', album: 'Mers',
+    tracklist: [
+      { position: 1, title: 'No UFOs', artist: 'Model 500', duration: null },
+      { position: 2, title: 'Clear', artist: '', duration: null },
+    ],
+  }));
+
+  it('searches the track’s own artist, not the album’s "Various"', () => {
+    expect(previewQuery(comp)).toBe('Various Mers');           // the dead query
+    expect(trackQuery(comp, comp.tracklist[0])).toBe('Model 500 No UFOs');
+  });
+
+  it('falls back to the album artist when a track is not separately credited', () => {
+    expect(trackQuery(comp, comp.tracklist[1])).toBe('Various Clear');
   });
 });
 

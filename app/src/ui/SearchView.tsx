@@ -225,15 +225,19 @@ export function SearchView({
   /* Run the search the preview card implies, and put that text in the field:
    * the user must be able to see what was actually searched for, and correct it
    * afterwards like any other query. */
-  const runFromPreview = useCallback(() => {
-    if (!discover) return;
-    const q = discover.query();
+  const runQuery = useCallback((q: string, keep = false) => {
     if (!q) return;
     // `run` sets the box itself now, so the pairing is no longer manual.
     if (tabs) tabs.openWith(q);
     else session.run(q);
-    discover.dismiss();
+    // A per-track search KEEPS the card, so a compilation's tracks can be
+    // searched one after another; the album search is done with it.
+    if (!keep) discover?.dismiss();
   }, [discover, session, tabs]);
+
+  const runFromPreview = useCallback(() => {
+    if (discover) runQuery(discover.query());
+  }, [discover, runQuery]);
 
   const onSearchKey = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Escape' && discover?.preview) {
@@ -386,6 +390,7 @@ export function SearchView({
             tracklist={discover.tracklist}
             onFindTracklist={discover.findTracklist}
             onWantTracklist={onWantTracklist}
+            onSearchTrack={(q) => runQuery(q, true)}
             onWantPlaylist={onWantPlaylist}
             playlist={discover?.playlist}
             playlistId={discover?.playlistId}
