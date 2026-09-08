@@ -69,7 +69,7 @@ const TYPE = {
    the current builder or a stale copy it loaded before the last edit. Without
    it, "I changed that" and "you are looking at an old build" are the same
    symptom, and there is no way to tell them apart from outside. */
-const BUILD = 'b5 — seeded cover art, Labels & Artists faces, heart-handshake';
+const BUILD = 'b6 — promo hero frames (16:9, social), pilot: downloads';
 
 const WIN = { w: 1280, h: 840 };   // tauri.conf.json
 const SIDEBAR_W = 220;             // --sidebar-w
@@ -1298,6 +1298,17 @@ function placeAt(frame, key) {
     frame.y = Math.ceil(ORDER.length / COLS) * (WIN.h + GAP_Y) + GAP_Y;
     return;
   }
+  /* Promo heroes are 16:9 and much larger than an app screen, so they get their
+     own two-column shelf well below the app grid rather than the shared slots. */
+  if (key && key.indexOf('promo-') === 0) {
+    const i = PROMO_ORDER.indexOf(key);
+    const slot = i < 0 ? PROMO_ORDER.length : i;
+    const cols = 2, gx = 200, gy = 220;
+    const top = Math.ceil((ORDER.length + 2) / COLS) * (WIN.h + GAP_Y) + 1200;
+    frame.x = (slot % cols) * (PROMO.w + gx);
+    frame.y = top + Math.floor(slot / cols) * (PROMO.h + gy);
+    return;
+  }
   const i = ORDER.indexOf(key);
   const slot = i < 0 ? ORDER.length : i;
   frame.x = (slot % COLS) * (WIN.w + GAP_X);
@@ -2255,3 +2266,257 @@ SCREENS.search = () => screen('Search', 'Search', [
     resultRow({ artist: 'Burial & Four Tet', title: 'Nova', format: 'FLAC', formatTone: 'state/success', spec: '24/48', tracks: '1 track', size: '96 MB', who: 'a-sixth-peer', copies: '3 copies', ok: 'good', verdict: 'lossless' }),
   ]),
 ]);
+
+// ===========================================================================
+// promo — social-ready hero frames (16:9), the real UI on an Apple-style stage
+// ===========================================================================
+//
+// Each wraps a real, token-accurate app screen inside a dark premium stage: a
+// soft accent glow for depth, the window floating with a deep shadow and rounded
+// corners, and a display headline set with the negative tracking large type
+// wants (apple-design §15). Built at 1920x1080 so a `scale:1` export is a clean
+// 1080p social asset; the app window is the SAME builder the mirror uses, so the
+// screenshot inside is true to the product, never faked.
+
+const PROMO = { w: 1920, h: 1080 };
+
+/* Which promo lands where on the shelf below the app grid (two columns). */
+const PROMO_ORDER = [
+  'promo-search', 'promo-verify', 'promo-downloads', 'promo-completed',
+  'promo-dig', 'promo-wishlist', 'promo-library', 'promo-labels',
+  'promo-catalogue', 'promo-browse',
+];
+
+/** Arbitrary-size display/label text — the TYPE scale tops out at 26. */
+function bigText(chars, o = {}) {
+  const t = figma.createText();
+  t.fontName = FONT[o.w || 'b'];
+  t.characters = String(chars);
+  t.fontSize = o.size || 64;
+  t.lineHeight = { unit: 'PERCENT', value: (o.lh || 1.05) * 100 };
+  t.letterSpacing = { unit: 'PERCENT', value: (o.tr == null ? -0.028 : o.tr) * 100 };
+  t.fills = [paint(o.c || 'text/primary')];
+  if (o.width) { t.textAutoResize = 'HEIGHT'; t.resize(o.width, t.height); }
+  else t.textAutoResize = 'WIDTH_AND_HEIGHT';
+  if (o.upper) t.textCase = 'UPPER';
+  t.name = String(chars).slice(0, 40) || 'text';
+  return t;
+}
+
+/** A soft accent glow — a big, low-opacity blurred ellipse — for depth. */
+function glow(cx, cy, d, h, op) {
+  const e = figma.createEllipse();
+  e.resize(d, d);
+  e.x = cx - d / 2; e.y = cy - d / 2;
+  e.fills = [{ type: 'SOLID', color: hex(h), opacity: op }];
+  e.effects = [{ type: 'LAYER_BLUR', radius: 100, visible: true }];
+  e.name = 'glow';
+  return e;
+}
+
+/**
+ * One hero frame. `o.screen` is a freshly built app window (1280x840); it is
+ * given rounded corners, a hairline and a deep shadow, then rescaled onto the
+ * right with the headline block on the left.
+ */
+function promo(o) {
+  const f = figma.createFrame();
+  f.name = o.name;
+  f.resize(PROMO.w, PROMO.h);
+  f.layoutMode = 'NONE';
+  f.clipsContent = true;
+  // Dark premium ground: a near-black vertical gradient (top a touch bluer).
+  f.fills = [{
+    type: 'GRADIENT_LINEAR',
+    gradientTransform: [[0, 1, 0], [-1, 0, 1]],
+    gradientStops: [
+      { position: 0, color: { r: 0.11, g: 0.12, b: 0.16, a: 1 } },
+      { position: 1, color: { r: 0.035, g: 0.035, b: 0.05, a: 1 } },
+    ],
+  }];
+
+  // Accent glow behind where the window will sit.
+  f.appendChild(glow(1300, 360, 1300, RAMP['accent/base'][0], 0.20));
+
+  // The window: rounded, hairline, deep shadow, rescaled onto the right.
+  const win = o.screen;
+  win.cornerRadius = 26;           // ~20 after the 0.78 rescale
+  win.clipsContent = true;
+  win.strokes = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 }, opacity: 0.07 }];
+  win.strokeWeight = 1.4;
+  win.strokeAlign = 'INSIDE';
+  f.appendChild(win);
+  win.rescale(0.78);
+  win.effects = [{
+    type: 'DROP_SHADOW', visible: true, blendMode: 'NORMAL',
+    color: { r: 0, g: 0, b: 0, a: 0.55 },
+    offset: { x: 0, y: 48 }, radius: 96, spread: 0,
+  }];
+  win.x = PROMO.w - win.width - 90;
+  win.y = Math.round((PROMO.h - win.height) / 2);
+
+  // Wordmark top-left — on every frame, so the set reads as one system.
+  const mark = bigText('Seek', { size: 27, w: 'sb', tr: -0.01 });
+  mark.x = 120; mark.y = 92; mark.opacity = 0.92;
+  f.appendChild(mark);
+
+  // Headline block, left, vertically centred against the frame.
+  const block = F('headline', {
+    g: SP[4],
+    kids: [
+      bigText(o.eyebrow, { size: 15, w: 'sb', tr: 0.06, upper: true, c: 'accent/base' }),
+      bigText(o.headline, { size: o.size || 66, w: 'b', tr: -0.028, lh: 1.04, width: 620 }),
+      bigText(o.sub, { size: 21, w: 'r', tr: -0.002, lh: 1.42, width: 560, c: 'text/secondary' }),
+    ],
+  });
+  f.appendChild(block);
+  block.x = 120;
+  block.y = Math.round((PROMO.h - block.height) / 2);
+
+  return f;
+}
+
+// --- pilot -----------------------------------------------------------------
+
+SCREENS['promo-downloads'] = () => promo({
+  name: 'Promo — Downloads',
+  eyebrow: 'Downloads',
+  headline: 'Every file,\nin its place.',
+  sub: 'Folders regroup into releases on their own. Watch progress per track, cancel one or the lot, and see a download start the instant you hit Get.',
+  screen: SCREENS.downloads(),
+});
+
+SCREENS['promo-search'] = () => promo({
+  name: 'Promo — Search',
+  eyebrow: 'Search',
+  headline: 'Lossless,\nor honestly not.',
+  sub: 'Seek never claims what it cannot check. Real format tiers, and an Unverified state where the metadata runs out — so a fake FLAC has nowhere to hide.',
+  screen: SCREENS.search(),
+});
+
+SCREENS['promo-catalogue'] = () => promo({
+  name: 'Promo — Catalogue',
+  eyebrow: 'Labels',
+  headline: 'Know\nyour gaps.',
+  sub: 'Open a label’s whole catalogue with every record marked — what you own, and what is still missing from the shelf.',
+  screen: SCREENS.catalogue(),
+});
+
+SCREENS['promo-completed'] = () => promo({
+  name: 'Promo — Completed',
+  eyebrow: 'Completed',
+  headline: 'Checked,\nthen filed.',
+  sub: 'Finished downloads carry their verdict and drop straight into your library — or a Rekordbox watch folder, ready for the set.',
+  screen: SCREENS.completed(),
+});
+
+SCREENS['promo-dig'] = () => promo({
+  name: 'Promo — Dig Bar',
+  eyebrow: 'Dig Bar',
+  headline: 'Paste a link.\nGet the record.',
+  sub: 'A YouTube, Bandcamp or Discogs URL becomes a real search across the Soulseek network — the release, not the rip.',
+  screen: SCREENS['dig-album'](),
+});
+
+SCREENS['promo-wishlist'] = () => promo({
+  name: 'Promo — Wishlist',
+  eyebrow: 'Wishlist',
+  headline: 'Only what’s\nnew.',
+  sub: 'Seek registers your wishes with the server and pings you when something genuinely new turns up — never the same peers and files, over and over.',
+  screen: SCREENS.wishlist(),
+});
+
+SCREENS['promo-library'] = () => promo({
+  name: 'Promo — Library',
+  eyebrow: 'Library',
+  headline: 'Your collection,\nby cover.',
+  sub: 'Everything you own in a calm grid of sleeves — so you can see the gaps as fast as the shelf.',
+  screen: SCREENS.library(),
+});
+
+SCREENS['promo-labels'] = () => promo({
+  name: 'Promo — Labels & Artists',
+  eyebrow: 'Labels & Artists',
+  headline: 'Follow\nthe source.',
+  sub: 'Watch the labels and artists you trust, and let the good stuff come to you.',
+  screen: SCREENS.labels(),
+});
+
+SCREENS['promo-browse'] = () => promo({
+  name: 'Promo — Browse',
+  eyebrow: 'Browse',
+  headline: 'See everything\nthey share.',
+  sub: 'Found one great record from a peer? Open their whole shelf and dig through it.',
+  screen: SCREENS.browse(),
+});
+
+// --- spectral verification -------------------------------------------------
+// The app's post-download check has no mirror screen, and it is the feature the
+// pitch leads on, so it is built here: an FFT-style analyser drawn as token
+// bars, with the lowpass cliff that gives a transcode away.
+
+function spectrumChart(cliff) {
+  const N = 92;
+  const H = 210;
+  const chartW = INNER - SP[5] * 2;
+  const barW = Math.max(2, (chartW - (N - 1)) / N);
+  const bars = [];
+  for (let i = 0; i < N; i++) {
+    const x = i / (N - 1);
+    let env = Math.pow(1 - x, 0.5) * 0.9 + 0.08;                     // strong lows, gentle roll-off
+    env *= 0.7 + 0.3 * Math.abs(Math.sin(i * 0.8) * Math.cos(i * 0.27)); // texture
+    let dead = false;
+    if (cliff && x > 0.70) {                                          // the lowpass cliff
+      env *= Math.max(0.015, Math.exp(-((x - 0.70) / 0.06) * 3.2));
+      if (x > 0.74) dead = true;
+    }
+    bars.push(F('b', { w: barW, h: Math.max(2, Math.round(env * H)), bg: dead ? 'text/quaternary' : 'accent/base' }));
+  }
+  return F('chart', {
+    dir: 'h', g: 1, w: chartW, h: H, align: 'MAX', bg: 'bg/sunken', r: RAD.md, p: 0, clip: true, kids: bars,
+  });
+}
+
+function verifyScreen() {
+  const inner = INNER - SP[5] * 2;
+  return screen('Verify', 'Completed', [
+    paneHeader('Spectral check', 'Burial — Untrue · 02 — Archangel.flac', null),
+    body([
+      F('card', {
+        g: SP[4], p: SP[5], r: RAD.lg, bg: 'bg/raised', st: 'line/separator', sw: 1, w: INNER,
+        kids: [
+          F('head', {
+            dir: 'h', just: 'SPACE_BETWEEN', align: 'CENTER', w: inner,
+            kids: [
+              T('Averaged spectrum', 'section'),
+              F('verdict', {
+                dir: 'h', g: SP[2], align: 'CENTER', p: [SP[1], SP[3], SP[1], SP[3]], r: RAD.pill, bg: 'bg/sunken',
+                kids: [
+                  F('dot', { w: 8, h: 8, r: RAD.pill, bg: 'state/warn' }),
+                  T('Likely a transcode', 'cap', { c: 'state/warn', w: 'sb' }),
+                ],
+              }),
+            ],
+          }),
+          spectrumChart(true),
+          F('axis', {
+            dir: 'h', g: 0, w: inner, just: 'SPACE_BETWEEN',
+            kids: ['0', '5 kHz', '10 kHz', '15 kHz', '20 kHz'].map((l) => T(l, 'micro', { c: 'text/tertiary' })),
+          }),
+          T('A hard lowpass at ~16 kHz — exactly where a lossy encoder stops. This “FLAC” was almost certainly built from an MP3.',
+            'body', { c: 'text/secondary', width: inner }),
+          T('Strong evidence, not proof: Seek shows you the spectrum and lets you decide. The post-download finding, worded and coloured apart from the search-time guess.',
+            'cap', { c: 'text/tertiary', width: inner }),
+        ],
+      }),
+    ]),
+  ]);
+}
+
+SCREENS['promo-verify'] = () => promo({
+  name: 'Promo — Spectral verification',
+  eyebrow: 'Verify',
+  headline: 'Proof,\nnot promises.',
+  sub: 'Seek decodes every finished download and shows you the spectrum. A transcode’s lowpass cliff has nowhere to hide — the feature that makes a fork worth it.',
+  screen: verifyScreen(),
+});
