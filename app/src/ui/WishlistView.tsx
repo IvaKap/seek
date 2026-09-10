@@ -79,6 +79,13 @@ export function WishlistView({
       .catch((e: Error) => setError(e.message));
   }, [client]);
 
+  const setAuto = useCallback((query: string, auto: boolean) => {
+    if (!client) return;
+    void client.request<WishlistState>('wishlist.auto', { query, auto })
+      .then(setState)
+      .catch((e: Error) => setError(e.message));
+  }, [client]);
+
   return (
     <>
       <header className="header header--plain">
@@ -156,6 +163,24 @@ export function WishlistView({
                       {describeFilters(wish.filters)}
                     </span>
                   )}
+
+                  {/* Auto-download. onClick, not onPointerDown, because it is a
+                      persisted setting and must answer to the keyboard.
+                      aria-pressed carries the state; the label stays put so the
+                      control does not jump under the pointer. */}
+                  <button
+                    type="button"
+                    className={`verify pressable wish__auto${wish.auto ? ' wish__auto--on' : ''}`}
+                    aria-pressed={wish.auto}
+                    title={wish.auto
+                      ? 'Auto-download is on. Seek grabs a qualifying match and holds it for '
+                        + 'your review. It runs only while Seek is open.'
+                      : 'Automatically download this wish when a match meets your quality '
+                        + 'filters, and hold it for review. Runs only while Seek is open.'}
+                    onClick={() => setAuto(wish.query, !wish.auto)}
+                  >
+                    Auto{wish.auto ? ' · on' : ''}
+                  </button>
 
                   <button
                     type="button"

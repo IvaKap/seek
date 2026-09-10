@@ -868,6 +868,14 @@
 .wish__found--new { background: var(--accent-soft); color: var(--accent); }
 .wish__row[data-unseen='true'] .wish__q { font-weight: 600; }
 
+/* Auto-download toggle: a plain action button until it is on, then it carries
+   the accent so an armed wish is legible at a glance down the list. */
+.wish__auto--on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* The filters a wish carries, said as a phrase. Dim, because it qualifies the
    query beside it rather than competing with it. */
 .wish__filters {
@@ -2282,6 +2290,21 @@
 .dl__detail { padding: var(--sp-3) 0; border-top: 1px solid var(--separator); }
 
 .spec { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Charts and the prose that reads them, side by side; wraps to a stack when the
+   panel is too narrow to hold both. The charts cap at 35rem (as the curve and
+   heatmap already do), and the prose takes what is left. */
+.spec__body {
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  gap: var(--sp-2) var(--sp-4);
+}
+.spec__charts {
+  flex: 0 1 35rem; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.spec__prose {
+  flex: 1 1 18rem; min-width: 0;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
 .spec__cap { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
 .spec__verdict { font-size: var(--fs-secondary); }
 .spec__verdict[data-tone='good'] { color: var(--success); }
@@ -2309,6 +2332,12 @@
   margin: 0; max-width: 35rem;
   font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
   color: var(--text-secondary); line-height: 1.45;
+}
+/* The heatmap's legend, now in the prose column beside the picture. */
+.spec__legend {
+  margin: 0; max-width: 35rem;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-tertiary); line-height: 1.45;
 }
 .verify__caret { margin-left: 0.25rem; color: var(--text-tertiary); }
 
@@ -2586,12 +2615,6 @@
 /* The end labels would otherwise hang past the picture's edges. */
 .heat__time:first-child { transform: none; }
 .heat__time:last-child { transform: translateX(-100%); }
-
-.heat__cap {
-  margin: 0; max-width: 35rem;
-  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
-  color: var(--text-tertiary); line-height: 1.45;
-}
 
 /* ============================================================ wishlist === */
 .wish {
