@@ -34,6 +34,7 @@ the right one, without doing the bookkeeping yourself?**
 | 👤 **You pick the copy** | Several people have the record? You get a comparison — tracks, format, size, free slot, queue length, your own history with them. The app never quietly swaps your choice for one it prefers. |
 | 🤝 **Sharing treated as the point** | Soulseek is reciprocal. Seek shows what you're uploading, what your ratio actually is, and says plainly when a slow queue is the consequence of sharing nothing. |
 | 🚫 **It refuses to guess** | Where no one person has the whole album, Seek says so and shows what each person actually has, file by file. It won't claim one person's "track 4" is another's — that guess was measured against real data and was wrong more often than right. |
+| 🌙 **Digs while you leave it running** | Flag a wishlist item for auto-download and Seek grabs a qualifying copy the moment it appears, runs the spectrogram, and holds it for your yes/no. No polling, no auto-accept — you approve what goes in your library. |
 
 ---
 
@@ -162,6 +163,41 @@ around 192 kbps"* and, crucially, labels its own confidence — here
 
 Also here: **Preview** before you commit, **Fix tags**, and **Organise** to file
 the release where it belongs.
+
+---
+
+## Let Seek dig while you leave it running
+
+The record nobody is sharing today might turn up at 3am. Add it to your
+**Wishlist** and Soulseek re-runs the search on its own schedule — Seek never
+polls, because searching faster than the server allows is what gets an account
+throttled.
+
+Turn on **Auto** for a wish and Seek stops waiting for you. The moment a copy
+appears that clears the quality bar you set on that wish — lossless only, a
+bitrate floor, no transcodes — it downloads it, runs the spectrogram on it, and
+sets it aside in **Completed → Awaiting review** with the analysis already done.
+
+Then it stops and asks. **Approve** keeps the file and retires the wish;
+**Reject** discards that copy and puts the wish back to work looking for a better
+one. The spectrogram is there to *inform* that decision — Seek fetches on its
+own, but it never decides a file is good on your behalf. A "FLAC" that came from
+a 192 kbps MP3 is exactly what this catches, and exactly what you want to see
+before it lands in your library.
+
+Two honest limits, up front:
+
+- **It runs while Seek is open, and only then.** There is no daemon left running
+  after you quit — which makes the trade a fair one: leaving Seek open to catch a
+  wish is leaving your own shares online for everyone else at the same time.
+- **The quality bar reads what the peer *claims*.** That is all any client has
+  before the bytes arrive, which is the whole reason the file is then decoded and
+  put in front of you. The bitrate floor never wrongly rejects FLAC (which
+  advertises no bitrate) — auto-download judges a file by the same rules as a
+  manual search, so the two can never disagree.
+
+> ✅ **No key needed.** The wishlist, auto-download and the spectrogram all run on
+> your Mac.
 
 ---
 
