@@ -1848,8 +1848,14 @@
 }
 .dls[data-density='table'][data-filter='finished'] .dl__row,
 .dls[data-density='table'][data-filter='finished'] .dl__thead {
-  /* finished: name | files | size | from | actions */
-  grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 7.5rem 8rem;
+  /* finished: name | files | size | from | actions.
+     The actions track is wider than the other lenses' because a finished row
+     carries the most: a checksum verdict (which can read "No checksum file"),
+     Related, and Clear. Sized to hold all three at their widest so the buttons
+     never crowd the From column beside them — the slack the row has is in the
+     NAME column at the far left, which the actions cannot reach, so a track that
+     is merely "generous" is not enough; it has to actually fit. */
+  grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 7.5rem 16rem;
 }
 .dls[data-density='table'][data-filter='failed'] .dl__row,
 .dls[data-density='table'][data-filter='failed'] .dl__thead {
@@ -1951,8 +1957,20 @@
 .dl__row[data-state='paused'] .dl__minifill { background: var(--text-tertiary); }
 .dl__rowactions {
   display: flex; align-items: center; justify-content: flex-end;
-  gap: var(--sp-1); overflow: hidden;
+  gap: var(--sp-1);
+  /* Size to the buttons and pin to the RIGHT of the fixed track, so a wide set
+     — a checksum verdict plus Related plus Clear — spills LEFT into the empty
+     name-column slack instead of being crushed into the track and clipped. The
+     track stays a fixed width, so the data columns still line up across rows
+     (see the grid-template comment above). This is the opposite of `.dl__cell`,
+     which must stretch-and-ellipsize; a button cannot be ellipsized, only
+     squeezed, so it is given room instead. */
+  justify-self: end;
+  overflow: visible;
 }
+/* Buttons keep their natural width — never shrunk to fit the track, which is
+   what turned "Check hashes" into "hecksum fi". */
+.dl__rowactions > * { flex: none; }
 /* Actions are the only thing here that earns its space on hover alone: they
    are always reachable by keyboard, and showing five buttons per row turns a
    status board back into a control panel. */
