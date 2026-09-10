@@ -3591,6 +3591,36 @@ class CoreHost:
     def _cmd_transfer_list(self, _params):
         return {"transfers": self._transfer_snapshot()}
 
+    def _completed_mtime(self, upstream_transfer):
+        """The real moment a finished download landed: the mtime of the file on
+        disk.
+
+        Upstream keeps NO completion time — Soulseek has none — so after a
+        restart the in-memory stamp is gone and there is nothing durable to
+        recover it from except the file itself. Stamping `now` instead (what the
+        registry does for a live completion) would date every previously
+        downloaded file to the moment Seek last started, which on every update is
+        exactly the "all my downloads say undated / today" the user sees.
+
+        Uses upstream's own resolver, which finds the actual file even when a
+        name clash appended ' (1)' by matching size, and tells us whether it is
+        still there. 0.0 when it is gone (moved out, deleted) — which reads as
+        undated, honest, rather than a wrong date.
+        """
+        downloads = self.core.downloads
+        if downloads is None:
+            return 0.0
+        try:
+            path, exists = downloads.get_complete_download_file_path(
+                upstream_transfer.username, upstream_transfer.virtual_path,
+                int(upstream_transfer.size or 0), upstream_transfer.folder_path or None,
+            )
+            if exists:
+                return os.stat(path).st_mtime
+        except (OSError, ValueError, AttributeError):
+            pass
+        return 0.0
+
     def _transfer_snapshot(self):
         """Both directions, one list. The frontend separates them on
         `direction`; nothing here has to know which screen wants which."""
@@ -3604,6 +3634,13 @@ class CoreHost:
                 record = self.transfers.record_for(
                     direction, upstream.username, upstream.virtual_path
                 )
+                # A completed download restored from upstream's list has no
+                # finish time — this snapshot never runs it through `observe`.
+                # Recover it from the file's mtime so Completed can date it,
+                # once (the record is reused across snapshots).
+                if (direction == "download" and not record.finished_at
+                        and translate.transfer_state(upstream.status) == "finished"):
+                    record.finished_at = self._completed_mtime(upstream)
                 out.append(translate.transfer(
                     record, upstream, self.transfers.since_progress(record)
                 ))
