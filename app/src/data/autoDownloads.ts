@@ -25,6 +25,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { WishHits } from './wishHits.ts';
 import type { Transfer } from './transferStore.ts';
+import { isCancelled, isFailed } from './transferStore.ts';
 import { planAutoDownloads } from '../domain/autoWishlist.ts';
 import type { SourceFile } from '../domain/types.ts';
 import type { AutoClaim, AutoClaimList, Wish, WishlistState } from '../../../shared/protocol.ts';
@@ -134,14 +135,24 @@ export function useAutoDownloads(
   useEffect(() => {
     if (!client || !loaded.current) return;
     let changed = false;
-    const next = claims.map((c) => {
-      if (c.status !== DOWNLOADING) return c;
+    const next: AutoClaim[] = [];
+    for (const c of claims) {
+      if (c.status !== DOWNLOADING) { next.push(c); continue; }
       const t = transfers.all.find((x) => x.username === c.user && x.path === c.path);
-      if (!t || t.state !== 'finished') return c;
-      analysis.analyseTransfer(t.id);
-      changed = true;
-      return { ...c, transferId: t.id, status: AWAITING };
-    });
+      // Not appeared yet (enqueue is async) — keep waiting.
+      if (!t) { next.push(c); continue; }
+      if (t.state === 'finished') {
+        analysis.analyseTransfer(t.id);
+        next.push({ ...c, transferId: t.id, status: AWAITING });
+        changed = true;
+      } else if (isFailed(t.state) || isCancelled(t.state)) {
+        // The download failed or was cancelled: drop the claim so the wish is
+        // free to try another copy on the next run. (Dropped by not pushing.)
+        changed = true;
+      } else {
+        next.push(c);
+      }
+    }
     if (changed) persist(next);
   }, [client, claims, transfers.all, analysis, persist]);
 

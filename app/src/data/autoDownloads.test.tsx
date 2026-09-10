@@ -136,6 +136,21 @@ describe('useAutoDownloads', () => {
     expect(last.items[0]).toMatchObject({ status: 'awaiting-review', transferId: 'a-peer:' + path });
   });
 
+  it('drops a claim whose download failed, so the wish is free to resume', async () => {
+    const path = 'music\\Drexciya\\01.flac';
+    const { client } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path, status: 'downloading' }],
+    });
+    const failed: Transfer = {
+      ...finishedTransfer('a-peer', path), state: 'connection_closed', bytesDone: 0, finishedAt: null,
+    };
+    const { result } = renderHook(() => useAutoDownloads(client, wishHitsOf({}), transfersOf([failed]), analysisStub()),
+      { wrapper: StrictMode });
+
+    await waitFor(() => expect(result.current.claims).toHaveLength(0));
+  });
+
   it('approve ends the wish and drops the claim, keeping the file', async () => {
     const { client, sent } = fakeClient({
       wishes: [{ query: 'q', filters: null, auto: true }],
