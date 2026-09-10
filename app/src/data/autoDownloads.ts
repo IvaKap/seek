@@ -43,6 +43,7 @@ const AWAITING = 'awaiting-review';
 interface TransfersView {
   enqueue(username: string, path: string, size: number): Promise<void>;
   all: Transfer[];
+  clear(ids: string[]): void;
 }
 interface AnalysisView {
   analyseTransfer(transferId: string): void;
@@ -51,6 +52,10 @@ interface AnalysisView {
 export interface AutoDownloads {
   /** Every live claim — consumed by the review UI. */
   claims: AutoClaim[];
+  /** Keep the reviewed file and finish the wish. */
+  approve(query: string): void;
+  /** Discard the reviewed file and let the wish find another copy. */
+  reject(query: string): void;
 }
 
 export function useAutoDownloads(
@@ -140,5 +145,24 @@ export function useAutoDownloads(
     if (changed) persist(next);
   }, [client, claims, transfers.all, analysis, persist]);
 
-  return { claims };
+  // Approve: keep the file — it becomes an ordinary completed download once its
+  // claim is gone — and end the wish, which is answered. wishlist.remove also
+  // drops the server-side claim and the auto flag; we drop our copy to match.
+  const approve = useCallback((query: string) => {
+    void client?.request('wishlist.remove', { query }).catch(() => {});
+    persist(claims.filter((c) => c.query !== query));
+  }, [client, claims, persist]);
+
+  // Reject: discard this copy and resume. The wish and its auto flag stay, so
+  // the next run re-acts and looks for another copy.
+  // ponytail: does not remember the rejected file, so if the same copy is still
+  // the top result next run it can be picked again — add a per-wish reject set
+  // if that becomes a real annoyance.
+  const reject = useCallback((query: string) => {
+    const claim = claims.find((c) => c.query === query);
+    if (claim?.transferId) transfers.clear([claim.transferId]);
+    persist(claims.filter((c) => c.query !== query));
+  }, [claims, transfers, persist]);
+
+  return { claims, approve, reject };
 }

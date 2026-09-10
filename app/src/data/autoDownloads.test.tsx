@@ -9,7 +9,7 @@
 
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useAutoDownloads } from './autoDownloads.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { WishHits, WishHit } from './wishHits.ts';
@@ -19,7 +19,8 @@ import { adaptSearchResult } from './adapt.ts';
 afterEach(cleanup);
 
 const analysisStub = () => ({ analyseTransfer: vi.fn() });
-const transfersOf = (all: Transfer[] = []) => ({ enqueue: vi.fn(() => Promise.resolve()), all });
+const transfersOf = (all: Transfer[] = []) =>
+  ({ enqueue: vi.fn(() => Promise.resolve()), all, clear: vi.fn() });
 
 /** A finished download row for a claimed candidate. */
 function finishedTransfer(user: string, path: string): Transfer {
@@ -133,5 +134,41 @@ describe('useAutoDownloads', () => {
     const writes = sent.filter((s) => s.cmd === 'wishlist.claims');
     const last = writes[writes.length - 1].params as { items: { status: string; transferId: string }[] };
     expect(last.items[0]).toMatchObject({ status: 'awaiting-review', transferId: 'a-peer:' + path });
+  });
+
+  it('approve ends the wish and drops the claim, keeping the file', async () => {
+    const { client, sent } = fakeClient({
+      wishes: [{ query: 'q', filters: null, auto: true }],
+      claims: [{ query: 'q', user: 'u', transferId: 't1', path: 'p', status: 'awaiting-review' }],
+    });
+    const transfers = transfersOf();
+    const { result } = renderHook(() => useAutoDownloads(client, wishHitsOf({}), transfers, analysisStub()),
+      { wrapper: StrictMode });
+
+    await waitFor(() => expect(result.current.claims).toHaveLength(1));
+    act(() => result.current.approve('q'));
+
+    expect(sent.some((s) => s.cmd === 'wishlist.remove'
+      && (s.params as { query: string }).query === 'q')).toBe(true);
+    expect(transfers.clear).not.toHaveBeenCalled();           // the file is kept
+    await waitFor(() => expect(result.current.claims).toHaveLength(0));
+  });
+
+  it('reject discards the copy (clears the transfer) and resumes', async () => {
+    const { client, sent } = fakeClient({
+      wishes: [{ query: 'q', filters: null, auto: true }],
+      claims: [{ query: 'q', user: 'u', transferId: 't1', path: 'p', status: 'awaiting-review' }],
+    });
+    const transfers = transfersOf();
+    const { result } = renderHook(() => useAutoDownloads(client, wishHitsOf({}), transfers, analysisStub()),
+      { wrapper: StrictMode });
+
+    await waitFor(() => expect(result.current.claims).toHaveLength(1));
+    act(() => result.current.reject('q'));
+
+    expect(transfers.clear).toHaveBeenCalledWith(['t1']);
+    // The wish is NOT removed — it stays to find another copy.
+    expect(sent.some((s) => s.cmd === 'wishlist.remove')).toBe(false);
+    await waitFor(() => expect(result.current.claims).toHaveLength(0));
   });
 });

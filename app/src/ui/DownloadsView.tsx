@@ -40,6 +40,7 @@ import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { ASSESSMENT_LABEL, ASSESSMENT_TONE, explain } from '../data/analysisStore.ts';
 import { Spectrum } from './Spectrum.tsx';
+import type { AutoClaim } from '../../../shared/protocol.ts';
 import { MetadataPanel, MetadataTrigger, useMetadata } from './MetadataPanel.tsx';
 import { PreviewButton } from './Preview.tsx';
 import { OrganiseButton } from './Organise.tsx';
@@ -111,6 +112,81 @@ function Verdict({
       {ASSESSMENT_LABEL[a.assessment]}
       <span className="verify__caret" aria-hidden>{open ? '\u2303' : '\u2304'}</span>
     </button>
+  );
+}
+
+/** Last segment of a Soulseek virtual path (backslash-separated). */
+function basename(path: string): string {
+  const parts = path.split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+
+/**
+ * The auto-download review section: candidates Seek fetched on its own, each
+ * held here with its spectrogram until a person approves or rejects it. The
+ * spectrogram is shown to INFORM that decision \u2014 it is the hedged, post-download
+ * check, never an automatic verdict, which is the whole reason a human stands
+ * at this gate (PRODUCT \u00a76).
+ */
+function AutoReview({
+  claims, analysis, onApprove, onReject,
+}: {
+  claims: AutoClaim[];
+  analysis: AnalysisSession;
+  onApprove?(query: string): void;
+  onReject?(query: string): void;
+}) {
+  return (
+    <>
+      <div className="dls__section dls__section--review">
+        <span>Awaiting review</span>
+        <span className="dls__section-n tnum">{integer(claims.length)}</span>
+      </div>
+      {claims.map((c) => {
+        const entry = c.transferId ? analysis.byTransfer.get(c.transferId) : undefined;
+        const done = entry && entry.state !== 'running' && entry.state !== 'failed';
+        return (
+          <div key={c.query} className="autorev">
+            <div className="autorev__head">
+              <div className="autorev__meta">
+                <span className="autorev__title" title={c.path}>{basename(c.path)}</span>
+                <span className="autorev__sub">
+                  for \u201c{c.query}\u201d \u00b7 from {c.user}
+                </span>
+              </div>
+              <div className="autorev__actions">
+                <button
+                  type="button"
+                  className="btn btn--primary pressable"
+                  onClick={() => onApprove?.(c.query)}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  className="btn pressable"
+                  title="Discard this copy and keep looking for another"
+                  onClick={() => onReject?.(c.query)}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+            <div className="autorev__body">
+              {done
+                ? <Spectrum a={entry!.result!} />
+                : (
+                  <p className="autorev__wait">
+                    {entry?.state === 'failed'
+                      ? 'Could not analyse this file \u2014 you can still decide.'
+                      : 'Analysing the spectrum\u2026'}
+                  </p>
+                )}
+            </div>
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -766,7 +842,7 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
 
 export function DownloadsView({
   session, signedIn, filter, analysis, checksums, client, preview, density,
-  onDensity, discovery,
+  onDensity, discovery, autoClaims, onApproveAuto, onRejectAuto,
 }: {
   session: TransferSession;
   signedIn: boolean;
@@ -779,6 +855,10 @@ export function DownloadsView({
   density: Density;
   onDensity(d: Density): void;
   discovery?: RelatedDiscovery;
+  /** Auto-downloads waiting to be approved. Completed lens only. */
+  autoClaims?: AutoClaim[];
+  onApproveAuto?(query: string): void;
+  onRejectAuto?(query: string): void;
 }) {
   /* Sort and query are per-lens and per-visit, deliberately. A search box that
    * remembered what you typed last time is a list that looks empty for reasons
@@ -913,13 +993,37 @@ export function DownloadsView({
     ? density
     : 'comfortable';
 
+  /* Auto-downloads awaiting review, pulled out of the ordinary Completed list
+     into their own section so a candidate you have not judged never sits among
+     the ones you have. Keyed by transfer id — an auto-download enqueues a single
+     file, so its claim's transfer is its own group. */
+  const awaiting = useMemo(
+    () => (autoClaims ?? []).filter((c) => c.status === 'awaiting-review'),
+    [autoClaims],
+  );
+  const awaitingIds = useMemo(() => new Set(awaiting.map((c) => c.transferId)), [awaiting]);
+
+  /* On a fresh start an awaiting-review claim survives but its spectrogram does
+     not (analysis is in memory), so ask for it once. Guarded by a ref so a
+     result arriving does not re-request. */
+  const analysed = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const c of awaiting) {
+      if (!c.transferId || analysed.current.has(c.transferId)) continue;
+      if (!analysis.byTransfer.get(c.transferId)) analysis.analyseTransfer(c.transferId);
+      analysed.current.add(c.transferId);
+    }
+  }, [awaiting, analysis]);
+
   const lens = session.groups.filter((g) => (
     /* A given-up group is excluded from 'active' by having its own state, and
      * joins Failed below. It is not a failure — nothing refused it and nothing
      * errored — but Failed is where you go to deal with downloads that are not
      * happening, and that is exactly what this is. */
     filter === 'active' ? g.state === 'active' || g.state === 'queued' || g.state === 'paused'
-      : filter === 'finished' ? g.state === 'finished'
+      // A finished group that IS an auto-download awaiting review is shown in its
+      // own section instead, not here.
+      : filter === 'finished' ? g.state === 'finished' && !g.transfers.every((t) => awaitingIds.has(t.id))
         // Cancelled sits with Failed: it did not complete, and it can be retried.
         : g.state === 'failed' || g.state === 'cancelled' || g.state === 'stalled'
   ));
@@ -1128,6 +1232,14 @@ export function DownloadsView({
           )}
           {session.error && (
             <p className="dls__error" role="alert">{session.error}</p>
+          )}
+          {filter === 'finished' && awaiting.length > 0 && (
+            <AutoReview
+              claims={awaiting}
+              analysis={analysis}
+              onApprove={onApproveAuto}
+              onReject={onRejectAuto}
+            />
           )}
           {density === 'table' && <TableHead filter={filter} />}
           {sections.map((sec) => (
