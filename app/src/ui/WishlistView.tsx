@@ -15,30 +15,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import type { WishHits } from '../data/wishHits.ts';
-import type { Filters } from '../domain/types.ts';
+import type { Filters, WishFilters } from '../domain/types.ts';
 import { describeFilters } from '../domain/wishFilters.ts';
 import { IconClose, IconEmpty, IconSearch } from '../icons/index.tsx';
 
-/** Mirrors `WishFilters` on the wire — see shared/schema.py for why it is
- *  Seek's own shape rather than upstream's slots. */
-export interface WishFilters {
-  formats: string[];
-  losslessOnly: boolean;
-  minBitrate: number | null;
-  durationMin: number | null;
-  durationMax: number | null;
-  sizeMin: number | null;
-  sizeMax: number | null;
-  excludeTranscodes: boolean;
-  freeSlotsOnly: boolean;
-  minSpeed: number | null;
-  maxQueue: number | null;
-  include: string;
-  exclude: string;
-  hidePrivate: boolean;
-}
-
-interface Wish { query: string; filters: WishFilters | null }
+interface Wish { query: string; filters: WishFilters | null; auto: boolean }
 interface WishlistState { items: Wish[]; intervalSeconds: number }
 
 function interval(seconds: number): string {

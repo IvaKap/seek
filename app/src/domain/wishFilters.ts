@@ -11,7 +11,7 @@
  * rather than storing an empty one — see `_cmd_wishlist_filters`.
  */
 
-import type { WishFilters } from '../ui/WishlistView.tsx';
+import type { WishFilters } from './types.ts';
 
 function seconds(n: number): string {
   if (n < 60) return `${n}s`;

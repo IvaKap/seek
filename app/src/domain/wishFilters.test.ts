@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { describeFilters } from './wishFilters.ts';
-import type { WishFilters } from '../ui/WishlistView.tsx';
+import type { WishFilters } from './types.ts';
 
 const NONE: WishFilters = {
   formats: [], losslessOnly: false, minBitrate: null,
