@@ -24,6 +24,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { WishHits } from './wishHits.ts';
+import type { Transfer } from './transferStore.ts';
 import { planAutoDownloads } from '../domain/autoWishlist.ts';
 import type { SourceFile } from '../domain/types.ts';
 import type { AutoClaim, AutoClaimList, Wish, WishlistState } from '../../../shared/protocol.ts';
@@ -32,13 +33,19 @@ import type { AutoClaim, AutoClaimList, Wish, WishlistState } from '../../../sha
  *  cannot open a hundred transfers on a single interval tick. */
 const MAX_INFLIGHT = 3;
 
-/** Statuses that occupy a download slot. An awaiting-review claim is done
- *  downloading, so it holds its wish but not a slot. */
-const INFLIGHT = new Set(['downloading', 'analysing']);
+/** The status that occupies a download slot. Once a claim reaches
+ *  awaiting-review it is done downloading, so it holds its wish but frees a
+ *  slot for the next one. */
+const DOWNLOADING = 'downloading';
+const AWAITING = 'awaiting-review';
 
-/** The minimum of a transfers session this controller drives. */
-interface Enqueuer {
+/** The slices of the transfers and analysis sessions this controller drives. */
+interface TransfersView {
   enqueue(username: string, path: string, size: number): Promise<void>;
+  all: Transfer[];
+}
+interface AnalysisView {
+  analyseTransfer(transferId: string): void;
 }
 
 export interface AutoDownloads {
@@ -49,7 +56,8 @@ export interface AutoDownloads {
 export function useAutoDownloads(
   client: SidecarClient | null,
   wishHits: WishHits,
-  transfers: Enqueuer,
+  transfers: TransfersView,
+  analysis: AnalysisView,
 ): AutoDownloads {
   const [wishes, setWishes] = useState<Wish[]>([]);
   const [claims, setClaims] = useState<AutoClaim[]>([]);
@@ -88,7 +96,7 @@ export function useAutoDownloads(
   useEffect(() => {
     if (!client || !loaded.current) return;
     const claimed = new Set(claims.map((c) => c.query));
-    const slotsFree = MAX_INFLIGHT - claims.filter((c) => INFLIGHT.has(c.status)).length;
+    const slotsFree = MAX_INFLIGHT - claims.filter((c) => c.status === DOWNLOADING).length;
     if (slotsFree <= 0) return;
 
     const sourcesByQuery: Record<string, SourceFile[]> = {};
@@ -109,10 +117,28 @@ export function useAutoDownloads(
         user: item.source.user,
         transferId: '',
         path: item.source.path,
-        status: 'downloading',
+        status: DOWNLOADING,
       })),
     ]);
   }, [client, wishes, claims, wishHits.byQuery, transfers, persist]);
+
+  // When a claimed download finishes, analyse it and hand it to review. The
+  // transfer is found by its natural key (user + path); the spectrogram then
+  // computes in the background and the review card shows it when ready, exactly
+  // as the manual Verify does — the automation never reads the verdict itself.
+  useEffect(() => {
+    if (!client || !loaded.current) return;
+    let changed = false;
+    const next = claims.map((c) => {
+      if (c.status !== DOWNLOADING) return c;
+      const t = transfers.all.find((x) => x.username === c.user && x.path === c.path);
+      if (!t || t.state !== 'finished') return c;
+      analysis.analyseTransfer(t.id);
+      changed = true;
+      return { ...c, transferId: t.id, status: AWAITING };
+    });
+    if (changed) persist(next);
+  }, [client, claims, transfers.all, analysis, persist]);
 
   return { claims };
 }

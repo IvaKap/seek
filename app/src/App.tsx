@@ -241,7 +241,7 @@ export default function App() {
      result as it arrives and hold it for review. Mounted here, not in the
      Wishlist screen, so it runs whenever Seek is open. Its claims feed the
      review UI in a later step; here it is mounted for its effect. */
-  useAutoDownloads(session.client, wishHits, transfers);
+  useAutoDownloads(session.client, wishHits, transfers, analysis);
   const related = useRelated(session.client);
   /* The want entry whose search is in flight. One at a time on purpose:
      Soulseek throttles a client that searches faster than the server allows,

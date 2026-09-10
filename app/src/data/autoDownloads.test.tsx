@@ -13,9 +13,24 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useAutoDownloads } from './autoDownloads.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { WishHits, WishHit } from './wishHits.ts';
+import type { Transfer } from './transferStore.ts';
 import { adaptSearchResult } from './adapt.ts';
 
 afterEach(cleanup);
+
+const analysisStub = () => ({ analyseTransfer: vi.fn() });
+const transfersOf = (all: Transfer[] = []) => ({ enqueue: vi.fn(() => Promise.resolve()), all });
+
+/** A finished download row for a claimed candidate. */
+function finishedTransfer(user: string, path: string): Transfer {
+  return {
+    id: `${user}:${path}`, direction: 'download', username: user, path,
+    localFolder: null, size: 40_000_000, bytesDone: 40_000_000, state: 'finished',
+    speed: 0, averageSpeed: 0, queuePosition: null, secondsLeft: null,
+    secondsElapsed: 10, stalled: false, secondsSinceProgress: 0,
+    finishedAt: Date.now() / 1000, error: null,
+  };
+}
 
 function fakeClient(over: {
   wishes?: { query: string; filters: null; auto: boolean }[];
@@ -64,12 +79,12 @@ describe('useAutoDownloads', () => {
     const { client, sent } = fakeClient({
       wishes: [{ query: 'drexciya', filters: null, auto: true }],
     });
-    const enqueue = vi.fn(() => Promise.resolve());
-    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), { enqueue }),
+    const transfers = transfersOf();
+    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers, analysisStub()),
       { wrapper: StrictMode });
 
-    await waitFor(() => expect(enqueue).toHaveBeenCalledTimes(1));
-    expect(enqueue).toHaveBeenCalledWith('a-peer', 'music\\Drexciya\\01.flac', 40_000_000);
+    await waitFor(() => expect(transfers.enqueue).toHaveBeenCalledTimes(1));
+    expect(transfers.enqueue).toHaveBeenCalledWith('a-peer', 'music\\Drexciya\\01.flac', 40_000_000);
 
     const claimWrite = sent.find((s) => s.cmd === 'wishlist.claims');
     expect(claimWrite).toBeTruthy();
@@ -80,13 +95,13 @@ describe('useAutoDownloads', () => {
 
   it('does nothing for a wish with auto off', async () => {
     const { client } = fakeClient({ wishes: [{ query: 'drexciya', filters: null, auto: false }] });
-    const enqueue = vi.fn(() => Promise.resolve());
-    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), { enqueue }),
+    const transfers = transfersOf();
+    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers, analysisStub()),
       { wrapper: StrictMode });
 
     // Give the effects a chance to run, then assert nothing happened.
     await new Promise((r) => setTimeout(r, 20));
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(transfers.enqueue).not.toHaveBeenCalled();
   });
 
   it('does not re-download a wish that already has a claim', async () => {
@@ -94,11 +109,29 @@ describe('useAutoDownloads', () => {
       wishes: [{ query: 'drexciya', filters: null, auto: true }],
       claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path: 'x', status: 'downloading' }],
     });
-    const enqueue = vi.fn(() => Promise.resolve());
-    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), { enqueue }),
+    const transfers = transfersOf();
+    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers, analysisStub()),
       { wrapper: StrictMode });
 
     await new Promise((r) => setTimeout(r, 20));
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(transfers.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('analyses a finished claim and moves it to awaiting-review', async () => {
+    const path = 'music\\Drexciya\\01.flac';
+    const { client, sent } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path, status: 'downloading' }],
+    });
+    const transfers = transfersOf([finishedTransfer('a-peer', path)]);
+    const analysis = analysisStub();
+    renderHook(() => useAutoDownloads(client, wishHitsOf({}), transfers, analysis),
+      { wrapper: StrictMode });
+
+    await waitFor(() => expect(analysis.analyseTransfer).toHaveBeenCalledWith('a-peer:' + path));
+    // The claim it persists last is the awaiting-review one, carrying the id.
+    const writes = sent.filter((s) => s.cmd === 'wishlist.claims');
+    const last = writes[writes.length - 1].params as { items: { status: string; transferId: string }[] };
+    expect(last.items[0]).toMatchObject({ status: 'awaiting-review', transferId: 'a-peer:' + path });
   });
 });
