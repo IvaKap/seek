@@ -130,9 +130,12 @@
  * on the content inside it. */
 .dig {
   overflow: hidden;
-  /* Generous and constant. Large enough for the tallest card, small enough to
-     contain a provider that returns something absurd. Never transitioned. */
-  max-height: 16rem;
+  /* Constant and never transitioned. Sized to hold the card's chrome plus the
+     tracklist scroller (`.dig__tracks--scroll`, 15rem) — that scroller is what
+     bounds a long or absurd provider response, so this clamp only has to clear
+     the fixed rows above it, not guess at a track count. Too small and the
+     scroller is clipped by THIS element before its own scrollbar can appear. */
+  max-height: 28rem;
   margin-top: var(--sp-3);
 }
 .dig__inner {
