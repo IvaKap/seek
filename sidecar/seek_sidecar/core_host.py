@@ -2956,11 +2956,21 @@ class CoreHost:
         stored = self._load_state().get("wish_filters")
         return dict(stored) if isinstance(stored, dict) else {}
 
+    def _wish_auto(self):
+        """Which wishes auto-download, keyed by wish text. Seek's state.
+
+        Stored as a set of enabled wishes — off is absence, exactly as clearing
+        a filter removes its key rather than storing an all-defaults object.
+        """
+        stored = self._load_state().get("wish_auto")
+        return {q: True for q in stored} if isinstance(stored, list) else {}
+
     def _wishlist_state(self):
         filters = self._wish_filters()
+        auto = self._wish_auto()
         return {
             "items": [
-                {"query": q, "filters": filters.get(q)}
+                {"query": q, "filters": filters.get(q), "auto": q in auto}
                 for q in reversed(list(self.core.search.wishlist))
             ],
             "intervalSeconds": int(self.core.search.wishlist_interval or 0),
@@ -3057,6 +3067,52 @@ class CoreHost:
         self.bridge.broadcast("wishlist.state", state)
         return state
 
+    def _cmd_wishlist_auto(self, params):
+        query = str(params.get("query") or "").strip()
+        if not query:
+            raise CommandError("bad_request", "empty wish")
+        if query not in self.core.search.wishlist:
+            raise CommandError("not_found", "no such wish")
+        enabled = set(self._wish_auto())
+        if params.get("auto"):
+            enabled.add(query)
+        else:
+            enabled.discard(query)
+        self._save_state(wish_auto=sorted(enabled))
+        state = self._wishlist_state()
+        self.bridge.broadcast("wishlist.state", state)
+        return state
+
+    # -- the auto-download claim ledger ------------------------------------
+    #
+    # Stored ONLY so a restart neither re-downloads a candidate already on disk
+    # nor forgets one awaiting review. The frontend owns it — deciding what to
+    # claim and when it is reviewed is a decision, and decisions are the app's,
+    # exactly as with wish_seen. The sidecar stores it verbatim.
+
+    def _auto_claims(self):
+        stored = self._load_state().get("auto_claims")
+        return list(stored) if isinstance(stored, list) else []
+
+    def _cmd_wishlist_claimsList(self, _params):
+        return {"items": self._auto_claims()}
+
+    def _cmd_wishlist_claims(self, params):
+        # Kept to the four known fields so a client bug cannot bloat the state
+        # file, but never interpreted here.
+        clean = []
+        for it in params.get("items") or []:
+            if not isinstance(it, dict):
+                continue
+            clean.append({
+                "query": str(it.get("query") or ""),
+                "transferId": str(it.get("transferId") or ""),
+                "path": str(it.get("path") or ""),
+                "status": str(it.get("status") or ""),
+            })
+        self._save_state(auto_claims=clean)
+        return {"items": clean}
+
     def _cmd_wishlist_remove(self, params):
         query = (params.get("query") or "").strip()
         self.core.search.remove_wish(query)
@@ -3069,6 +3125,14 @@ class CoreHost:
         seen = self._wish_seen()
         if seen.pop(query, None) is not None:
             self._save_state(wish_seen=seen)
+        enabled = set(self._wish_auto())
+        if query in enabled:
+            enabled.discard(query)
+            self._save_state(wish_auto=sorted(enabled))
+        claims = self._auto_claims()
+        kept = [c for c in claims if c.get("query") != query]
+        if len(kept) != len(claims):
+            self._save_state(auto_claims=kept)
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
         return state

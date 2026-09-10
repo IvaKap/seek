@@ -200,6 +200,10 @@ class _WishHost:
     # Bound here rather than on _SeenHost: `wishlist.remove` drops a wish's
     # seen-set too, so every host that can remove one needs it.
     _wish_seen = CoreHost._wish_seen
+    # Likewise `wishlist.state` and `wishlist.remove` now touch the auto flag
+    # and the claim ledger.
+    _wish_auto = CoreHost._wish_auto
+    _auto_claims = CoreHost._auto_claims
     _wishlist_state = CoreHost._wishlist_state
     _cmd_wishlist_list = CoreHost._cmd_wishlist_list
     _cmd_wishlist_filters = CoreHost._cmd_wishlist_filters
@@ -217,7 +221,7 @@ FILTERS = {
 def test_a_wish_carries_no_filters_until_it_is_given_some():
     h = _WishHost(["drexciya"])
     state = h._cmd_wishlist_list(None)
-    assert state["items"] == [{"query": "drexciya", "filters": None}]
+    assert state["items"] == [{"query": "drexciya", "filters": None, "auto": False}]
 
 
 def test_filters_are_stored_against_the_wish():

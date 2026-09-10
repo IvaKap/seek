@@ -399,7 +399,7 @@ def _event_samples():
         "chat.members": {"room": "electronic", "users": ["someone", "another"]},
         "wishlist.state": {
             "items": [
-                {"query": "burial untrue", "filters": None},
+                {"query": "burial untrue", "filters": None, "auto": False},
                 {
                     # A wish carrying filters, so the nested type is exercised
                     # rather than only its null case.
@@ -411,6 +411,7 @@ def _event_samples():
                         "freeSlotsOnly": False, "minSpeed": None, "maxQueue": None,
                         "include": "", "exclude": "", "hidePrivate": True,
                     },
+                    "auto": True,
                 },
             ],
             "intervalSeconds": 720,

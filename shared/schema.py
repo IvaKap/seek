@@ -1943,6 +1943,13 @@ STRUCTS = {
                 "Null when the wish keeps no filters of its own, which is the "
                 "default and means its results are shown unfiltered.",
             ),
+            (
+                "auto",
+                "bool",
+                "Auto-download a qualifying result while Seek is open. Off by "
+                "default. The MATCH and the decision are the frontend's; the "
+                "sidecar only stores the flag and reflects it here.",
+            ),
         ],
     ),
     "WishFiltersParams": (
@@ -1951,6 +1958,45 @@ STRUCTS = {
             ("query", "str", "Which wish."),
             ("filters", "WishFilters?", "Null clears them."),
         ],
+    ),
+    "WishAutoParams": (
+        "Turn auto-download on or off for one wish.",
+        [
+            ("query", "str", "Which wish."),
+            ("auto", "bool", "True enables it; false clears the flag."),
+        ],
+    ),
+    "AutoClaim": (
+        "One auto-download the frontend has committed to: in flight, being\n"
+        "analysed, or waiting for the user to approve or reject it.\n"
+        "\n"
+        "SEEK'S COORDINATION STATE, stored only so a restart does not re-download\n"
+        "a candidate already on disk and does not lose one that is awaiting\n"
+        "review. Keyed by wish. The sidecar stores these verbatim and does\n"
+        "nothing else with them — deciding what to claim, and when it has been\n"
+        "reviewed, is the frontend's, exactly as with WishSeen.",
+        [
+            ("query", "str", "The wish this candidate answers."),
+            ("transferId", "str", "The sidecar-minted transfer id for the file."),
+            ("path", "str", "The candidate's virtual path."),
+            (
+                "status",
+                "str",
+                "downloading | analysing | awaiting-review. The frontend's "
+                "vocabulary; the sidecar does not interpret it.",
+            ),
+        ],
+    ),
+    "AutoClaimList": (
+        "Every live auto-download claim, as stored.",
+        [("items", "AutoClaim[]", "One per wish with a candidate in flight or "
+          "awaiting review.")],
+    ),
+    "AutoClaimsParams": (
+        "Replace the whole claim ledger. Sent whenever it changes; small "
+        "(bounded by the auto-download concurrency cap), so replacing it "
+        "wholesale is simpler than upserting and cannot drift.",
+        [("items", "AutoClaim[]", "The full set; stored verbatim.")],
     ),
     "WishSeen": (
         "Which of a wish's results have already been looked at.\n"
@@ -2822,6 +2868,11 @@ COMMANDS = {
         "WishFiltersParams",
         "WishlistState",
     ),
+    "wishlist.auto": (
+        "Enable or disable auto-download for one wish.",
+        "WishAutoParams",
+        "WishlistState",
+    ),
     "wishlist.list": ("Current wishlist and interval.", None, "WishlistState"),
     "wishlist.seen": (
         "Remember that these results have been looked at, so a later run does "
@@ -2834,6 +2885,18 @@ COMMANDS = {
         "the frontend is the only writer and tracks its own copy after that.",
         None,
         "WishSeenList",
+    ),
+    "wishlist.claims": (
+        "Replace the auto-download claim ledger. Stored verbatim; the frontend "
+        "owns it and sends the whole set whenever it changes.",
+        "AutoClaimsParams",
+        "AutoClaimList",
+    ),
+    "wishlist.claimsList": (
+        "The auto-download claim ledger, as stored. Asked for once on connect, "
+        "so an awaiting-review candidate survives a restart.",
+        None,
+        "AutoClaimList",
     ),
     "artwork.get": (
         "Ask for a release cover. Replies immediately with a requestId; the "

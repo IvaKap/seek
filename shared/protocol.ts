@@ -2352,6 +2352,13 @@ export interface Wish {
    * means its results are shown unfiltered.
    */
   filters: WishFilters | null;
+
+  /**
+   * Auto-download a qualifying result while Seek is open. Off by default. The
+   * MATCH and the decision are the frontend's; the sidecar only stores the
+   * flag and reflects it here.
+   */
+  auto: boolean;
 }
 
 /** Set or clear the filters on one wish. */
@@ -2361,6 +2368,58 @@ export interface WishFiltersParams {
 
   /** Null clears them. */
   filters: WishFilters | null;
+}
+
+/** Turn auto-download on or off for one wish. */
+export interface WishAutoParams {
+  /** Which wish. */
+  query: string;
+
+  /** True enables it; false clears the flag. */
+  auto: boolean;
+}
+
+/**
+ * One auto-download the frontend has committed to: in flight, being
+ * analysed, or waiting for the user to approve or reject it.
+ *
+ * SEEK'S COORDINATION STATE, stored only so a restart does not re-download
+ * a candidate already on disk and does not lose one that is awaiting
+ * review. Keyed by wish. The sidecar stores these verbatim and does
+ * nothing else with them — deciding what to claim, and when it has been
+ * reviewed, is the frontend's, exactly as with WishSeen.
+ */
+export interface AutoClaim {
+  /** The wish this candidate answers. */
+  query: string;
+
+  /** The sidecar-minted transfer id for the file. */
+  transferId: string;
+
+  /** The candidate's virtual path. */
+  path: string;
+
+  /**
+   * downloading | analysing | awaiting-review. The frontend's vocabulary; the
+   * sidecar does not interpret it.
+   */
+  status: string;
+}
+
+/** Every live auto-download claim, as stored. */
+export interface AutoClaimList {
+  /** One per wish with a candidate in flight or awaiting review. */
+  items: AutoClaim[];
+}
+
+/**
+ * Replace the whole claim ledger. Sent whenever it changes; small (bounded by
+ * the auto-download concurrency cap), so replacing it wholesale is simpler
+ * than upserting and cannot drift.
+ */
+export interface AutoClaimsParams {
+  /** The full set; stored verbatim. */
+  items: AutoClaim[];
 }
 
 /**
@@ -3344,6 +3403,8 @@ export interface CommandParams {
   'wishlist.remove': WishParams;
   /** Set or clear the filters carried by one wish. */
   'wishlist.filters': WishFiltersParams;
+  /** Enable or disable auto-download for one wish. */
+  'wishlist.auto': WishAutoParams;
   /** Current wishlist and interval. */
   'wishlist.list': Record<string, never>;
   /**
@@ -3356,6 +3417,16 @@ export interface CommandParams {
    * frontend is the only writer and tracks its own copy after that.
    */
   'wishlist.seenList': Record<string, never>;
+  /**
+   * Replace the auto-download claim ledger. Stored verbatim; the frontend owns
+   * it and sends the whole set whenever it changes.
+   */
+  'wishlist.claims': AutoClaimsParams;
+  /**
+   * The auto-download claim ledger, as stored. Asked for once on connect, so
+   * an awaiting-review candidate survives a restart.
+   */
+  'wishlist.claimsList': Record<string, never>;
   /**
    * Ask for a release cover. Replies immediately with a requestId; the image
    * arrives later as `artwork.result` or `artwork.failed`. Never on the
@@ -3661,9 +3732,12 @@ export interface CommandResult {
   'wishlist.add': WishlistState;
   'wishlist.remove': WishlistState;
   'wishlist.filters': WishlistState;
+  'wishlist.auto': WishlistState;
   'wishlist.list': WishlistState;
   'wishlist.seen': WishSeenResult;
   'wishlist.seenList': WishSeenList;
+  'wishlist.claims': AutoClaimList;
+  'wishlist.claimsList': AutoClaimList;
   'artwork.get': RequestAccepted;
   'artwork.stats': ArtworkCacheStats;
   'artwork.clear': ArtworkCacheStats;
@@ -3765,9 +3839,12 @@ export const COMMAND_NAMES = [
   'wishlist.add',
   'wishlist.remove',
   'wishlist.filters',
+  'wishlist.auto',
   'wishlist.list',
   'wishlist.seen',
   'wishlist.seenList',
+  'wishlist.claims',
+  'wishlist.claimsList',
   'artwork.get',
   'artwork.stats',
   'artwork.clear',

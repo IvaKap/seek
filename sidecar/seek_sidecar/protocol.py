@@ -1909,6 +1909,10 @@ class Wish(TypedDict):
     # Null when the wish keeps no filters of its own, which is the default and
     # means its results are shown unfiltered.
     filters: Optional["WishFilters"]
+    # Auto-download a qualifying result while Seek is open. Off by default.
+    # The MATCH and the decision are the frontend's; the sidecar only stores
+    # the flag and reflects it here.
+    auto: bool
 
 
 class WishFiltersParams(TypedDict):
@@ -1917,6 +1921,52 @@ class WishFiltersParams(TypedDict):
     query: str
     # Null clears them.
     filters: Optional["WishFilters"]
+
+
+class WishAutoParams(TypedDict):
+    """Turn auto-download on or off for one wish."""
+    # Which wish.
+    query: str
+    # True enables it; false clears the flag.
+    auto: bool
+
+
+class AutoClaim(TypedDict):
+    """
+    One auto-download the frontend has committed to: in flight, being
+    analysed, or waiting for the user to approve or reject it.
+
+    SEEK'S COORDINATION STATE, stored only so a restart does not re-download
+    a candidate already on disk and does not lose one that is awaiting
+    review. Keyed by wish. The sidecar stores these verbatim and does
+    nothing else with them — deciding what to claim, and when it has been
+    reviewed, is the frontend's, exactly as with WishSeen.
+    """
+    # The wish this candidate answers.
+    query: str
+    # The sidecar-minted transfer id for the file.
+    transferId: str
+    # The candidate's virtual path.
+    path: str
+    # downloading | analysing | awaiting-review. The frontend's vocabulary;
+    # the sidecar does not interpret it.
+    status: str
+
+
+class AutoClaimList(TypedDict):
+    """Every live auto-download claim, as stored."""
+    # One per wish with a candidate in flight or awaiting review.
+    items: List["AutoClaim"]
+
+
+class AutoClaimsParams(TypedDict):
+    """
+    Replace the whole claim ledger. Sent whenever it changes; small (bounded
+    by the auto-download concurrency cap), so replacing it wholesale is
+    simpler than upserting and cannot drift.
+    """
+    # The full set; stored verbatim.
+    items: List["AutoClaim"]
 
 
 class WishSeen(TypedDict):
@@ -3305,10 +3355,27 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "Wish": (
         ("query", "str", False, False),
         ("filters", "WishFilters", False, True),
+        ("auto", "bool", False, False),
     ),
     "WishFiltersParams": (
         ("query", "str", False, False),
         ("filters", "WishFilters", False, True),
+    ),
+    "WishAutoParams": (
+        ("query", "str", False, False),
+        ("auto", "bool", False, False),
+    ),
+    "AutoClaim": (
+        ("query", "str", False, False),
+        ("transferId", "str", False, False),
+        ("path", "str", False, False),
+        ("status", "str", False, False),
+    ),
+    "AutoClaimList": (
+        ("items", "AutoClaim", True, False),
+    ),
+    "AutoClaimsParams": (
+        ("items", "AutoClaim", True, False),
     ),
     "WishSeen": (
         ("query", "str", False, False),
@@ -3622,9 +3689,12 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "wishlist.add": ("WishParams", "WishlistState"),
     "wishlist.remove": ("WishParams", "WishlistState"),
     "wishlist.filters": ("WishFiltersParams", "WishlistState"),
+    "wishlist.auto": ("WishAutoParams", "WishlistState"),
     "wishlist.list": (None, "WishlistState"),
     "wishlist.seen": ("WishSeen", "WishSeenResult"),
     "wishlist.seenList": (None, "WishSeenList"),
+    "wishlist.claims": ("AutoClaimsParams", "AutoClaimList"),
+    "wishlist.claimsList": (None, "AutoClaimList"),
     "artwork.get": ("ArtworkParams", "RequestAccepted"),
     "artwork.stats": (None, "ArtworkCacheStats"),
     "artwork.clear": (None, "ArtworkCacheStats"),
