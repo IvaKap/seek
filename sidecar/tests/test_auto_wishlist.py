@@ -104,7 +104,7 @@ def test_auto_survives_a_restart(host, tmp_path):
 # -- the claim ledger -----------------------------------------------------
 
 def _claim(status="downloading"):
-    return {"query": "burial untrue", "transferId": "t1",
+    return {"query": "burial untrue", "user": "aphex", "transferId": "t1",
             "path": "@user\\music\\01.flac", "status": status}
 
 

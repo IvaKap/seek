@@ -2393,7 +2393,16 @@ export interface AutoClaim {
   /** The wish this candidate answers. */
   query: string;
 
-  /** The sidecar-minted transfer id for the file. */
+  /**
+   * Who it is coming from. With `path`, the natural key of the transfer this
+   * claim tracks (username + virtual path).
+   */
+  user: string;
+
+  /**
+   * The sidecar-minted transfer id once known; empty until the transfer
+   * appears. `user`+`path` is the durable correlator across a restart.
+   */
   transferId: string;
 
   /** The candidate's virtual path. */

@@ -69,3 +69,44 @@ export function pickAutoCandidate(
   }
   return best;
 }
+
+/** A wish, reduced to what the planner needs to know about it. */
+export interface AutoWish {
+  query: string;
+  auto: boolean;
+  filters: WishFilters | null;
+}
+
+/** One download the controller should start: a wish and the file to grab for it. */
+export interface AutoPlanItem { query: string; source: SourceFile; }
+
+/**
+ * Decide which auto-downloads to START right now. PURE — the whole decision, so
+ * it can be tested without a socket, a clock, or React.
+ *
+ * The rules, in order:
+ *   - only wishes with auto on;
+ *   - never a wish that already has a claim (in flight or awaiting review) —
+ *     this is the guard that stops a re-run re-downloading the same item, and
+ *     the reason "stop searching once a candidate is downloaded" needs no actual
+ *     stopping: upstream keeps searching, we simply stop acting;
+ *   - at most `slotsFree` at once, so a wall of auto-wishes cannot open a
+ *     hundred transfers on one interval tick.
+ */
+export function planAutoDownloads(
+  wishes: AutoWish[],
+  sourcesByQuery: Record<string, SourceFile[]>,
+  claimedQueries: ReadonlySet<string>,
+  slotsFree: number,
+): AutoPlanItem[] {
+  if (slotsFree <= 0) return [];
+  const plan: AutoPlanItem[] = [];
+  for (const w of wishes) {
+    if (!w.auto || claimedQueries.has(w.query)) continue;
+    const source = pickAutoCandidate(sourcesByQuery[w.query] ?? [], w.filters);
+    if (!source) continue;
+    plan.push({ query: w.query, source });
+    if (plan.length >= slotsFree) break;
+  }
+  return plan;
+}

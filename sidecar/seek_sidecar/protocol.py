@@ -1944,7 +1944,11 @@ class AutoClaim(TypedDict):
     """
     # The wish this candidate answers.
     query: str
-    # The sidecar-minted transfer id for the file.
+    # Who it is coming from. With `path`, the natural key of the transfer this
+    # claim tracks (username + virtual path).
+    user: str
+    # The sidecar-minted transfer id once known; empty until the transfer
+    # appears. `user`+`path` is the durable correlator across a restart.
     transferId: str
     # The candidate's virtual path.
     path: str
@@ -3367,6 +3371,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     ),
     "AutoClaim": (
         ("query", "str", False, False),
+        ("user", "str", False, False),
         ("transferId", "str", False, False),
         ("path", "str", False, False),
         ("status", "str", False, False),

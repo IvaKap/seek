@@ -49,6 +49,7 @@ import { LibraryView } from './ui/LibraryView.tsx';
 import { BrowseView } from './ui/BrowseView.tsx';
 import { WishlistView } from './ui/WishlistView.tsx';
 import { useWishHits } from './data/wishHits.ts';
+import { useAutoDownloads } from './data/autoDownloads.ts';
 import { FollowedView, HistoryView, SavedView, serialiseFilters } from './ui/DiscoveryViews.tsx';
 import { DownloadsView } from './ui/DownloadsView.tsx';
 import { ChatView } from './ui/ChatView.tsx';
@@ -236,6 +237,11 @@ export default function App() {
   /* What the wishlist has turned up while you were doing something else. It
      never interrupts — the count waits on the Wishlist screen and in the nav. */
   const wishHits = useWishHits(session.client);
+  /* Auto-download: for wishes the user has opted in, grab the best qualifying
+     result as it arrives and hold it for review. Mounted here, not in the
+     Wishlist screen, so it runs whenever Seek is open. Its claims feed the
+     review UI in a later step; here it is mounted for its effect. */
+  useAutoDownloads(session.client, wishHits, transfers);
   const related = useRelated(session.client);
   /* The want entry whose search is in flight. One at a time on purpose:
      Soulseek throttles a client that searches faster than the server allows,

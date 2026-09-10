@@ -15,8 +15,9 @@
 import { describe, expect, it } from 'vitest';
 import { adaptSearchResult } from '../data/adapt.ts';
 import type { WireFileRef, WireSearchResultData } from '../data/adapt.ts';
-import { pickAutoCandidate } from './autoWishlist.ts';
-import type { WishFilters } from './types.ts';
+import { pickAutoCandidate, planAutoDownloads } from './autoWishlist.ts';
+import type { AutoWish } from './autoWishlist.ts';
+import type { SourceFile, WishFilters } from './types.ts';
 
 const NONE: WishFilters = {
   formats: [], losslessOnly: false, minBitrate: null, durationMin: null,
@@ -99,5 +100,37 @@ describe('pickAutoCandidate', () => {
       ...sources([mp3(320)], { private: false }),
     ];
     expect(pickAutoCandidate(srcs, null)?.private).toBe(false);
+  });
+});
+
+describe('planAutoDownloads', () => {
+  const wish = (query: string, auto: boolean): AutoWish => ({ query, auto, filters: null });
+  const by = (query: string, files = [flac()]): Record<string, SourceFile[]> =>
+    ({ [query]: sources(files) });
+
+  it('plans a download for an auto wish with a qualifying result', () => {
+    const plan = planAutoDownloads([wish('a', true)], by('a'), new Set(), 3);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].query).toBe('a');
+    expect(plan[0].source.path.endsWith('.flac')).toBe(true);
+  });
+
+  it('ignores wishes with auto off', () => {
+    expect(planAutoDownloads([wish('a', false)], by('a'), new Set(), 3)).toEqual([]);
+  });
+
+  it('never plans a wish that already has a claim', () => {
+    expect(planAutoDownloads([wish('a', true)], by('a'), new Set(['a']), 3)).toEqual([]);
+  });
+
+  it('skips a wish that found nothing qualifying', () => {
+    expect(planAutoDownloads([wish('a', true)], {}, new Set(), 3)).toEqual([]);
+  });
+
+  it('honours the free-slots cap across many eligible wishes', () => {
+    const wishes = [wish('a', true), wish('b', true), wish('c', true)];
+    const srcs = { ...by('a'), ...by('b'), ...by('c') };
+    expect(planAutoDownloads(wishes, srcs, new Set(), 2)).toHaveLength(2);
+    expect(planAutoDownloads(wishes, srcs, new Set(), 0)).toEqual([]);
   });
 });

@@ -1977,7 +1977,11 @@ STRUCTS = {
         "reviewed, is the frontend's, exactly as with WishSeen.",
         [
             ("query", "str", "The wish this candidate answers."),
-            ("transferId", "str", "The sidecar-minted transfer id for the file."),
+            ("user", "str", "Who it is coming from. With `path`, the natural key "
+             "of the transfer this claim tracks (username + virtual path)."),
+            ("transferId", "str", "The sidecar-minted transfer id once known; "
+             "empty until the transfer appears. `user`+`path` is the durable "
+             "correlator across a restart."),
             ("path", "str", "The candidate's virtual path."),
             (
                 "status",

@@ -3106,6 +3106,7 @@ class CoreHost:
                 continue
             clean.append({
                 "query": str(it.get("query") or ""),
+                "user": str(it.get("user") or ""),
                 "transferId": str(it.get("transferId") or ""),
                 "path": str(it.get("path") or ""),
                 "status": str(it.get("status") or ""),
