@@ -173,12 +173,6 @@ export function Heatmap({ a }: { a: SpectralAnalysis }) {
           ))}
         </div>
       </div>
-
-      <p className="heat__cap">
-        Time across, frequency up, loudness as colour (dB at right). A horizontal
-        dark band the whole way across is an encoder ceiling; a vertical dark
-        stripe is just a quiet passage.
-      </p>
     </div>
   );
 }

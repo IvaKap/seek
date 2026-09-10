@@ -64,6 +64,11 @@ export function Spectrum({ a }: { a: SpectralAnalysis }) {
         </span>
       </figcaption>
 
+      {/* Charts on the left, the prose that reads them on the right — so the
+          explanation sits ALONGSIDE the evidence instead of pushing the panel
+          taller. Wraps to a stack when the panel is narrow. */}
+      <div className="spec__body">
+       <div className="spec__charts">
       <svg
         className="spec__svg"
         viewBox={`0 0 ${W} ${H}`}
@@ -124,14 +129,24 @@ export function Spectrum({ a }: { a: SpectralAnalysis }) {
       </svg>
 
       <Heatmap a={a} />
+       </div>
 
-      <p className="spec__explain">{explain(a)}</p>
-      {a.impliedSourceKbps !== null && (
-        <p className="spec__implied">
-          A lowpass there is typical of a source around{' '}
-          <span className="tnum">{a.impliedSourceKbps}</span> kbps.
+       <div className="spec__prose">
+        <p className="spec__explain">{explain(a)}</p>
+        {a.impliedSourceKbps !== null && (
+          <p className="spec__implied">
+            A lowpass there is typical of a source around{' '}
+            <span className="tnum">{a.impliedSourceKbps}</span> kbps.
+          </p>
+        )}
+        {/* The heatmap's legend, now beside it rather than beneath it. */}
+        <p className="spec__legend">
+          Time across, frequency up, loudness as colour (dB at right). A horizontal
+          dark band the whole way across is an encoder ceiling; a vertical dark
+          stripe is just a quiet passage.
         </p>
-      )}
+       </div>
+      </div>
     </figure>
   );
 }
