@@ -37,7 +37,7 @@ from pynicotine import utils
 
 log = logging.getLogger("seek.core")
 
-SIDECAR_VERSION = "0.2.12"
+SIDECAR_VERSION = "0.2.13"
 
 # Upstream speed limits are in KiB/s; our wire is bytes/sec everywhere.
 KIB = 1024
