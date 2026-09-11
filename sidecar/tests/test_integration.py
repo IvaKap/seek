@@ -136,11 +136,15 @@ def test_telemetry_component_is_disabled(host):
     assert host.core.now_playing is None
 
 
-def test_shares_are_off_by_default(host):
-    """Sharing exposes the user's filesystem to the network and must be an
-    explicit choice. It also spawns a subprocess at startup (shares.py:1240)."""
-    assert host.enable_shares is False
-    assert "shares" not in host.core.enabled_components
+def test_nothing_is_shared_by_default(host):
+    """The shares COMPONENT is always enabled — upstream's download re-enqueue
+    path dereferences core.shares, so a None component crashes the engine (see
+    core_host.start). But SHARING still exposes the user's filesystem and must be
+    an explicit choice, so by default nothing is advertised: consent is unset and
+    the shared-folder list is empty."""
+    assert "shares" in host.core.enabled_components   # required, always on
+    assert host._stored_consent() == "unset"
+    assert not host.config.sections["transfers"].get("shared")
 
 
 # --------------------------------------------------------------- commands
@@ -890,8 +894,9 @@ async def test_granting_consent_records_folders(host, client, tmp_path):
     assert state["consent"] == "granted"
     assert state["folders"][0]["path"] == folder
     assert state["folders"][0]["exists"] is True
-    # This session started without the shares component, so sharing begins next launch.
-    assert state["restartRequired"] is True
+    # Shares runs from launch now, so granting takes effect this session (a
+    # rescan) rather than needing a restart.
+    assert state["restartRequired"] is False
 
     # Reset so later tests see a clean slate.
     await call(host, client, "shares.set", {"consent": "unset", "folders": []})
@@ -910,10 +915,12 @@ async def test_contradictory_share_settings_are_rejected(host, client):
     assert reply["ok"] is False
 
 
-async def test_rescan_without_the_shares_component_says_so(host, client):
+async def test_rescan_runs_because_shares_is_always_on(host, client):
+    # The shares component is always enabled now (it has to be — upstream's
+    # download path dereferences core.shares), so a rescan is accepted rather
+    # than refused for a missing component.
     reply = await call(host, client, "shares.rescan", {"force": False})
-    assert reply["ok"] is False
-    assert reply["error"]["code"] == "unsupported"
+    assert reply["ok"] is True
 
 
 async def test_import_inspect_over_the_socket(host, client, tmp_path, monkeypatch):

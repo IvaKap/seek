@@ -218,9 +218,20 @@ class CoreHost:
         log.info("data    -> %s", config.data_folder_path)
 
     def start(self):
+        # Shares is ALWAYS enabled, even when nothing is shared. Upstream's
+        # download re-enqueue path (downloads.py `_enqueue_transfer`)
+        # dereferences `core.shares.initialized` UNCONDITIONALLY — it even has a
+        # branch for "shares not yet initialized" — so a None shares component
+        # crashes the engine the instant a restored queued download's peer comes
+        # online (`_user_status` -> `_enqueue_transfer`). With any queued or
+        # incomplete transfer left over from a previous session that is
+        # essentially every launch, which is the "Sidecar unreachable" crash.
+        #
+        # An empty shares component advertises no files; consent and folders
+        # still gate what is actually shared (see `shares.set`). So this is a
+        # crash-safety change, not a privacy one.
         components = set(BASE_COMPONENTS)
-        if self.enable_shares or self._stored_consent() == "granted":
-            components.add(SHARES_COMPONENT)
+        components.add(SHARES_COMPONENT)
         self.core.init_components(enabled_components=components)
         self._connect_events()
         self.core.start()
@@ -3197,14 +3208,15 @@ class CoreHost:
 
         self._save_state(share_consent=consent)
         self.config.sections["transfers"]["shared"] = resolved
-
-        # The shares component is chosen at init_components() time. Granting
-        # consent in a session that started without it cannot retroactively
-        # build the index, so say so rather than silently doing nothing.
-        if consent == "granted" and self.core.shares is None:
-            self._share_restart_required = True
-
         self.config.write_configuration()
+
+        # Shares is always running now (see start()), so a consent change takes
+        # effect THIS session: re-index to match the new folder set — a granted
+        # set advertises those folders, a cleared one stops — rather than the old
+        # "restart required" dance.
+        if self.core.shares is not None:
+            self.core.shares.rescan_shares()
+
         state = self._share_state()
         self.bridge.broadcast("shares.state", state)
         return state
@@ -3240,10 +3252,12 @@ class CoreHost:
         if result["importedShares"]:
             # Importing shares is itself an explicit act of sharing.
             self._save_state(share_consent="granted")
-            if self.core.shares is None:
-                self._share_restart_required = True
 
         self.config.write_configuration()
+        # Shares runs from launch now, so imported folders take effect this
+        # session with a rescan rather than needing a restart.
+        if result["importedShares"] and self.core.shares is not None:
+            self.core.shares.rescan_shares()
         self.bridge.broadcast("shares.state", self._share_state())
 
         # Importing credentials writes them to disk but does NOT log in — that
