@@ -286,3 +286,42 @@ def test_genuine_flac_from_the_same_source_is_not_flagged(tmp_path):
         f"genuine FLAC misread as {result['assessment']} "
         f"(cutoff={result['cutoffHz']})"
     )
+
+
+# --- the ffmpeg fallback must decode a BOUNDED excerpt, never the whole file ---
+# Regression guard for the memory bug: a 90-minute mix in a fallback format
+# (AAC/ALAC/M4A) decoded whole was ~3 GB of RAM, and auto-download runs analysis
+# on every finished file unattended. ffmpeg is mocked so this needs no binary.
+
+def _fake_ffmpeg(monkeypatch, duration_s, captured):
+    import types
+    def fake_run(cmd, *a, **k):
+        if cmd[0] == "ffprobe":
+            return types.SimpleNamespace(
+                returncode=0, stdout=f"44100\n1\n{duration_s}\n", stderr="")
+        captured["cmd"] = list(cmd)
+        buf = np.zeros(200_000, dtype=np.float32).tobytes()  # a small stand-in decode
+        return types.SimpleNamespace(returncode=0, stdout=buf, stderr=b"")
+    monkeypatch.setattr(spectral.subprocess, "run", fake_run)
+
+
+def test_ffmpeg_fallback_caps_the_decode_on_a_long_file(monkeypatch):
+    cap = {}
+    _fake_ffmpeg(monkeypatch, 5400.0, cap)  # 90 minutes
+    _windows, _sr, _ch, duration, _analysed, backend = spectral._decode_ffmpeg("mix.m4a")
+    assert backend == "ffmpeg"
+    # Bounded: ffmpeg is asked for at most EXCERPT_SECONDS, and to seek past the
+    # intro — NOT to stream the whole 90 minutes into RAM.
+    assert "-t" in cap["cmd"]
+    assert str(spectral.EXCERPT_SECONDS) in cap["cmd"]
+    assert "-ss" in cap["cmd"]
+    # The duration reported to the UI is the whole file's, not the excerpt's.
+    assert duration == 5400.0
+
+
+def test_ffmpeg_fallback_takes_a_short_file_whole(monkeypatch):
+    cap = {}
+    _fake_ffmpeg(monkeypatch, 30.0, cap)  # shorter than one excerpt
+    spectral._decode_ffmpeg("clip.m4a")
+    assert "-t" not in cap["cmd"]   # nothing to cap; decode it all
+    assert "-ss" not in cap["cmd"]

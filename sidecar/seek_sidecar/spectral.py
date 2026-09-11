@@ -49,6 +49,13 @@ FFT_SIZE = 8192
 MAX_WINDOWS = 96          # averaged across the file; plenty for a stable curve
 SPECTRUM_POINTS = 256     # what we ship to the frontend, log-spaced
 SKIP_EDGE_SECONDS = 5.0   # fade-ins and run-out grooves are not representative
+# The ffmpeg fallback decodes into RAM in one shot (unlike soundfile, which
+# seeks), so it must NOT decode the whole file: a 90-minute mix in a fallback
+# format (AAC/ALAC/M4A/Opus) was ~3 GB, and auto-download runs analysis on every
+# finished file unattended. We only ever average MAX_WINDOWS windows (~18 s of
+# audio) and a lossy encoder's lowpass is constant across a track, so a capped
+# middle excerpt is as diagnostic as the whole thing.
+EXCERPT_SECONDS = 180.0
 
 # Containers whose contents are lossless. A shelf here is the interesting case.
 LOSSLESS_EXTENSIONS = {".flac", ".wav", ".wave", ".aiff", ".aif", ".aifc",
@@ -141,20 +148,38 @@ def _decode_ffmpeg(path):
         channels = int(fields[1])
     except (IndexError, ValueError) as error:
         raise AnalysisError("ffprobe returned no usable stream info") from error
+    try:
+        file_duration = float(fields[2])
+    except (IndexError, ValueError):
+        file_duration = 0.0
+
+    # Decode only a bounded excerpt, not the whole file (see EXCERPT_SECONDS).
+    # `-ss` before `-i` seeks past the intro on a long file; on a short one we
+    # take it from the top. Either way ffmpeg only ever hands us a capped buffer.
+    if file_duration > 2 * SKIP_EDGE_SECONDS + EXCERPT_SECONDS:
+        clip = ["-ss", str(SKIP_EDGE_SECONDS), "-t", str(EXCERPT_SECONDS)]
+    elif file_duration > EXCERPT_SECONDS:
+        clip = ["-t", str(EXCERPT_SECONDS)]
+    else:
+        clip = []
 
     result = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", path, "-ac", "1",
+        ["ffmpeg", "-v", "error", *clip, "-i", path, "-ac", "1",
          "-f", "f32le", "-acodec", "pcm_f32le", "-"],
         capture_output=True, timeout=300,
     )
     if result.returncode != 0 or not result.stdout:
         raise AnalysisError(f"ffmpeg failed: {result.stderr.decode()[:200]}")
 
-    samples = np.frombuffer(result.stdout, dtype=np.float32).astype(np.float64)
+    # A float32 VIEW over the bytes — not a whole-file float64 copy. Each window
+    # is promoted to float64 individually below, where it is a few kilobytes.
+    samples = np.frombuffer(result.stdout, dtype=np.float32)
     if samples.size < FFT_SIZE:
         raise AnalysisError("decoded audio is shorter than one FFT window")
 
-    duration = samples.size / float(sample_rate)
+    # The excerpt is not the whole track, so report the FILE's duration (from
+    # ffprobe), falling back to the decoded length only when ffprobe gave none.
+    duration = file_duration or (samples.size / float(sample_rate))
     skip = int(SKIP_EDGE_SECONDS * sample_rate)
     start = skip if samples.size > 4 * skip else 0
     end = samples.size - skip if samples.size > 4 * skip else samples.size
@@ -164,7 +189,7 @@ def _decode_ffmpeg(path):
 
     count = min(MAX_WINDOWS, max(1, usable // FFT_SIZE))
     offsets = np.linspace(start, start + usable, count, dtype=np.int64)
-    windows = [samples[o:o + FFT_SIZE] for o in offsets
+    windows = [samples[o:o + FFT_SIZE].astype(np.float64) for o in offsets
                if o + FFT_SIZE <= samples.size]
     if not windows:
         raise AnalysisError("could not extract any complete FFT window")
