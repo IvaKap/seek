@@ -1192,14 +1192,23 @@
   width: 21rem; display: flex; flex-direction: column; gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--radius-md);
-  background: var(--material-popover);
-  backdrop-filter: blur(var(--blur-popover)) saturate(180%);
-  -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(180%);
+  /* OPAQUE, not the frosted material the other popovers use. This one lives
+     inside a virtualised result row, and the row is positioned by a `transform`
+     (see `.row-slot`) — under a transformed ancestor `backdrop-filter` silently
+     does nothing, so the frosted surface would let the rows behind bleed
+     straight through and the card turns to unreadable overlapping text. A solid
+     surface is readable whether or not the blur ever fires. */
+  background: var(--bg-raised);
   box-shadow: var(--shadow-popover);
   border: 0.5px solid var(--separator-strong);
   animation: popIn var(--dur-fast) var(--ease-out);
   white-space: normal;
 }
+/* Lift the whole row while its popover is open. Each `.row-slot` is its own
+   stacking context (transform), so without this the SIBLING rows below — later
+   in the DOM — paint on top of this row's popover, which is the interleaving
+   that made it look garbled. */
+.row-slot:has(.quality__pop) { z-index: 5; }
 .quality__pop-head { display: flex; align-items: center; gap: var(--sp-2); }
 .quality__pop-title {
   font-size: var(--fs-body); letter-spacing: var(--tr-body); font-weight: var(--fw-semibold);
