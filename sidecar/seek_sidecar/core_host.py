@@ -928,11 +928,29 @@ class CoreHost:
     def _load_state(self):
         # Under the lock so a read never sees a half-written file mid-dump.
         with _STATE_LOCK:
+            path = self._state_path()
             try:
-                with open(self._state_path(), encoding="utf-8") as handle:
+                with open(path, encoding="utf-8") as handle:
                     data = json.load(handle)
                     return data if isinstance(data, dict) else {}
+            except FileNotFoundError:
+                return {}
             except (OSError, ValueError):
+                # A parse error on an EXISTING file is DAMAGED state, not absent
+                # state. Silently returning {} here is how one truncated write
+                # erased everything: the next _save_state rebuilds the file from
+                # {}, keeping only the keys written that session and dropping the
+                # rest for good — the Discogs token, wish filters, saved searches,
+                # share consent. Preserve the file so the loss is loud and
+                # recoverable rather than silent and permanent. (Atomic writes
+                # below make this path rare; this is the belt to that braces.)
+                try:
+                    if os.path.getsize(path) > 0:
+                        aside = f"{path}.corrupt-{int(time.time())}"
+                        os.replace(path, aside)
+                        log.error("seek-state.json was unreadable; kept it at %s", aside)
+                except OSError:
+                    log.exception("seek-state.json unreadable and could not be set aside")
                 return {}
 
     def _save_state(self, **updates):
@@ -944,8 +962,18 @@ class CoreHost:
             state.update(updates)
             try:
                 os.makedirs(self.data_folder, exist_ok=True)
-                with open(self._state_path(), "w", encoding="utf-8") as handle:
+                # ATOMIC: write a temp file, fsync it, then os.replace onto the
+                # real path. A crash or a kill (the app kills the sidecar on
+                # exit) mid-write then leaves EITHER the old complete file or the
+                # new complete one — never the truncated JSON that _load_state
+                # would read as {} and the next save would cement into total loss.
+                path = self._state_path()
+                tmp = f"{path}.tmp"
+                with open(tmp, "w", encoding="utf-8") as handle:
                     json.dump(state, handle, indent=2)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp, path)
             except OSError:
                 log.exception("could not persist Seek state")
             return state
