@@ -296,7 +296,7 @@ export function WantListView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Want List</h1>
         <p className="pane__subtitle">
           Music you meant to look for. Nothing here searches on its own —

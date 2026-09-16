@@ -182,7 +182,7 @@ export function BrowseView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Browse</h1>
         <form
           className="browse__form"

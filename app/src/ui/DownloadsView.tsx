@@ -1086,7 +1086,7 @@ export function DownloadsView({
   const hiddenCount = lens.length - groups.length;
 
   const header = (
-    <header className="header header--plain dls__header">
+    <header data-tauri-drag-region="deep" className="header header--plain dls__header">
       <div className="dls__heading">
         <h1 className="pane__title">{TITLES[filter]}</h1>
         {groups.length > 0 && (

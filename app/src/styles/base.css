@@ -117,10 +117,11 @@ input { font: inherit; color: inherit; }
   border-right: 0.5px solid var(--separator);
   display: flex;
   flex-direction: column;
+  /* Room for the traffic lights, which sit over this strip in a Tauri window
+   * with an overlay titlebar. The strip also moves the window — but through
+   * `data-tauri-drag-region` in Sidebar.tsx, not CSS: `-webkit-app-region` is
+   * an Electron property WebKit never implemented, so it moved nothing. */
   padding-top: var(--sp-6);
-  /* Room for the traffic lights when this runs in a Tauri window with a
-   * transparent titlebar. */
-  -webkit-app-region: drag;
 }
 
 .sidebar__brand {
@@ -168,7 +169,6 @@ input { font: inherit; color: inherit; }
 .sidebar__spacer { flex: 1; }
 
 .sidebar__status {
-  -webkit-app-region: no-drag;
   padding: var(--sp-2) var(--sp-4) var(--sp-3);
   border-top: 0.5px solid var(--separator);
   font-size: var(--fs-micro);
@@ -235,9 +235,7 @@ input { font: inherit; color: inherit; }
   backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--blur-chrome)) saturate(180%);
   padding: var(--sp-4) var(--sp-5) var(--sp-3);
-  -webkit-app-region: drag;
 }
-.header > * { -webkit-app-region: no-drag; }
 
 /*
  * Where content meets floating chrome, a mask fade — never a 1px divider.

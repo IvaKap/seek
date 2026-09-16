@@ -307,7 +307,7 @@ export function LibraryView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Library</h1>
         <p className="pane__subtitle">
           {tab === 'youtube'

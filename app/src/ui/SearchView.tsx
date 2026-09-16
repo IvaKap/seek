@@ -277,6 +277,7 @@ export function SearchView({
     <>
       <header
         className="header"
+        data-tauri-drag-region="deep"
         onDragOver={(e) => { if (discover) { e.preventDefault(); setDropping(true); } }}
         onDragLeave={() => setDropping(false)}
         onDrop={(e) => {
@@ -355,7 +356,9 @@ export function SearchView({
             </button>
           </div>
         )}
-        <div className="search">
+        {/* The whole pill is a control, not just the input inside it — a click
+            on its icon or padding must not start moving the window. */}
+        <div className="search" data-tauri-drag-region="false">
           <IconSearch size={17} painted={1.7} className="search__icon" />
           <input
             ref={searchRef}

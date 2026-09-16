@@ -74,7 +74,7 @@ export function HistoryView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Search History</h1>
         {items.length > 0 && (
           <div className="browse__form">
@@ -139,7 +139,7 @@ export function SavedView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Saved Searches</h1>
         <p className="pane__subtitle">A query and the filters it was run with.</p>
       </header>
@@ -215,7 +215,7 @@ export function FollowedView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Followed</h1>
         <p className="pane__subtitle">
           Peers worth watching. This is upstream's buddy list, so Nicotine+ sees the same people.

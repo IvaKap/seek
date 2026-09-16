@@ -170,7 +170,8 @@ export function ChatView({
           </div>
         ) : (
           <>
-            <header className="chat__head">
+            {/* Chat has no pane header, so this is the top edge you grab. */}
+            <header className="chat__head" data-tauri-drag-region="deep">
               <h2 className="chat__title">
                 {conv.scope === 'private' ? '@' : '#'}{conv.target}
               </h2>

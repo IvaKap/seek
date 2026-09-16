@@ -207,7 +207,7 @@ export function LabelBrowserView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <div className="cat__header-actions">
           <button type="button" className="verify pressable" onPointerDown={onClose}>
             ← Back

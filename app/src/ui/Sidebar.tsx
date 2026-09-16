@@ -210,10 +210,16 @@ export function Sidebar({
   ];
 
   return (
-    <nav className="sidebar" aria-label="Sections">
+    /* The window is moved by grabbing the sidebar's empty space — the strip
+       under the traffic lights, and the gap above Settings. `deep` covers the
+       whole subtree except real controls, which Tauri skips on its own; the
+       nav list and the status footer opt out, so a click that misses a nav
+       item does nothing rather than dragging the window. This attribute, not
+       CSS, is what moves a Tauri window: WebKit ignores `-webkit-app-region`. */
+    <nav className="sidebar" aria-label="Sections" data-tauri-drag-region="deep">
       <div className="sidebar__brand">Seek</div>
 
-      <div className="sidebar__scroll">
+      <div className="sidebar__scroll" data-tauri-drag-region="false">
         {groups.map((g) => {
           const isCollapsed = g.title !== null && collapsed.has(g.id);
           return (
@@ -278,7 +284,7 @@ export function Sidebar({
         </div>
       </div>
 
-      <div className="sidebar__status">
+      <div className="sidebar__status" data-tauri-drag-region="false">
         <span className="sidebar__conn" title={status.detail}>
           <span className="status-dot" data-state={status.dot} aria-hidden />
           <span>{status.label}</span>

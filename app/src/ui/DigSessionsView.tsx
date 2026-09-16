@@ -90,6 +90,9 @@ function SessionTitle({
     <Tag
       className={heading ? 'pane__title dig-session__name' : 'dig-session__name'}
       title="Double-click to rename"
+      // A control, though nothing about the tag says so: in a draggable header
+      // a double-click would otherwise zoom the window as well as start a rename.
+      data-tauri-drag-region="false"
       onDoubleClick={() => { setDraft(sessionName(session)); setEditing(true); }}
     >
       {sessionName(session)}
@@ -158,7 +161,7 @@ export function DigSessionsView({
   if (open) {
     return (
       <>
-        <header className="header header--plain dig-session__detail-head">
+        <header data-tauri-drag-region="deep" className="header header--plain dig-session__detail-head">
           <button
             type="button"
             className="verify pressable"
@@ -225,7 +228,7 @@ export function DigSessionsView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Dig Sessions</h1>
         <p className="pane__subtitle">
           What you found, and when. A session gathers a burst of saved links so

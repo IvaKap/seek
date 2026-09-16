@@ -5,7 +5,7 @@
 
 /* ============================================================== sidebar == */
 
-.sidebar__scroll { padding: 0 var(--sp-2); overflow-y: auto; -webkit-app-region: no-drag; }
+.sidebar__scroll { padding: 0 var(--sp-2); overflow-y: auto; }
 .sidebar__group { margin-bottom: var(--sp-4); }
 .sidebar__group--footer { margin-bottom: 0; }
 

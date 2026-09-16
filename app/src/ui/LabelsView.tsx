@@ -214,7 +214,7 @@ export function LabelsView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Labels &amp; Artists</h1>
         <p className="pane__subtitle">
           Catalogues you are working through. Nothing here is read until you

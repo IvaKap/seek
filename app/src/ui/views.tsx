@@ -40,7 +40,7 @@ function Empty({
 
 function Head({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <header className="header header--plain">
+    <header data-tauri-drag-region="deep" className="header header--plain">
       <h1 className="pane__title">{title}</h1>
       {subtitle && <p className="pane__subtitle">{subtitle}</p>}
     </header>

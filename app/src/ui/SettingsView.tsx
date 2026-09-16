@@ -326,7 +326,7 @@ export function SettingsView({
 
   return (
     <>
-      <header className="header header--plain">
+      <header data-tauri-drag-region="deep" className="header header--plain">
         <h1 className="pane__title">Settings</h1>
         <div className="settings__tabs">
           <SegmentedControl<Tab>

@@ -1,12 +1,14 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Seek's own commands plus the core defaults. Without a capability file Tauri v2 grants the webview nothing at all, and every invoke fails.",
+  "description": "Seek's own commands plus the core defaults. Without a capability file Tauri v2 grants the webview nothing at all, and every invoke fails. The two window permissions are what `data-tauri-drag-region` invokes to move the window and to zoom it on a double-click; core:default does not include either, which is why the window could not be moved.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "notification:default",
     "dialog:allow-open",
     "updater:default",
