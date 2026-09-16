@@ -217,7 +217,7 @@ describe('a search opens its own tab', () => {
 });
 
 describe('a spent tab expires', () => {
-  it('closes 45 minutes after something was queued from it', () => {
+  it('closes 10 minutes after something was queued from it', () => {
     vi.useFakeTimers();
     try {
       mount();
@@ -226,7 +226,7 @@ describe('a spent tab expires', () => {
       click('find:two');                // and moved on to another search
       expect(read('count')).toBe('2');
 
-      act(() => { vi.advanceTimersByTime(46 * 60 * 1000); });
+      act(() => { vi.advanceTimersByTime(11 * 60 * 1000); });
       expect(read('count')).toBe('1');
       expect(read('labels')).toBe('two');
     } finally {
@@ -251,7 +251,7 @@ describe('a spent tab expires', () => {
       click(`select:${spent}`);         // and go back to the spent one
       expect(read('query')).toBe('one');
 
-      act(() => { vi.advanceTimersByTime(46 * 60 * 1000); });
+      act(() => { vi.advanceTimersByTime(11 * 60 * 1000); });
       expect(read('count')).toBe('2');
       expect(read('query')).toBe('one');
     } finally {

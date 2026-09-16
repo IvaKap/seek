@@ -68,12 +68,11 @@ const nextId = () => `tab${++seq}`;
 /**
  * How long a tab lives after something was queued from it.
  *
- * Iva's number. A search you have taken what you wanted from is spent, but not
- * immediately — you come back to it, check what else was in the folder, queue a
- * second record. Forty-five minutes is long enough to do that and short enough
- * that an evening's digging does not end in thirty tabs.
+ * Iva's number, revised down from the original 45 minutes: still enough time
+ * to come back, check what else was in the folder, queue a second record —
+ * just without a spent tab sitting around for most of an evening's digging.
  */
-const EXPIRE_MS = 45 * 60 * 1000;
+const EXPIRE_MS = 10 * 60 * 1000;
 /** Checked once a minute; nothing here is urgent to the second. */
 const SWEEP_MS = 60 * 1000;
 
