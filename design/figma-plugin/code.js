@@ -803,6 +803,7 @@ const SCREEN_NAMES = {
   'settings-lookups': 'Settings — Lookups', 'settings-about': 'Settings — About',
   dig: 'Dig Bar', 'dig-album': 'Dig Bar — release', catalogue: 'Catalogue',
   readme: 'README — for review',
+  logos: 'SEEK — Logo Exploration',
 };
 
 
@@ -1296,6 +1297,13 @@ function placeAt(frame, key) {
   if (key === 'readme') {
     frame.x = 0;
     frame.y = Math.ceil(ORDER.length / COLS) * (WIN.h + GAP_Y) + GAP_Y;
+    return;
+  }
+  /* The logo board is its own thing, not an app screen — park it well below the
+     whole grid so it never lands on top of a screen. */
+  if (key === 'logos') {
+    frame.x = 0;
+    frame.y = Math.ceil(ORDER.length / COLS) * (WIN.h + GAP_Y) + 3200;
     return;
   }
   /* Promo heroes are 16:9 and much larger than an app screen, so they get their
@@ -2520,3 +2528,170 @@ SCREENS['promo-verify'] = () => promo({
   sub: 'Seek decodes every finished download and shows you the spectrum. A transcode’s lowpass cliff has nowhere to hide — the feature that makes a fork worth it.',
   screen: verifyScreen(),
 });
+
+// ===========================================================================
+// Logo exploration — "hidden S in a waveform" (brief: Tolaria/logo.md)
+//
+// Marks are authored as SVG and imported with createNodeFromSvg, so they land
+// as EDITABLE VECTORS. Colours are baked per variant (no token ramp — this is a
+// brand exploration on light, not app UI on the dark theme), except the carved
+// concept whose S is a real MASK so the letter is genuine negative space that
+// shows whatever tile sits behind it. Built as one board frame, key 'logos'.
+// ===========================================================================
+
+const LOGO_INK = '#111827';
+const LOGO_BLUE = '#2563EB';
+const LOGO_WHITE = '#ffffff';
+const LOGO_TILE_DARK = '#0b0f19';
+const LOGO_BOARD = '#f4f5f7';
+const LOGO_CARD = '#ffffff';
+const LOGO_GREY = '#6b7280';
+const LOGO_FAINT = '#9aa3af';
+
+let LOGO_SEQ = 0;
+
+function logoRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+}
+function logoFill(hex) { return { type: 'SOLID', color: logoRgb(hex) }; }
+
+/** Import an SVG string as editable vectors, sized to px square. */
+function logoSvg(svg, px) {
+  const node = figma.createNodeFromSvg(svg);
+  node.name = 'mark';
+  node.resize(px, px);
+  return node;
+}
+
+/* The mark family: a waveform of vertical bars with an S hidden in the middle
+   — the direction the reference favours. All on a 100 viewBox, midline y=50. */
+
+// A rounded vertical bar centred on the midline.
+function lBar(x, h, w) {
+  w = w || 8;
+  return '<rect x="' + (x - w / 2) + '" y="' + (50 - h / 2) + '" width="' + w
+    + '" height="' + h + '" rx="' + (w / 2) + '"/>';
+}
+// A centred S as a stroked path: height H, half-width A, stroke sw, drawn in `stroke`.
+function lS(cx, H, A, sw, stroke) {
+  const y0 = 50 - H / 2, y1 = 50 + H / 2;
+  return '<path d="M' + (cx + A) + ' ' + (y0 + sw * 0.6)
+    + ' C' + (cx + A) + ' ' + y0 + ' ' + (cx - A) + ' ' + y0 + ' ' + (cx - A) + ' ' + (y0 + H * 0.30)
+    + ' C' + (cx - A) + ' 50 ' + (cx + A) + ' 50 ' + (cx + A) + ' ' + (y1 - H * 0.30)
+    + ' C' + (cx + A) + ' ' + y1 + ' ' + (cx - A) + ' ' + y1 + ' ' + (cx - A) + ' ' + (y1 - sw * 0.6)
+    + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '" stroke-linecap="round"/>';
+}
+function lWrap(body) {
+  return '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">' + body + '</svg>';
+}
+
+/* concept -> (symbolHex) -> full SVG string. */
+const MARKS = {
+  // Peak: a symmetric burst of bars with the S standing as the central crest.
+  peak: (c) => lWrap('<g fill="' + c + '">' + lBar(37, 40) + lBar(63, 40) + lBar(26, 24) + lBar(74, 24)
+    + '</g>' + lS(50, 54, 11, 8, c)),
+  // Spectrum: a denser spectrum with the S woven into the run of bars.
+  spectrum: (c) => lWrap('<g fill="' + c + '">'
+    + lBar(37, 40) + lBar(63, 40) + lBar(27, 52) + lBar(73, 52)
+    + lBar(17, 30) + lBar(83, 30) + lBar(9, 18) + lBar(91, 18)
+    + '</g>' + lS(50, 46, 9, 7.5, c)),
+  // Carved: bars fill a tile, the S cut clean through them as negative space.
+  carved: (c) => {
+    const id = 'lm' + (LOGO_SEQ++);
+    return lWrap('<mask id="' + id + '"><rect x="6" y="6" width="88" height="88" rx="22" fill="#fff"/>'
+      + '<g stroke="#000" stroke-linecap="round" stroke-width="7">'
+      + '<path d="M20 38v24"/><path d="M32 28v44"/><path d="M68 28v44"/><path d="M80 38v24"/></g>'
+      + lS(50, 50, 12, 10, '#000') + '</mask>'
+      + '<rect x="6" y="6" width="88" height="88" rx="22" fill="' + c + '" mask="url(#' + id + ')"/>');
+  },
+};
+
+/** A text node in a baked colour (the board is light, so tokens are no use). */
+function logoText(chars, sizePx, hex, o = {}) {
+  const t = figma.createText();
+  t.fontName = FONT[o.w || 'sb'];
+  t.characters = String(chars);
+  t.fontSize = sizePx;
+  t.fills = [logoFill(hex)];
+  t.letterSpacing = { unit: 'PERCENT', value: o.tr == null ? 0 : o.tr };
+  t.lineHeight = { unit: 'PERCENT', value: 120 };
+  if (o.upper) t.textCase = 'UPPER';
+  if (o.width) { t.textAutoResize = 'HEIGHT'; t.resize(o.width, t.height); }
+  else t.textAutoResize = 'WIDTH_AND_HEIGHT';
+  t.name = String(chars).slice(0, 30) || 'text';
+  return t;
+}
+
+/** A rounded tile of bgHex with one mark centred. */
+function logoTile(px, bgHex, node) {
+  const f = F('tile', { w: px, h: px, align: 'CENTER', just: 'CENTER', r: Math.round(px * 0.24) });
+  f.fills = [logoFill(bgHex)];
+  f.appendChild(node);
+  return f;
+}
+
+/** One concept card: variants, wordmark lockup, symbol-only, small sizes, text. */
+function logoCard(num, name, concept, desc) {
+  const mk = MARKS[concept];
+  // Carved fills its tile; the waveform marks are landscape, so they sit a
+  // touch smaller and centred with breathing room top and bottom.
+  const symSize = concept === 'carved' ? 84 : 68;  // % of tile
+  const inTile = (px, bg, hex) => logoTile(px, bg, logoSvg(mk(hex), Math.round(px * symSize / 100)));
+
+  const header = F('head', { dir: 'h', g: 8, align: 'BASELINE' });
+  header.appendChild(logoText(num, 12, LOGO_FAINT, { w: 'sb', tr: 8 }));
+  header.appendChild(logoText(name, 18, LOGO_INK, { w: 'b' }));
+
+  const variants = F('variants', { dir: 'h', g: 12, align: 'CENTER' });
+  variants.appendChild(inTile(84, LOGO_WHITE, LOGO_INK));
+  variants.appendChild(inTile(84, LOGO_WHITE, LOGO_BLUE));
+  variants.appendChild(inTile(84, LOGO_TILE_DARK, LOGO_WHITE));
+
+  // Wordmark lockup — symbol in blue, "Seek" in ink (the black+blue treatment).
+  const lockup = F('lockup', { dir: 'h', g: 10, align: 'CENTER' });
+  lockup.appendChild(logoSvg(mk(LOGO_BLUE), 34));
+  lockup.appendChild(logoText('Seek', 30, LOGO_INK, { w: 'b', tr: -2 }));
+
+  // Symbol-only + small-size survival, ink on white.
+  const small = F('small', { dir: 'h', g: 10, align: 'CENTER' });
+  for (const px of [40, 28, 20, 16]) small.appendChild(inTile(px, LOGO_WHITE, LOGO_INK));
+
+  const card = F('concept-' + concept, {
+    dir: 'v', g: 16, p: 22, r: 18, w: 372,
+    kids: [
+      header, variants,
+      F('lock-row', { dir: 'h', g: 24, align: 'CENTER', kids: [lockup, small] }),
+      logoText(desc, 13, LOGO_GREY, { w: 'r', width: 328 }),
+    ],
+  });
+  card.fills = [logoFill(LOGO_CARD)];
+  card.strokes = [logoFill('#e6e8ec')];
+  card.strokeWeight = 1;
+  return card;
+}
+
+SCREENS.logos = () => {
+  const title = logoText('SEEK — LOGO EXPLORATION', 24, LOGO_INK, { w: 'b', tr: 4 });
+  const sub = logoText('S hidden inside the waveform — the reference direction. Three constructions, each in black, blue and reversed, with the Seek lockup, symbol-only and small-size tests.',
+    14, LOGO_GREY, { w: 'r', width: 760 });
+
+  const grid = F('grid', {
+    dir: 'h', g: 24, wrap: true, kids: [
+      logoCard('01', 'Peak', 'peak',
+        'A symmetric burst of waveform bars with the S standing where the tallest bar would be — the S is the crest of the sound. Reads as a waveform first, then the letter.'),
+      logoCard('02', 'Spectrum', 'spectrum',
+        'A denser spectrum with the S woven into the run of bars, so it reads as one bar in the rhythm until you catch it. Closest to the reference you liked.'),
+      logoCard('03', 'Carved', 'carved',
+        'Bars fill an app-tile and the S is cut clean through them as negative space — the S hides inside the sound. The strongest app-icon of the set.'),
+    ],
+  });
+  size(grid, 1160, null);
+
+  const board = F('SEEK — Logo Exploration', {
+    dir: 'v', g: 10, p: 44, kids: [title, sub, F('sp', { h: 12 }), grid],
+  });
+  board.fills = [logoFill(LOGO_BOARD)];
+  size(board, 1248, null);
+  return board;
+};
