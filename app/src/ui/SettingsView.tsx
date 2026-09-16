@@ -695,6 +695,27 @@ export function SettingsView({
                   )}
                 />
               </Group>
+
+              <Group
+                title="Greeting people who download from you"
+                footnote="Each person is messaged once, ever — a fifteen-track album is one message, and someone who comes back next month gets nothing. Runs only while Seek is open, and sends at most twenty greetings per run."
+              >
+                <Row
+                  label="Say hello on a first download"
+                  hint="Sends a private message the first time someone finishes taking a file from you. It goes out with Soulseek's “[Automatic Message]” prefix, so nobody is misled about it being automated."
+                  control={(
+                    <Toggle
+                      checked={settings.uploadGreetingEnabled}
+                      onChange={(v) => prefs.patch({ uploadGreetingEnabled: v })}
+                      label="Say hello on a first download"
+                    />
+                  )}
+                />
+                <GreetingField
+                  value={settings.uploadGreeting}
+                  onCommit={(v) => prefs.patch({ uploadGreeting: v })}
+                />
+              </Group>
             </>
           )}
 
@@ -930,6 +951,62 @@ function NumberSetting({
       />
       {suffix && <span className="settings__unit">{suffix}</span>}
     </span>
+  );
+}
+
+/*
+ * The upload greeting's text. Committed on blur or Enter like `NumberSetting`,
+ * never per keystroke: each commit writes the state file and rebroadcasts every
+ * setting, and a sentence typed a letter at a time would be a hundred of those.
+ *
+ * Clearing the box is how you get the default back. The patch echoes `''`
+ * optimistically, the sidecar answers with the default text, and the effect
+ * below follows both — so the field never sits empty over a stored default.
+ */
+function GreetingField({
+  value, onCommit,
+}: {
+  value: string;
+  onCommit(v: string): void;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState(value);
+  const last = useRef(value);
+
+  useEffect(() => {
+    if (value !== last.current) {
+      last.current = value;
+      setDraft(value);
+    }
+  }, [value]);
+
+  const commit = () => {
+    if (draft !== value) onCommit(draft);
+  };
+
+  return (
+    <div className="settings__row settings__row--block">
+      <div className="folderset__head">
+        <label className="settings__label" htmlFor={id}>Message</label>
+        <span className="settings__hint">
+          One line — Soulseek removes line breaks before delivering it. Clear the
+          box to go back to the default.
+        </span>
+      </div>
+      <input
+        id={id}
+        className="settings__input settings__input--wide"
+        type="text"
+        value={draft}
+        spellCheck
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setDraft(value);
+        }}
+      />
+    </div>
   );
 }
 

@@ -432,6 +432,7 @@ def _event_samples():
             "externalLookups": True, "discogsToken": False,
             "artworkCacheMb": 500, "embedArtwork": True, "writeCoverFile": False,
             "autoDigSessions": True, "stalledFailMinutes": 0, "clearCompletedDays": 0,
+            "uploadGreetingEnabled": False, "uploadGreeting": "hello",
             "acoustidApiKey": False,
             "youtubeApiKey": False,
             "youtubeOauthClientId": False,

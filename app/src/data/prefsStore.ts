@@ -41,6 +41,10 @@ export interface AppSettings {
   stalledFailMinutes: number;
   /** Forget completed records older than this many days. 0 = keep. */
   clearCompletedDays: number;
+  /** Message someone the first time they finish downloading from you. */
+  uploadGreetingEnabled: boolean;
+  /** What that message says. One line — the server strips line breaks. */
+  uploadGreeting: string;
   /** Whether an AcoustID key is stored — never the value. */
   acoustidApiKey: boolean;
   /** Whether a YouTube Data API key is stored — never the value. */
@@ -74,6 +78,8 @@ const DEFAULTS: AppSettings = {
   autoDigSessions: true,
   stalledFailMinutes: 0,
   clearCompletedDays: 0,
+  uploadGreetingEnabled: false,
+  uploadGreeting: '',
   acoustidApiKey: false,
   youtubeApiKey: false,
   youtubeOauthClientId: false,
@@ -100,6 +106,8 @@ export interface AppSettingsPatch {
   autoDigSessions?: boolean;
   stalledFailMinutes?: number;
   clearCompletedDays?: number;
+  uploadGreetingEnabled?: boolean;
+  uploadGreeting?: string;
   acoustidApiKey?: string;
   youtubeApiKey?: string;
   youtubeOauthClientId?: string;
@@ -191,6 +199,8 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       autoDigSessions: null,
       stalledFailMinutes: null,
       clearCompletedDays: null,
+      uploadGreetingEnabled: null,
+      uploadGreeting: null,
       ...p,
     })
       .then((saved) => {

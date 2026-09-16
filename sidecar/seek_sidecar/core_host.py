@@ -47,6 +47,21 @@ KIB = 1024
 # low enough that twenty wishes cost tens of kilobytes rather than megabytes.
 WISH_SEEN_CAP = 250
 
+# How many greeted peers we remember. Far larger than WISH_SEEN_CAP because the
+# entries are just usernames and forgetting one means greeting somebody twice —
+# the single thing the feature exists to avoid. Ten thousand of them is well
+# under a megabyte.
+GREETED_CAP = 10_000
+
+# The upload greeting, before the user edits it. One line, because the server
+# strips line breaks out of a private message (privatechat.py `send_message`),
+# and it does not thank anyone for anything — a stranger taking a file has not
+# done you a favour.
+DEFAULT_UPLOAD_GREETING = (
+    "Hey — thanks for stopping by. I'm sharing through Seek, a Mac Soulseek "
+    "client: https://github.com/IvaKap/seek"
+)
+
 # Guards the read-modify-write of seek-state.json. Until the YouTube tab, every
 # writer ran on pynicotine's main thread and could not race itself; enrichment
 # writes matches from the discover worker pool, so the file's load→mutate→dump
@@ -1188,6 +1203,11 @@ class CoreHost:
         # somebody who never asked for it.
         "stalledFailMinutes": 0,
         "clearCompletedDays": 0,
+        # Off, and it stays off until someone turns it on: this one sends
+        # messages to strangers, which is not something to start doing on a
+        # user's behalf because they installed an update.
+        "uploadGreetingEnabled": False,
+        "uploadGreeting": DEFAULT_UPLOAD_GREETING,
         "acoustidApiKey": False,
         "youtubeApiKey": False,
         "youtubeOauthClientId": False,
@@ -1241,9 +1261,16 @@ class CoreHost:
         stored = dict(self._load_state().get("app_settings") or {})
         for key in ("externalLookups", "embedArtwork", "writeCoverFile",
                     "preferLossless", "rejectTranscodes", "autoOrganise",
-                    "autoDigSessions"):
+                    "autoDigSessions", "uploadGreetingEnabled"):
             if params.get(key) is not None:
                 stored[key] = bool(params[key])
+        if params.get("uploadGreeting") is not None:
+            # Emptying the box restores the default rather than sending a blank
+            # message — an empty greeting is never what was meant. Newlines go
+            # here rather than at the server, so what the box shows after a save
+            # is what a peer will actually receive.
+            text = " ".join(str(params["uploadGreeting"]).split())
+            stored["uploadGreeting"] = text or DEFAULT_UPLOAD_GREETING
         if params.get("autoConnect") is not None:
             # Written to the pynicotine config, not Seek's state, because that is
             # where it is read from — and it keeps a real Nicotine+ install in
@@ -3168,6 +3195,35 @@ class CoreHost:
         self._save_state(auto_claims=clean)
         return {"items": clean}
 
+    # -- who has already been sent the upload greeting ----------------------
+    #
+    # Same rule as the ledger above: stored so it survives a restart, never
+    # interpreted. Deciding who is new is the frontend's. This one matters more
+    # than most — losing it means messaging people a second time, and there is
+    # no way to take that back.
+
+    def _greeted_peers(self):
+        stored = self._load_state().get("greeted_peers")
+        return [str(u) for u in stored if u] if isinstance(stored, list) else []
+
+    def _cmd_greeting_sentList(self, _params):
+        return {"users": self._greeted_peers()}
+
+    def _cmd_greeting_sent(self, params):
+        seen = set()
+        clean = []
+        for user in params.get("users") or []:
+            name = str(user or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            clean.append(name)
+        # Oldest first, so the tail is the newest — the end worth keeping when
+        # a very long-lived install finally reaches the cap.
+        clean = clean[-GREETED_CAP:]
+        self._save_state(greeted_peers=clean)
+        return {"users": clean}
+
     def _cmd_wishlist_remove(self, params):
         query = (params.get("query") or "").strip()
         self.core.search.remove_wish(query)
@@ -4022,6 +4078,13 @@ class CoreHost:
         message = params["message"]
         if params["scope"] == "room":
             self.core.chatrooms.send_message(target, message)
+        elif params.get("automatic"):
+            # Upstream's own method for bot messages: it prefixes
+            # "[Automatic Message]" so the recipient can tell. Called rather
+            # than pasting that prefix in ourselves, so the wording stays
+            # upstream's and cannot drift from what other clients send.
+            self.core.privatechat.show_user(target, switch_page=False)
+            self.core.privatechat.send_automatic_message(target, message)
         else:
             self.core.privatechat.show_user(target, switch_page=False)
             self.core.privatechat.send_message(target, message)

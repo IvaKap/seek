@@ -50,6 +50,7 @@ import { BrowseView } from './ui/BrowseView.tsx';
 import { WishlistView } from './ui/WishlistView.tsx';
 import { useWishHits } from './data/wishHits.ts';
 import { useAutoDownloads } from './data/autoDownloads.ts';
+import { useAutoGreet } from './data/autoGreet.ts';
 import { FollowedView, HistoryView, SavedView, serialiseFilters } from './ui/DiscoveryViews.tsx';
 import { DownloadsView } from './ui/DownloadsView.tsx';
 import { ChatView } from './ui/ChatView.tsx';
@@ -243,6 +244,16 @@ export default function App() {
      Wishlist screen, so it runs whenever Seek is open. Its claims feed the
      review UI in a later step; here it is mounted for its effect. */
   const autoDownloads = useAutoDownloads(session.client, wishHits, transfers, analysis);
+  /* Greet somebody the first time they finish downloading from you. Mounted
+     here for the same reason as auto-download: an upload completes whether or
+     not the Uploads screen is open. Off unless switched on in Settings. */
+  useAutoGreet(
+    session.client,
+    transfers.uploadGroups,
+    prefs.settings.uploadGreetingEnabled,
+    prefs.settings.uploadGreeting,
+    isSignedIn(session.serverState),
+  );
   const related = useRelated(session.client);
   /* The want entry whose search is in flight. One at a time on purpose:
      Soulseek throttles a client that searches faster than the server allows,

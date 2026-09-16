@@ -305,6 +305,7 @@ def _settings_patch(**overrides):
         "preferLossless": None, "minBitrate": None, "rejectTranscodes": None,
         "autoOrganise": None, "autoDigSessions": None,
         "stalledFailMinutes": None, "clearCompletedDays": None,
+        "uploadGreetingEnabled": None, "uploadGreeting": None,
         "acoustidApiKey": None, "youtubeApiKey": None,
         "youtubeOauthClientId": None, "youtubeOauthClientSecret": None,
     }

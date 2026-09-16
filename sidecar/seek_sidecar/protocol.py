@@ -618,6 +618,14 @@ class AppSettings(TypedDict):
     # and off by default, because it is the one preference here that destroys
     # something the user did not ask to lose.
     clearCompletedDays: int
+    # Send a one-off private message to someone the first time they finish
+    # downloading from you. OFF by default: it messages strangers, so it is
+    # never on unless it was asked for.
+    uploadGreetingEnabled: bool
+    # The text of that message. Sent with pynicotine's '[Automatic Message]'
+    # prefix, and on ONE line — the Soulseek server strips line breaks before
+    # delivery.
+    uploadGreeting: str
 
 
 class AppSettingsPatch(TypedDict):
@@ -647,6 +655,9 @@ class AppSettingsPatch(TypedDict):
     autoDigSessions: Optional[bool]
     stalledFailMinutes: Optional[int]
     clearCompletedDays: Optional[int]
+    uploadGreetingEnabled: Optional[bool]
+    # Empty restores the default text.
+    uploadGreeting: Optional[str]
 
 
 class PeerRecord(TypedDict):
@@ -1973,6 +1984,30 @@ class AutoClaimsParams(TypedDict):
     items: List["AutoClaim"]
 
 
+class GreetedList(TypedDict):
+    """
+    Everyone already sent the upload greeting.
+
+    The whole point of the feature is that it fires ONCE per person, so
+    this has to outlive the process — an in-memory set would re-greet
+    every regular downloader on the next launch. Stored, never
+    interpreted: deciding who is new is the frontend's, exactly as with
+    WishSeen and AutoClaim.
+    """
+    # Usernames, oldest first.
+    users: List[str]
+
+
+class GreetedParams(TypedDict):
+    """
+    Replace the greeted set. Written BEFORE the message goes out, because a
+    message cannot be unsent — a crash between the two costs one missed
+    greeting rather than a duplicate.
+    """
+    # The full set; the sidecar caps it and stores it verbatim.
+    users: List[str]
+
+
 class WishSeen(TypedDict):
     """
     Which of a wish's results have already been looked at.
@@ -2534,6 +2569,10 @@ class ChatSayParams(TypedDict):
     # Room name, or the username for a private message.
     target: str
     message: str
+    # Private scope only. Sends through upstream's `send_automatic_message`,
+    # which prefixes '[Automatic Message]' so the recipient can see a bot
+    # wrote it. Null is an ordinary message the user typed.
+    automatic: Optional[bool]
 
 
 class ChatOpenParams(TypedDict):
@@ -2833,6 +2872,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("autoDigSessions", "bool", False, False),
         ("stalledFailMinutes", "int", False, False),
         ("clearCompletedDays", "int", False, False),
+        ("uploadGreetingEnabled", "bool", False, False),
+        ("uploadGreeting", "str", False, False),
     ),
     "AppSettingsPatch": (
         ("autoConnect", "bool", False, True),
@@ -2852,6 +2893,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("autoDigSessions", "bool", False, True),
         ("stalledFailMinutes", "int", False, True),
         ("clearCompletedDays", "int", False, True),
+        ("uploadGreetingEnabled", "bool", False, True),
+        ("uploadGreeting", "str", False, True),
     ),
     "PeerRecord": (
         ("username", "str", False, False),
@@ -3397,6 +3440,12 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "AutoClaimsParams": (
         ("items", "AutoClaim", True, False),
     ),
+    "GreetedList": (
+        ("users", "str", True, False),
+    ),
+    "GreetedParams": (
+        ("users", "str", True, False),
+    ),
     "WishSeen": (
         ("query", "str", False, False),
         ("ids", "str", True, False),
@@ -3627,6 +3676,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("scope", "ChatScope", False, False),
         ("target", "str", False, False),
         ("message", "str", False, False),
+        ("automatic", "bool", False, True),
     ),
     "ChatOpenParams": (
         ("username", "str", False, False),
@@ -3724,6 +3774,8 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "wishlist.seenList": (None, "WishSeenList"),
     "wishlist.claims": ("AutoClaimsParams", "AutoClaimList"),
     "wishlist.claimsList": (None, "AutoClaimList"),
+    "greeting.sent": ("GreetedParams", "GreetedList"),
+    "greeting.sentList": (None, "GreetedList"),
     "artwork.get": ("ArtworkParams", "RequestAccepted"),
     "artwork.stats": (None, "ArtworkCacheStats"),
     "artwork.clear": (None, "ArtworkCacheStats"),

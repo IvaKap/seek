@@ -724,6 +724,20 @@ export interface AppSettings {
    * something the user did not ask to lose.
    */
   clearCompletedDays: number;
+
+  /**
+   * Send a one-off private message to someone the first time they finish
+   * downloading from you. OFF by default: it messages strangers, so it is
+   * never on unless it was asked for.
+   */
+  uploadGreetingEnabled: boolean;
+
+  /**
+   * The text of that message. Sent with pynicotine's '[Automatic Message]'
+   * prefix, and on ONE line — the Soulseek server strips line breaks before
+   * delivery.
+   */
+  uploadGreeting: string;
 }
 
 /**
@@ -758,6 +772,10 @@ export interface AppSettingsPatch {
   autoDigSessions: boolean | null;
   stalledFailMinutes: number | null;
   clearCompletedDays: number | null;
+  uploadGreetingEnabled: boolean | null;
+
+  /** Empty restores the default text. */
+  uploadGreeting: string | null;
 }
 
 export interface PeerRecord {
@@ -2432,6 +2450,30 @@ export interface AutoClaimsParams {
 }
 
 /**
+ * Everyone already sent the upload greeting.
+ *
+ * The whole point of the feature is that it fires ONCE per person, so
+ * this has to outlive the process — an in-memory set would re-greet
+ * every regular downloader on the next launch. Stored, never
+ * interpreted: deciding who is new is the frontend's, exactly as with
+ * WishSeen and AutoClaim.
+ */
+export interface GreetedList {
+  /** Usernames, oldest first. */
+  users: string[];
+}
+
+/**
+ * Replace the greeted set. Written BEFORE the message goes out, because a
+ * message cannot be unsent — a crash between the two costs one missed greeting
+ * rather than a duplicate.
+ */
+export interface GreetedParams {
+  /** The full set; the sidecar caps it and stores it verbatim. */
+  users: string[];
+}
+
+/**
  * Which of a wish's results have already been looked at.
  *
  * OPAQUE HASHES, not paths. A wish keeps one token forever and upstream
@@ -3141,6 +3183,13 @@ export interface ChatSayParams {
   /** Room name, or the username for a private message. */
   target: string;
   message: string;
+
+  /**
+   * Private scope only. Sends through upstream's `send_automatic_message`,
+   * which prefixes '[Automatic Message]' so the recipient can see a bot wrote
+   * it. Null is an ordinary message the user typed.
+   */
+  automatic: boolean | null;
 }
 
 /** Open a private conversation without sending anything. */
@@ -3453,6 +3502,13 @@ export interface CommandParams {
    * an awaiting-review candidate survives a restart.
    */
   'wishlist.claimsList': Record<string, never>;
+  /** Replace the set of peers already sent the upload greeting. */
+  'greeting.sent': GreetedParams;
+  /**
+   * Who has already been greeted. Asked for once on connect; until it arrives
+   * the frontend greets nobody.
+   */
+  'greeting.sentList': Record<string, never>;
   /**
    * Ask for a release cover. Replies immediately with a requestId; the image
    * arrives later as `artwork.result` or `artwork.failed`. Never on the
@@ -3765,6 +3821,8 @@ export interface CommandResult {
   'wishlist.seenList': WishSeenList;
   'wishlist.claims': AutoClaimList;
   'wishlist.claimsList': AutoClaimList;
+  'greeting.sent': GreetedList;
+  'greeting.sentList': GreetedList;
   'artwork.get': RequestAccepted;
   'artwork.stats': ArtworkCacheStats;
   'artwork.clear': ArtworkCacheStats;
@@ -3873,6 +3931,8 @@ export const COMMAND_NAMES = [
   'wishlist.seenList',
   'wishlist.claims',
   'wishlist.claimsList',
+  'greeting.sent',
+  'greeting.sentList',
   'artwork.get',
   'artwork.stats',
   'artwork.clear',

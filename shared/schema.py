@@ -647,6 +647,20 @@ STRUCTS = {
             ),
             ("stalledFailMinutes", "int", "How many minutes of silence before a download is shown under Failed instead of Downloads. 0 never does it. Seek does NOT touch the transfer: it keeps its place in the peer's queue, which is often hours long and frequently does come good, and the row returns to Downloads by itself the moment a byte moves. This is a lens on the same list, not an action."),
             ("clearCompletedDays", "int", "Forget completed downloads older than this many days. 0 keeps them forever. Forgets the RECORD only — the files on disk are never touched — and off by default, because it is the one preference here that destroys something the user did not ask to lose."),
+            (
+                "uploadGreetingEnabled",
+                "bool",
+                "Send a one-off private message to someone the first time they "
+                "finish downloading from you. OFF by default: it messages "
+                "strangers, so it is never on unless it was asked for.",
+            ),
+            (
+                "uploadGreeting",
+                "str",
+                "The text of that message. Sent with pynicotine's "
+                "'[Automatic Message]' prefix, and on ONE line — the Soulseek "
+                "server strips line breaks before delivery.",
+            ),
         ],
     ),
     "AppSettingsPatch": (
@@ -670,6 +684,8 @@ STRUCTS = {
             ("autoDigSessions", "bool?", ""),
             ("stalledFailMinutes", "int?", ""),
             ("clearCompletedDays", "int?", ""),
+            ("uploadGreetingEnabled", "bool?", ""),
+            ("uploadGreeting", "str?", "Empty restores the default text."),
         ],
     ),
     "PeerRecord": (
@@ -2002,6 +2018,22 @@ STRUCTS = {
         "wholesale is simpler than upserting and cannot drift.",
         [("items", "AutoClaim[]", "The full set; stored verbatim.")],
     ),
+    "GreetedList": (
+        "Everyone already sent the upload greeting.\n"
+        "\n"
+        "The whole point of the feature is that it fires ONCE per person, so\n"
+        "this has to outlive the process — an in-memory set would re-greet\n"
+        "every regular downloader on the next launch. Stored, never\n"
+        "interpreted: deciding who is new is the frontend's, exactly as with\n"
+        "WishSeen and AutoClaim.",
+        [("users", "str[]", "Usernames, oldest first.")],
+    ),
+    "GreetedParams": (
+        "Replace the greeted set. Written BEFORE the message goes out, because "
+        "a message cannot be unsent — a crash between the two costs one missed "
+        "greeting rather than a duplicate.",
+        [("users", "str[]", "The full set; the sidecar caps it and stores it verbatim.")],
+    ),
     "WishSeen": (
         "Which of a wish's results have already been looked at.\n"
         "\n"
@@ -2612,6 +2644,14 @@ STRUCTS = {
             ("scope", "ChatScope", ""),
             ("target", "str", "Room name, or the username for a private message."),
             ("message", "str", ""),
+            (
+                "automatic",
+                "bool?",
+                "Private scope only. Sends through upstream's "
+                "`send_automatic_message`, which prefixes '[Automatic Message]' "
+                "so the recipient can see a bot wrote it. Null is an ordinary "
+                "message the user typed.",
+            ),
         ],
     ),
     "ChatOpenParams": (
@@ -2923,6 +2963,17 @@ COMMANDS = {
         "so an awaiting-review candidate survives a restart.",
         None,
         "AutoClaimList",
+    ),
+    "greeting.sent": (
+        "Replace the set of peers already sent the upload greeting.",
+        "GreetedParams",
+        "GreetedList",
+    ),
+    "greeting.sentList": (
+        "Who has already been greeted. Asked for once on connect; until it "
+        "arrives the frontend greets nobody.",
+        None,
+        "GreetedList",
     ),
     "artwork.get": (
         "Ask for a release cover. Replies immediately with a requestId; the "

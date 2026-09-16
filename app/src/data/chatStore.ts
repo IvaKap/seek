@@ -201,7 +201,10 @@ export function useChatSession(
     // No optimistic append: the sidecar echoes it back with outgoing=true, and
     // one ingest path means the transcript cannot diverge from the server's.
     void client?.request('chat.say', {
-      scope: conv.scope, target: conv.target, message: trimmed,
+      // Typed by a person, so never the automatic form — that one prefixes
+      // "[Automatic Message]". Sent as null rather than omitted: the schema's
+      // Optional means nullable, not absent, and a missing key is rejected.
+      scope: conv.scope, target: conv.target, message: trimmed, automatic: null,
     }).catch(() => {});
   }, [client, active, available, map]);
 

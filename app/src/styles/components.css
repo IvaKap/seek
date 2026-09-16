@@ -1393,6 +1393,8 @@
   font-size: var(--fs-secondary);
 }
 .settings__input--num { width: 5rem; font-variant-numeric: tabular-nums; }
+/* A sentence, not a token: the whole width of a block row. */
+.settings__input--wide { width: 100%; margin-top: var(--sp-2); }
 .settings__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .settings__suffix { font-size: var(--fs-caption); color: var(--text-tertiary); }
 .settings__static { font-size: var(--fs-secondary); color: var(--text-tertiary); }
