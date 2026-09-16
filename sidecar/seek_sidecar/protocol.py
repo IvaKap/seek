@@ -2147,6 +2147,21 @@ class UserBrowseFailedEvent(TypedDict):
     reason: str
 
 
+class UserInfoResultEvent(TypedDict):
+    """
+    A peer's own profile, fetched directly from them (not the server). Most
+    peers have set no picture or description — that is normal, not a
+    failure.
+    """
+    username: str
+    description: str
+    # A `data:` URI, or null if the peer has not set a picture.
+    pictureUri: Optional[str]
+    uploadSlots: int
+    queueSize: int
+    freeSlots: bool
+
+
 class FolderContentsEvent(TypedDict):
     """
     Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted
@@ -3461,6 +3476,14 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("username", "str", False, False),
         ("reason", "str", False, False),
     ),
+    "UserInfoResultEvent": (
+        ("username", "str", False, False),
+        ("description", "str", False, False),
+        ("pictureUri", "str", False, True),
+        ("uploadSlots", "int", False, False),
+        ("queueSize", "int", False, False),
+        ("freeSlots", "bool", False, False),
+    ),
     "FolderContentsEvent": (
         ("requestId", "str", False, False),
         ("username", "str", False, False),
@@ -3676,6 +3699,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "search.stop": ("SearchStopParams", None),
     "user.browse": ("UserBrowseParams", None),
     "user.stats": ("UserStatsParams", None),
+    "user.info.get": ("UserBrowseParams", None),
     "transfer.enqueue": ("TransferEnqueueParams", "TransferEnqueueResult"),
     "transfer.enqueueFolder": ("TransferFolderParams", "TransferFolderResult"),
     "transfer.pause": ("TransferIdsParams", None),
@@ -3784,6 +3808,8 @@ EVENTS: Dict[str, str] = {
     "user.status": "UserStatusEvent",
     "user.browse.result": "UserBrowseResultEvent",
     "user.browse.failed": "UserBrowseFailedEvent",
+    "user.info.result": "UserInfoResultEvent",
+    "user.info.failed": "UserBrowseFailedEvent",
     "folder.contents": "FolderContentsEvent",
     "folder.contents.failed": "FolderContentsFailedEvent",
     "transfer.added": "Transfer",

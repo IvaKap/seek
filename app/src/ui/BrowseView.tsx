@@ -1,15 +1,17 @@
 /*
- * Seek — a peer's shelves.
+ * Seek — a peer's whole share, and who they are.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Iva's vision note §12. Not a folder tree: folders presented as the releases
- * they almost always are, searchable, with the whole folder downloadable in one
- * action — which is the unit a DJ actually wants anyway.
+ * The default view is a real folder tree beside a dense file table — the
+ * classic Nicotine+ layout, brought back on request after this screen spent
+ * a while as shelves-only. The shelf list, the treemap and the Finder-style
+ * grid stay on as alternate ways to look at the same share; none of them had
+ * to go for the tree to exist.
  *
- * Reliability figures are deliberately absent here. The protocol tells us
- * nothing about how a stranger behaves, and the note is explicit that we must
+ * Reliability figures are deliberately absent from the share list itself.
+ * The protocol tells us nothing about how a stranger behaves, and we must
  * never pretend to know things it does not expose. What we know is what they
- * share, so that is what this shows.
+ * share — and, now, what they say about themselves when asked directly.
  */
 
 import { useState } from 'react';
@@ -20,17 +22,81 @@ import { fileSize } from '../domain/format.ts';
 import { fileName } from '../data/transferStore.ts';
 import { Treemap } from './Treemap.tsx';
 import { FolderView } from './FolderView.tsx';
+import { BrowseTreeView } from './BrowseTreeView.tsx';
 import { SegmentedControl } from './controls.tsx';
 import type { Segment } from './controls.tsx';
-import { IconChevronDown, IconDownload, IconLibrary, IconRelease, IconUser } from '../icons/index.tsx';
+import { AdvertisedSpeed } from './rows.tsx';
+import { PeerAvatar } from './PeerAvatar.tsx';
+import { PeerHistory } from './PeerHistory.tsx';
+import type { PeerLookup } from './PeerHistory.tsx';
+import { Flag } from './Flag.tsx';
+import {
+  IconChevronDown, IconDownload, IconLibrary, IconRelease, IconStar, IconUser,
+} from '../icons/index.tsx';
 
-type BrowseMode = 'list' | 'map' | 'folders';
+type BrowseMode = 'tree' | 'list' | 'map' | 'folders';
 
 const MODES: Segment<BrowseMode>[] = [
+  { value: 'tree', label: 'Tree', icon: <IconLibrary size={14} painted={1.5} /> },
   { value: 'list', label: 'List', icon: <IconRelease size={14} painted={1.5} /> },
   { value: 'map', label: 'Map', icon: <IconLibrary size={14} painted={1.5} /> },
   { value: 'folders', label: 'Folders', icon: <IconLibrary size={14} painted={1.5} /> },
 ];
+
+/**
+ * Who this is, gathered from three sources that already exist and were
+ * simply never asked for Browse: the server (online/speed/queue, via
+ * `user.stats`), the peer directly (description/picture, via
+ * `user.info.get`), and our own buddy list. Any of the three can be missing
+ * or still loading without blocking the other two, or the share list below.
+ */
+function PeerHeader({
+  username, facts, profile, isBuddy, peers,
+}: {
+  username: string;
+  facts: BrowseSession['peerFacts'];
+  profile: BrowseSession['peerProfile'];
+  isBuddy: boolean;
+  peers?: PeerLookup;
+}) {
+  const pictureUri = profile?.state === 'ready' ? profile.pictureUri : null;
+  return (
+    <div className="peer">
+      <PeerAvatar username={username} pictureUri={pictureUri} size={40} />
+
+      <span className="peer__id">
+        <span className="peer__name">
+          {username}
+          {isBuddy && (
+            <span className="peer__buddy" title="On your buddy list">
+              <IconStar size={12} painted={1.6} />
+            </span>
+          )}
+        </span>
+        <span className="peer__facts">
+          {facts && (
+            <>
+              <span
+                className="status-dot"
+                data-state={facts.freeSlots ? 'online' : 'pending'}
+                title={facts.freeSlots ? 'Has a free upload slot' : 'No free upload slot right now'}
+              />
+              <AdvertisedSpeed bytesPerSec={facts.advertisedSpeed} />
+              {facts.queueLength > 0 && (
+                <span className="peer__queue tnum">{facts.queueLength} queued</span>
+              )}
+              {facts.country && <Flag code={facts.country} />}
+            </>
+          )}
+          <PeerHistory username={username} peers={peers} compact />
+        </span>
+        {profile?.state === 'ready' && profile.description && (
+          <span className="peer__descr">{profile.description}</span>
+        )}
+      </span>
+    </div>
+  );
+}
 
 function ShelfRow({
   shelf, username, transfers,
@@ -102,14 +168,15 @@ function ShelfRow({
 }
 
 export function BrowseView({
-  browse, transfers, signedIn,
+  browse, transfers, signedIn, peers,
 }: {
   browse: BrowseSession;
   transfers: TransferSession;
   signedIn: boolean;
+  peers?: PeerLookup;
 }) {
   const [who, setWho] = useState('');
-  const [mode, setMode] = useState<BrowseMode>('list');
+  const [mode, setMode] = useState<BrowseMode>('tree');
   const [overlapOpen, setOverlapOpen] = useState(false);
   const cur = browse.current;
 
@@ -148,7 +215,7 @@ export function BrowseView({
             <p className="empty__title">Nobody open</p>
             <p className="empty__body">
               Type a username above, or open someone from a search result. Browsing shows
-              everything they share, grouped as releases.
+              everything they share, as a folder tree.
             </p>
           </div>
         )}
@@ -172,8 +239,15 @@ export function BrowseView({
 
         {cur?.state === 'ready' && (
           <div className="browse">
+            <PeerHeader
+              username={cur.username}
+              facts={browse.peerFacts}
+              profile={browse.peerProfile}
+              isBuddy={browse.isBuddy}
+              peers={peers}
+            />
+
             <div className="browse__bar">
-              <span className="browse__who">{cur.username}</span>
               <span className="browse__stat tnum">{cur.fileCount.toLocaleString()} files</span>
               <span className="browse__stat tnum">{fileSize(cur.totalSize)}</span>
               <span className="browse__stat tnum">{browse.shelves.length} releases</span>
@@ -217,6 +291,8 @@ export function BrowseView({
                   ? 'This user shares nothing.'
                   : 'Nothing here matches that filter.'}
               </p>
+            ) : mode === 'tree' ? (
+              <BrowseTreeView shelves={browse.shelves} username={cur.username} transfers={transfers} />
             ) : mode === 'map' ? (
               <Treemap
                 shelves={browse.shelves}

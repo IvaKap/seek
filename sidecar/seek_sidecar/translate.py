@@ -10,6 +10,8 @@
 # speeds or durations, no derived quality, no ranking. See BRIEF_SEEK.md
 # §Architecture "Rules".
 
+import base64
+
 from .protocol import validate_struct  # noqa: F401  (re-exported for tests)
 
 # pynicotine.slskmessages.UserStatus -> our enum
@@ -194,6 +196,32 @@ def peer_stats_from_search(msg, *, country=None, files=None, folders=None):
         folders=folders,
         country=country,
     )
+
+
+def picture_data_uri(data):
+    """Raw picture bytes -> a `data:` URI, or None if there is no picture."""
+    if not data:
+        return None
+    mime = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
+    return "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii"))
+
+
+def user_info(msg):
+    """UserInfoResponse (peer message) -> UserInfoResultEvent.
+
+    The wire already carries plain text here — unlike our own outbound
+    description, which is unescaped from local config before it is sent
+    (userinfo.py's `_get_user_info_response`), a peer's `descr` arrives at us
+    already past that step.
+    """
+    return {
+        "username": msg.username,
+        "description": msg.descr or "",
+        "pictureUri": picture_data_uri(msg.pic),
+        "uploadSlots": int(msg.totalupl or 0),
+        "queueSize": int(msg.queuesize or 0),
+        "freeSlots": bool(msg.slotsavail),
+    }
 
 
 def folder_refs_from_browse(public_list, private_list):

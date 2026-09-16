@@ -2635,6 +2635,21 @@ export interface UserBrowseFailedEvent {
 }
 
 /**
+ * A peer's own profile, fetched directly from them (not the server). Most
+ * peers have set no picture or description — that is normal, not a failure.
+ */
+export interface UserInfoResultEvent {
+  username: string;
+  description: string;
+
+  /** A `data:` URI, or null if the peer has not set a picture. */
+  pictureUri: string | null;
+  uploadSlots: number;
+  queueSize: number;
+  freeSlots: boolean;
+}
+
+/**
  * Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted
  * before the resulting `transfer.added` events.
  */
@@ -3360,6 +3375,8 @@ export interface CommandParams {
   'user.browse': UserBrowseParams;
   /** Request and watch a peer's stats. */
   'user.stats': UserStatsParams;
+  /** Ask a peer directly for their profile picture and description. */
+  'user.info.get': UserBrowseParams;
   /** Queue one file. */
   'transfer.enqueue': TransferEnqueueParams;
   /** Queue a remote folder. */
@@ -3723,6 +3740,7 @@ export interface CommandResult {
   'search.stop': Record<string, never>;
   'user.browse': Record<string, never>;
   'user.stats': Record<string, never>;
+  'user.info.get': Record<string, never>;
   'transfer.enqueue': TransferEnqueueResult;
   'transfer.enqueueFolder': TransferFolderResult;
   'transfer.pause': Record<string, never>;
@@ -3830,6 +3848,7 @@ export const COMMAND_NAMES = [
   'search.stop',
   'user.browse',
   'user.stats',
+  'user.info.get',
   'transfer.enqueue',
   'transfer.enqueueFolder',
   'transfer.pause',
@@ -3950,6 +3969,10 @@ export interface EventPayload {
   'user.browse.result': UserBrowseResultEvent;
   /** A share list request failed. */
   'user.browse.failed': UserBrowseFailedEvent;
+  /** A peer answered a direct profile request. */
+  'user.info.result': UserInfoResultEvent;
+  /** A direct profile request failed. */
+  'user.info.failed': UserBrowseFailedEvent;
   /** Remote folder contents arrived. */
   'folder.contents': FolderContentsEvent;
   /** A folder request failed. */
@@ -4085,6 +4108,8 @@ export const EVENT_NAMES = [
   'user.status',
   'user.browse.result',
   'user.browse.failed',
+  'user.info.result',
+  'user.info.failed',
   'folder.contents',
   'folder.contents.failed',
   'transfer.added',

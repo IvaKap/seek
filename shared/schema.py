@@ -2165,6 +2165,23 @@ STRUCTS = {
         "",
         [("username", "str", ""), ("reason", "str", "")],
     ),
+    "UserInfoResultEvent": (
+        "A peer's own profile, fetched directly from them (not the server). "
+        "Most peers have set no picture or description — that is normal, not "
+        "a failure.",
+        [
+            ("username", "str", ""),
+            ("description", "str", ""),
+            (
+                "pictureUri",
+                "str?",
+                "A `data:` URI, or null if the peer has not set a picture.",
+            ),
+            ("uploadSlots", "int", ""),
+            ("queueSize", "int", ""),
+            ("freeSlots", "bool", ""),
+        ],
+    ),
     "FolderContentsEvent": (
         "Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted "
         "before the resulting `transfer.added` events.",
@@ -2802,6 +2819,11 @@ COMMANDS = {
     ),
     "user.browse": ("Request a peer's full share list.", "UserBrowseParams", None),
     "user.stats": ("Request and watch a peer's stats.", "UserStatsParams", None),
+    "user.info.get": (
+        "Ask a peer directly for their profile picture and description.",
+        "UserBrowseParams",
+        None,
+    ),
     "transfer.enqueue": (
         "Queue one file.",
         "TransferEnqueueParams",
@@ -3222,6 +3244,8 @@ EVENTS = {
     "user.status": ("A peer's presence changed.", "UserStatusEvent"),
     "user.browse.result": ("A peer's share list arrived.", "UserBrowseResultEvent"),
     "user.browse.failed": ("A share list request failed.", "UserBrowseFailedEvent"),
+    "user.info.result": ("A peer answered a direct profile request.", "UserInfoResultEvent"),
+    "user.info.failed": ("A direct profile request failed.", "UserBrowseFailedEvent"),
     "folder.contents": ("Remote folder contents arrived.", "FolderContentsEvent"),
     "folder.contents.failed": ("A folder request failed.", "FolderContentsFailedEvent"),
     "transfer.added": ("A transfer entered the list, either direction.", "Transfer"),

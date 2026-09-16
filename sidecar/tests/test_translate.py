@@ -155,6 +155,30 @@ def test_peer_stats_unknown_counts_are_null():
     protocol.validate_struct("PeerStats", peer)
 
 
+# ------------------------------------------------------------------ user_info
+
+def test_a_peer_with_no_picture_is_not_an_error():
+    msg = FakeSearchResponse(username="u", descr="hi", pic=None,
+                              totalupl=3, queuesize=0, slotsavail=True)
+    info = translate.user_info(msg)
+    assert info["pictureUri"] is None
+    protocol.validate_struct("UserInfoResultEvent", info)
+
+
+def test_a_peers_picture_becomes_a_data_uri():
+    msg = FakeSearchResponse(
+        username="u", descr="", pic=b"\x89PNG\r\n\x1a\n" + b"\x00" * 8,
+        totalupl=0, queuesize=0, slotsavail=False,
+    )
+    assert translate.user_info(msg)["pictureUri"].startswith("data:image/png;base64,")
+
+
+def test_picture_data_uri_labels_a_jpeg_correctly():
+    assert translate.picture_data_uri(b"\xff\xd8\xff\xe0").startswith("data:image/jpeg;base64,")
+    assert translate.picture_data_uri(None) is None
+    assert translate.picture_data_uri(b"") is None
+
+
 # -------------------------------------------------- connection stats defaults
 
 def test_connection_stats_survives_the_no_argument_reset():

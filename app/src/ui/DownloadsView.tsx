@@ -38,6 +38,9 @@ import type { Density } from './ViewMenu.tsx';
 import type { AnalysisSession } from '../data/analysisStore.ts';
 import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
+import { usePeerPictures } from '../data/peerProfiles.ts';
+import type { PeerPictureCache } from '../data/peerProfiles.ts';
+import { PeerAvatar } from './PeerAvatar.tsx';
 import { ASSESSMENT_LABEL, ASSESSMENT_TONE, explain } from '../data/analysisStore.ts';
 import { Spectrum } from './Spectrum.tsx';
 import type { AutoClaim } from '../../../shared/protocol.ts';
@@ -467,7 +470,7 @@ function Actions({
  */
 function TableRow({
   g, session, filter, open, onToggle, discovery, related, setRelated,
-  checksums, hashOpen, setHashOpen,
+  checksums, hashOpen, setHashOpen, pictures,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -480,6 +483,7 @@ function TableRow({
   checksums: ChecksumSession;
   hashOpen: boolean;
   setHashOpen(fn: (v: boolean) => boolean): void;
+  pictures: PeerPictureCache;
 }) {
   const pct = g.size > 0 ? Math.round((g.bytesDone / g.size) * 100) : 0;
   const firstError = g.transfers.find((t) => t.error)?.error;
@@ -529,7 +533,10 @@ function TableRow({
         </span>
       )}
 
-      <span className="dl__cell dl__cell--who">{g.username}</span>
+      <span className="dl__cell dl__cell--who">
+        <PeerAvatar username={g.username} pictureUri={pictures.get(g.username)} size={16} />
+        {g.username}
+      </span>
       <span className="dl__cell dl__rowactions">
         <Actions g={g} session={session} compact discovery={discovery}
                  related={related} setRelated={setRelated}
@@ -541,7 +548,7 @@ function TableRow({
 
 function Group({
   g, session, analysis, checksums, client, preview, density, filter, discovery,
-  open, onOpenChange, selected, onFileSelect, onFileContext,
+  open, onOpenChange, selected, onFileSelect, onFileContext, pictures,
 }: {
   g: TransferGroup;
   session: TransferSession;
@@ -561,6 +568,7 @@ function Group({
   selected: ReadonlySet<string>;
   onFileSelect(id: string, order: string[], mods: Mods): void;
   onFileContext(t: Transfer, e: React.MouseEvent): void;
+  pictures: PeerPictureCache;
 }) {
   const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(fn(open));
   /** Whether the Related shelf is showing for this release. */
@@ -655,6 +663,7 @@ function Group({
           related={related}
           setRelated={setRelated}
           checksums={checksums}
+          pictures={pictures}
           hashOpen={hashOpen}
           setHashOpen={setHashOpen}
         />
@@ -684,7 +693,10 @@ function Group({
             {filter === 'active' ? g.title : <ReleaseName g={g} />}
           </span>
           <span className="dl__sub">
-            <span className="dl__who">{g.username}</span>
+            <span className="dl__who">
+              <PeerAvatar username={g.username} pictureUri={pictures.get(g.username)} size={14} />
+              {g.username}
+            </span>
             <span className="tnum">
               {g.finished}/{g.transfers.length} files
             </span>
@@ -894,6 +906,14 @@ export function DownloadsView({
      same click that sets the selection and nothing renders off it. */
   const anchor = useRef<string | null>(null);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
+
+  /* Peer pictures, fetched lazily per username as releases from them appear —
+   * not all at once up front, and never re-requested once answered (or once
+   * answered with nothing, which is the common case). */
+  const pictures = usePeerPictures(client);
+  useEffect(() => {
+    for (const g of session.groups) pictures.request(g.username);
+  }, [session.groups, pictures]);
 
   /* Every transfer by id, so a menu built over a selection can read each file's
      state without hunting through the groups. */
@@ -1267,6 +1287,7 @@ export function DownloadsView({
                   selected={selected}
                   onFileSelect={onFileSelect}
                   onFileContext={onFileContext}
+                  pictures={pictures}
                 />
               ))}
             </Fragment>

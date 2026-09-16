@@ -72,6 +72,7 @@ const NUMBER_KEYS: Record<string, Section> = {
   '4': 'settings',
   '5': 'chat',
   '6': 'messages',
+  '7': 'browsing',
   '8': 'want',
   '9': 'sessions',
 };
@@ -628,7 +629,7 @@ export default function App() {
         ? [{ id: 'go.labels', group: 'Go', label: 'Labels & Artists', run: go2('labels') }]
         : []),
       { id: 'go.followed', group: 'Go', label: 'Followed', run: go2('followed') },
-      { id: 'go.browse', group: 'Go', label: 'Browse a user', run: go2('browsing') },
+      { id: 'go.browse', group: 'Go', label: 'Browse a user', shortcut: '⌘7', run: go2('browsing') },
       { id: 'go.rooms', group: 'Go', label: 'Chat rooms', shortcut: '⌘5', run: go2('chat') },
       { id: 'go.messages', group: 'Go', label: 'Private chats', shortcut: '⌘6', run: go2('messages') },
       { id: 'go.settings', group: 'Go', label: 'Settings', shortcut: '⌘4', run: go2('settings') },
@@ -970,6 +971,7 @@ export default function App() {
             browse={browse}
             transfers={transfers}
             signedIn={isSignedIn(session.serverState)}
+            peers={(u) => prefs.peers.get(u)}
           />
         ) : section === 'downloads' || section === 'completed' || section === 'failed' ? (
           <DownloadsView

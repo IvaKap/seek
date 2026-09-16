@@ -27,8 +27,10 @@ import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/
 import {
   IconCheck, IconChevronDown, IconDownload, IconHistory, IconRelease, IconUser, IconWarning,
 } from '../icons/index.tsx';
-import { queueBadge, transferKey } from '../data/transferStore.ts';
+import { fileName, queueBadge, transferKey } from '../data/transferStore.ts';
 import type { QueueBadge, TransferState } from '../data/transferStore.ts';
+import type { BrowseFile } from '../data/browseStore.ts';
+import { extensionOf } from '../domain/ingest.ts';
 import { assess, worstAssessment } from '../domain/assessment.ts';
 import { QualityIndicator } from './QualityIndicator.tsx';
 import { hitTarget } from './controls.tsx';
@@ -64,7 +66,7 @@ export function Quality({ file }: { file: SourceFile }) {
  * and was already wrong for release rows, whose different cell count made
  * `nth-child(2)` the track count rather than the spec it was written for.
  */
-function Meta({ children, dim, title, col }: {
+export function Meta({ children, dim, title, col }: {
   children: ReactNode; dim?: boolean; title?: string; col: ColumnId;
 }) {
   return (
@@ -98,7 +100,7 @@ function PrivateMark() {
   );
 }
 
-function AdvertisedSpeed({ bytesPerSec }: { bytesPerSec: number }) {
+export function AdvertisedSpeed({ bytesPerSec }: { bytesPerSec: number }) {
   return (
     <span
       className="meta__cell meta__speed"
@@ -637,6 +639,108 @@ export function SourceRow({
           badge={queueBadge(queueStates?.get(transferKey(source.user, source.path)))}
           onQueue={onQueue}
           label={`from ${source.user}`}
+        />
+      </span>
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- browse file row */
+
+/**
+ * One row in Browse's classic file table (`BrowseTreeView.tsx`) — a sibling
+ * of `FileRow` above, not a reuse of it: there is exactly one peer in view
+ * here, so the `user`/`speed`/`queue` cells `FileRow` carries would be dead
+ * weight repeating the same value down every row. What is shared is
+ * everything about how a row LOOKS — `.row__hit`, `.row__title`, `.meta`, the
+ * same `Meta`/`FormatBadge`/`QualityIndicator` cells — so it sits in the same
+ * visual system without riding the search-only column-grid engine, which
+ * this table does not need (its column set never changes).
+ */
+export function BrowseFileRow({
+  file, selected, onSelect, onQueue, onContextMenu, queueStates, username,
+}: {
+  file: BrowseFile;
+  selected: boolean;
+  onSelect(mods: { meta: boolean; shift: boolean }): void;
+  onQueue(): void;
+  onContextMenu(e: React.MouseEvent): void;
+  queueStates?: Map<string, TransferState>;
+  username: string;
+}) {
+  const spec = audioSpec(file.sampleRate, file.bitDepth);
+  const name = fileName(file.path);
+  const { parsed } = file;
+  return (
+    <div
+      className="row row--file"
+      role="option"
+      aria-selected={selected}
+      data-selected={selected ? 'true' : undefined}
+      onContextMenu={onContextMenu}
+    >
+      {/* role="button", not <button>: the row contains the quality
+          indicator, which is a button itself. See `hitTarget`. */}
+      <div
+        className="row__hit"
+        {...hitTarget(onQueue)}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          if ((e.target as HTMLElement).closest('button')) return;
+          onSelect({ meta: e.metaKey || e.ctrlKey, shift: e.shiftKey });
+        }}
+        aria-label={`${parsed.displayArtist ? `${parsed.displayArtist}, ` : ''}${parsed.displayTitle}. ${file.quality.description}.`}
+      >
+        <span className="row__main">
+          <span className="row__title">
+            {parsed.displayArtist && (
+              <>
+                <span className="row__artist">{parsed.displayArtist}</span>
+                <span className="row__dash" aria-hidden> — </span>
+              </>
+            )}
+            <span className="row__name" data-raw={parsed.fallback ? 'true' : undefined}>
+              {parsed.displayTitle}
+            </span>
+            {parsed.fallback && (
+              <span
+                className="row__unparsed"
+                title="Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it."
+              >
+                unparsed
+              </span>
+            )}
+          </span>
+          <span className="meta">
+            {/* The badge shows the FORMAT (what kind of file this is — the one
+                thing that still matters in a folder mixing FLAC and MP3 rips),
+                not `quality.label`: that field doubles as the bitrate number
+                for a constant-rate lossy file, which is the exact value the
+                Bitrate cell beside it already states — showing it twice read
+                as a bug, not a badge. */}
+            <Meta col="format">
+              <FormatBadge
+                label={extensionOf(file.path)?.toUpperCase() ?? '?'}
+                tier={file.quality.tier}
+                title={file.quality.description}
+              />
+            </Meta>
+            <Meta col="bitrate" dim>
+              {file.bitrate ? <span className="tnum">{file.bitrate} kbps</span> : ''}
+            </Meta>
+            <Meta col="spec" dim>{spec ?? ''}</Meta>
+            <Meta col="time"><span className="tnum">{duration(file.duration)}</span></Meta>
+            <Meta col="size"><span className="tnum">{fileSize(file.size)}</span></Meta>
+            <Meta col="check"><QualityIndicator assessment={assess(file)} /></Meta>
+          </span>
+        </span>
+      </div>
+
+      <span className="row__actions">
+        <QueueButton
+          badge={queueBadge(queueStates?.get(transferKey(username, file.path)))}
+          onQueue={onQueue}
+          label={`${name} from ${username}`}
         />
       </span>
     </div>

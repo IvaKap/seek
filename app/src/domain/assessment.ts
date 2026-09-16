@@ -56,7 +56,15 @@ function build(state: QualityState, summary: string, detail: string[]): Assessme
   return { state, label: meta.label, glyph: meta.glyph, rank: meta.rank, summary, detail };
 }
 
-export function assess(file: SourceFile): Assessment {
+/**
+ * Only the four fields the arithmetic actually reads. A `SourceFile` always
+ * satisfies this, but Browse has no peer-ranking score or cluster key to
+ * offer — just a file's own quality and transcode check — so this stays a
+ * `Pick` rather than demanding the whole search-result shape.
+ */
+export type AssessableFile = Pick<SourceFile, 'transcode' | 'quality' | 'bitDepth' | 'sampleRate'>;
+
+export function assess(file: AssessableFile): Assessment {
   const t = file.transcode;
   const q = file.quality;
 

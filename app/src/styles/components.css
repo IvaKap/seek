@@ -1951,7 +1951,11 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   min-width: 0;
 }
-.dl__cell--who { color: var(--text-primary); }
+.dl__cell--who {
+  color: var(--text-primary);
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .dl__cell--reason { color: var(--danger); }
 .dl__progcell { display: flex; align-items: center; gap: var(--sp-2); justify-content: flex-end; }
 .dl__minibar {
@@ -2053,7 +2057,10 @@
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   font-size: var(--fs-caption); letter-spacing: var(--tr-caption); color: var(--text-secondary);
 }
-.dl__who { color: var(--text-primary); }
+.dl__who {
+  color: var(--text-primary);
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+}
 .dl__flag { color: var(--text-secondary); }
 /* Failure carries a word, not only a colour. */
 .dl__flag--bad { color: var(--danger); }
@@ -2475,7 +2482,11 @@
 /* A peer's share, presented as shelves rather than a folder tree. */
 
 .browse__form { margin-top: var(--sp-2); max-width: 22rem; }
-.browse { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); }
+/* `min-height`, not `height`: List/Map/Folders legitimately grow past the
+   viewport and must still scroll `.pane__scroll` normally. Tree mode's own
+   panes scroll internally, so THIS is what lets `.btree`'s `flex: 1` have an
+   actual height to grow into instead of collapsing to its content. */
+.browse { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); min-height: 100%; }
 .browse__bar {
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   padding-bottom: var(--sp-2); border-bottom: 1px solid var(--separator);
@@ -2483,6 +2494,134 @@
 .browse__who { font-size: var(--fs-body); color: var(--text-primary); }
 .browse__stat { font-size: var(--fs-caption); color: var(--text-secondary); }
 .browse__filter { margin-left: auto; min-width: 14rem; }
+
+/* ---- the peer header: who this is, gathered from three separate sources -- */
+
+.peer {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+}
+/* Shared with Downloads' per-release peer avatar (`PeerAvatar.tsx`) — same
+   picture-or-initials component, sized differently by context. */
+.peeravatar {
+  flex: none; border-radius: 50%;
+  overflow: hidden; background: var(--bg-sunken);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.peeravatar__pic { width: 100%; height: 100%; object-fit: cover; }
+.peeravatar__initials {
+  font-weight: var(--fw-medium); color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+.peer__id { min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.peer__name {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-body); font-weight: var(--fw-medium); color: var(--text-primary);
+}
+.peer__buddy { color: var(--accent); display: inline-flex; }
+.peer__facts {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.peer__queue { color: var(--text-tertiary); }
+.peer__descr {
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 32rem;
+}
+
+/* ---- the classic view: a folder tree beside a dense file table ---------- */
+
+.btree {
+  display: grid; grid-template-columns: var(--tree-w, 15rem) 5px 1fr;
+  min-height: 0; flex: 1;
+  border: 1px solid var(--separator); border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.btree__tree {
+  background: var(--bg-raised);
+  overflow-y: auto;
+}
+.btree__resize {
+  position: relative; cursor: col-resize; background: var(--separator);
+}
+/* A generous invisible hit area either side of the hairline — the visible
+   divider stays thin, the thing you can actually grab does not. */
+.btree__resize::after { content: ''; position: absolute; inset: 0 -4px; }
+.btree__resize:hover, .btree__resize[data-dragging='true'] { background: var(--accent); }
+.btree__files { display: flex; flex-direction: column; min-width: 0; }
+.btree__toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--separator);
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.btree__path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.btree__list { overflow-y: auto; flex: 1; }
+/* `.row`/`.row__hit` default to `height: 100%` — correct ONLY under
+   ResultList's virtualiser, where each row sits inside a slot already sized
+   to exactly one row. Stacked plainly here with no such slot, `height: 100%`
+   made every row fill the ENTIRE scrollable list, so file 1 occupied the
+   whole viewport and files 2-9 were each their own full-viewport-tall blank
+   page below it — "only one file visible while scrolling" was every one of
+   them, just spaced a screen-height apart. */
+.btree__list .row,
+.btree__list .row__hit {
+  height: auto;
+  min-height: 1.75rem;
+}
+
+/* One line per file, classic-Nicotine+ dense: name, format, spec, time, size
+   and the quality check all as columns beside the filename, not a title with
+   a metadata line stacked under it. `.row__main`/`.meta` are a flex COLUMN by
+   default (search's two-line comfortable/compact rows), which is exactly
+   what search's own TABLE density also overrides by promoting their children
+   straight into a shared grid — this is that same move, with a fixed column
+   set instead of the configurable `--cols` engine this table has no need for
+   (its columns never change). */
+.btree__list .row__hit {
+  display: grid;
+  grid-template-columns:
+    minmax(6rem, 1fr)             /* name    */
+    minmax(3.25rem, max-content)  /* format  */
+    minmax(4rem, max-content)     /* bitrate */
+    minmax(3.5rem, max-content)   /* spec    */
+    minmax(3rem, max-content)     /* time    */
+    minmax(4.5rem, max-content)   /* size    */
+    max-content;                  /* check   */
+  column-gap: var(--sp-3);
+}
+.btree__list .row__main,
+.btree__list .meta {
+  display: contents;
+}
+
+.ftree { padding: var(--sp-1) 0; outline: none; }
+.ftree__row {
+  display: flex; align-items: center; gap: var(--sp-1);
+  height: 1.75rem; padding-right: var(--sp-2);
+  font-size: var(--fs-caption); color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ftree__row:hover { background: var(--bg-hover); }
+}
+.ftree__row[data-active='true'] { background: var(--bg-selected); }
+.ftree__disclosure {
+  flex: none; width: 1rem; height: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--text-tertiary);
+}
+/* Same convention `Sidebar.tsx`'s group carets use: closed points at the
+   content it would reveal (right), open points down at what it revealed —
+   never "up", which is what the two together read as before this fix. */
+.ftree__chev { transition: transform var(--dur-base) var(--ease-out); transform: rotate(-90deg); }
+.ftree__chev[data-open='true'] { transform: rotate(0deg); }
+.ftree__spacer { flex: none; width: 1rem; }
+.ftree__icon { flex: none; color: var(--text-tertiary); }
+.ftree__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ftree__count {
+  flex: none; color: var(--text-quaternary); font-size: var(--fs-micro);
+}
 
 .shelf {
   position: relative;

@@ -273,6 +273,8 @@ class CoreHost:
             ("remove-search", self._on_search_removed),
             ("user-stats", self._on_user_stats),
             ("user-status", self._on_user_status),
+            ("user-info-response", self._on_user_info_response),
+            ("user-info-failed", self._on_user_info_failed),
             ("shared-file-list-response", self._on_browse_response),
             ("shared-file-list-failed", self._on_browse_failed),
             ("folder-contents-response", self._on_folder_contents),
@@ -516,9 +518,7 @@ class CoreHost:
         except OSError as error:
             return None, f"That file could not be read: {error.strerror or error}", 0
 
-        mime = "image/png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "image/jpeg"
-        uri = "data:%s;base64,%s" % (mime, base64.b64encode(data).decode("ascii"))
-        return uri, "", len(data)
+        return translate.picture_data_uri(data), "", len(data)
 
     def _profile(self):
         info = self.config.sections["userinfo"]
@@ -804,6 +804,21 @@ class CoreHost:
 
     def _on_browse_failed(self, username, is_offline=False):
         self.bridge.broadcast("user.browse.failed", {
+            "username": username,
+            "reason": "offline" if is_offline else "failed",
+        })
+
+    def _on_user_info_response(self, msg):
+        # This event also fires for OUR OWN profile if `userinfo.show_user()`
+        # is ever called with no username; Seek never does that (the outbound
+        # `profile.get` command reads local config directly instead), so
+        # every message reaching this handler is a real peer's answer.
+        if not getattr(msg, "username", None):
+            return
+        self.bridge.broadcast("user.info.result", translate.user_info(msg))
+
+    def _on_user_info_failed(self, username, is_offline=False):
+        self.bridge.broadcast("user.info.failed", {
             "username": username,
             "reason": "offline" if is_offline else "failed",
         })
@@ -3518,6 +3533,21 @@ class CoreHost:
         self._require_online()
         self.core.users.watch_user(params["username"], context="seek")
         self.core.users.request_user_stats(params["username"])
+        return {}
+
+    def _cmd_user_info_get(self, params):
+        """Ask a peer directly for their profile (description, picture).
+
+        Goes through upstream's own `UserInfo.show_user`, same as
+        `_cmd_user_browse` goes through `userbrowse.browse_user` — it already
+        does the allow-listing and the request send; reimplementing that here
+        would just be a second, divergent copy of it. It also permanently adds
+        the username to `core.userinfo.users`, same lifetime as a browse
+        session; there is no unwatch call, matching how browsing a user is
+        never explicitly "closed" upstream either.
+        """
+        self._require_online()
+        self.core.userinfo.show_user(params["username"], switch_page=False)
         return {}
 
     def _cmd_transfer_enqueue(self, params):
