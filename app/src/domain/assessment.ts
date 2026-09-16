@@ -148,13 +148,3 @@ export function worstAssessment(files: SourceFile[]): Assessment {
   }
   return worst ?? build('unverified', 'No files to assess', ['']);
 }
-
-/** Counts per state, for a release's "9 good, 1 suspicious" summary. */
-export function assessmentCounts(files: SourceFile[]): Map<QualityState, number> {
-  const counts = new Map<QualityState, number>();
-  for (const f of files) {
-    const s = assess(f).state;
-    counts.set(s, (counts.get(s) ?? 0) + 1);
-  }
-  return counts;
-}

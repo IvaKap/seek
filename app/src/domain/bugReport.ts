@@ -89,12 +89,3 @@ export function buildReport(input: ReportInput): string {
 
   return `${lines.join('\n')}\n`;
 }
-
-/**
- * The prompts above are left blank on purpose.
- *
- * A report that arrives as versions and a log still needs a sentence saying
- * what the person was doing, and they are far more likely to write it if the
- * paste already has a space for it than if they are asked afterwards.
- */
-export const PROMPT_LINES = 3;

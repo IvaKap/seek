@@ -47,27 +47,6 @@ export function useSpringValue(
 }
 
 /**
- * Spring an element's transform on one axis. The full `transform` string is
- * written, not a shorthand, so the compositor handles it.
- */
-export function useSpringTransform(
-  ref: RefObject<HTMLElement | null>,
-  axis: 'x' | 'y' = 'y',
-  config: SpringConfig = SPRING_DEFAULT,
-): (target: number, velocity?: number) => void {
-  return useSpringValue(
-    (v) => {
-      const el = ref.current;
-      if (el) {
-        el.style.transform = axis === 'y' ? `translate3d(0, ${v}px, 0)` : `translate3d(${v}px, 0, 0)`;
-      }
-    },
-    0,
-    config,
-  );
-}
-
-/**
  * An animated integer, for the result count. Springs the value and writes the
  * text; `tabular-nums` in CSS is what stops the digits jittering as it counts.
  */

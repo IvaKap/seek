@@ -113,16 +113,6 @@ function synthesise(targetFiles = 1100): RecordedLine[] {
   return lines;
 }
 
-/** How many files a recording contains, for the perf harness. */
-export async function recordingSize(): Promise<number> {
-  const lines = await loadRecording();
-  let n = 0;
-  for (const l of lines) {
-    if (l.frame.ev === 'search.result') n += (l.frame.data as WireSearchResultData).files.length;
-  }
-  return n;
-}
-
 /* --------------------------------------------------------------- the replay */
 
 export function createMockSidecar(): Sidecar {

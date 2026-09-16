@@ -45,12 +45,6 @@ export interface FolderVerdict {
   offerCreate: boolean;
 }
 
-const PURPOSE_NAME: Record<FolderPurpose, string> = {
-  download: 'Finished downloads go here',
-  incomplete: 'Files in progress go here',
-  share: 'This folder is offered to other people',
-};
-
 /**
  * Note the order. Each branch assumes the ones above it did not fire, which is
  * what keeps the messages specific — "it is not writable" would be a confusing
@@ -124,11 +118,6 @@ export function judgeFolder(facts: PathFacts | null, purpose: FolderPurpose): Fo
   }
 
   return { usable: true, tone: 'ok', message: '', offerCreate: false };
-}
-
-/** The one-line explanation of what a folder setting is for. */
-export function folderPurposeHint(purpose: FolderPurpose): string {
-  return PURPOSE_NAME[purpose];
 }
 
 /**

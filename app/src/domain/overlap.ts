@@ -94,12 +94,3 @@ export function overlapWith(paths: string[], owned: Set<string>): Overlap {
     releases,
   };
 }
-
-/**
- * Worth interrupting the user about?
- *
- * A callout for two records in common is noise — most peers on Soulseek share
- * something you have. The threshold is high enough that seeing it means
- * something, which is what keeps it worth reading the tenth time.
- */
-export const NOTABLE_OVERLAP = 8;

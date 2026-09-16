@@ -25,8 +25,8 @@
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
   Search, ArrowDownUp, Library, Settings, Music4, Folder, User, Check,
-  ChevronDown, ChevronRight, ChevronUp, X, AlertTriangle, HelpCircle,
-  Zap, Users, Download, ArrowUp, SlidersHorizontal, Circle, Inbox,
+  ChevronDown, ChevronRight, X, AlertTriangle, HelpCircle,
+  Users, Download, ArrowUp, SlidersHorizontal, Inbox,
   MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Info,
   FolderCheck, Clover, List,
 } from 'lucide-react';
@@ -180,12 +180,9 @@ export const IconChat = wrap(MessageSquare, 'Chat');
 export const IconCheck = wrap(Check, 'Check');
 export const IconChevronDown = wrap(ChevronDown, 'ChevronDown');
 export const IconChevronRight = wrap(ChevronRight, 'ChevronRight');
-export const IconChevronUp = wrap(ChevronUp, 'ChevronUp');
 export const IconClose = wrap(X, 'Close');
 export const IconWarning = wrap(AlertTriangle, 'Warning');
 export const IconUnknown = wrap(HelpCircle, 'Unknown');
-export const IconUnchecked = wrap(Circle, 'Unchecked');
-export const IconSpeed = wrap(Zap, 'Speed');
 export const IconDownload = wrap(Download, 'Download');
 export const IconArrowUp = wrap(ArrowUp, 'ArrowUp');
 export const IconFilters = wrap(SlidersHorizontal, 'Filters');

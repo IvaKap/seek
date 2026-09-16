@@ -1,10 +1,10 @@
 /*
- * Seek — the three accessibility motion signals, read at runtime.
+ * Seek — the reduced-motion signal, read at runtime.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * CSS handles these for declarative motion; springs are driven in JS and have to
- * ask as well. `useReducedMotion` is what makes the spring hooks step straight
- * to their target instead of animating.
+ * CSS handles reduced motion for declarative animation; springs are driven in JS
+ * and have to ask as well. `useReducedMotion` is what makes the spring hooks step
+ * straight to their target instead of animating.
  */
 
 import { useEffect, useState } from 'react';
@@ -29,6 +29,3 @@ function useMediaQuery(query: string): boolean {
 }
 
 export const useReducedMotion = () => useMediaQuery('(prefers-reduced-motion: reduce)');
-export const useReducedTransparency = () => useMediaQuery('(prefers-reduced-transparency: reduce)');
-export const useHighContrast = () => useMediaQuery('(prefers-contrast: more)');
-export const useDarkMode = () => useMediaQuery('(prefers-color-scheme: dark)');
