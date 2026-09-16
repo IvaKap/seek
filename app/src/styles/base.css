@@ -30,6 +30,23 @@ body {
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
   overflow: hidden;
+  /* Nothing set this anywhere, so the WebView's native Cmd+A selected every
+   * label, badge and nav item in the whole window — chrome nobody meant to
+   * be copyable, "highlighted" indiscriminately including whatever a sheet
+   * or popover currently sits on top of. Native apps default the other way:
+   * chrome is not text, only text is text. `.settings__path`/`.settings__report`
+   * (and anywhere else copying genuinely matters) opt back in explicitly. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Form controls edit and select their OWN value regardless of an ancestor's
+ * `user-select` — stated explicitly rather than assumed, since a search box
+ * or a username field that could not be selected would be a worse bug than
+ * the one this file exists to fix. */
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Every number in this app. Non-negotiable: digits that change width while a
