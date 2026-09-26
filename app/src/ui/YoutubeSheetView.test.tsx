@@ -11,7 +11,7 @@
 import { StrictMode } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { YoutubeSheetView, resizeWidth, MIN_WIDTH } from './YoutubeSheetView.tsx';
+import { YoutubeSheetView } from './YoutubeSheetView.tsx';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { YoutubeRow, YoutubeSheet } from '../../../shared/protocol.ts';
 
@@ -228,16 +228,9 @@ describe('the youtube sheet', () => {
       );
       return { container: r.container };
     })();
-    // One handle per visible column (the 9 defaults).
-    expect(container.querySelectorAll('.yt__resize').length).toBe(9);
-  });
-
-  it('a drag widens or narrows from the start width, never below the minimum', () => {
-    // The arithmetic behind a resize (jsdom has no PointerEvent to drive the
-    // handle end to end, so the pure function is pinned instead).
-    expect(resizeWidth(260, 60)).toBe(320);
-    expect(resizeWidth(260, -40)).toBe(220);
-    expect(resizeWidth(120, -1000)).toBe(MIN_WIDTH);
+    // One handle per visible column (the 9 defaults). The arithmetic behind a
+    // drag is pinned in columnHeaders.test.ts.
+    expect(container.querySelectorAll('.colhead__resize').length).toBe(9);
   });
 
   it('a low-confidence match is toned as a warning', () => {

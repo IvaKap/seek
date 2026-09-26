@@ -800,6 +800,9 @@
      query resolves against the container's own font size, which does scale. */
   container-type: inline-size;
   container-name: results;
+  /* The Get button's slot beside every row. The table header pads by it too,
+     so the two grids come out the same width (see "table density"). */
+  --row-actions-w: 2.25rem;
 }
 .pane__scroll { overflow-y: auto; padding: 0 var(--sp-5) var(--sp-10); }
 
@@ -857,6 +860,14 @@
   border-radius: var(--radius-sm); background: var(--bg-sunken);
   font-size: var(--fs-micro); color: var(--text-secondary);
 }
+/* A table-density release you already have, and its "N copies" comparison: kept
+   beside the name, and never squeezed out by it. */
+.row__owned {
+  margin-left: var(--sp-2); padding: 0 var(--sp-1); flex: none;
+  border-radius: var(--radius-sm); background: var(--accent-soft);
+  font-size: var(--fs-micro); color: var(--accent); white-space: nowrap;
+}
+.row__title .copies { margin-left: var(--sp-2); flex: none; align-self: center; }
 
 /* A wish that has found something. Accent, not warn: this is good news, and it
    is the only news the wishlist ever delivers. */
@@ -973,7 +984,7 @@
    nothing on the row can shift position. */
 .row__actions, .card__actions {
   flex: none; display: flex; align-items: center; gap: var(--sp-1);
-  width: 2.25rem; justify-content: flex-end;
+  width: var(--row-actions-w, 2.25rem); justify-content: flex-end;
   opacity: 0; transition: opacity var(--dur-fast) var(--ease-out);
 }
 .card__actions { width: 5rem; }
@@ -1228,7 +1239,6 @@
 }
 .art--card { width: 3.5rem; height: 3.5rem; border-radius: var(--radius-md); position: relative; }
 .card[data-density='compact'] .art--card { width: 2.25rem; height: 2.25rem; }
-.card[data-density='table'] .art--card { display: none; }
 .art__mark {
   width: 100%; height: 100%; display: block;
   --art-bg: hsl(var(--h) 26% 92%);
@@ -1295,10 +1305,6 @@
 .card[data-density='compact'] .card__hit { gap: var(--sp-3); }
 .card[data-density='compact'] .card__artist { display: none; }
 .card[data-density='compact'] .card__title { font-size: var(--fs-body); }
-.card[data-density='table'] .card__heading { flex-direction: row; align-items: baseline; gap: var(--sp-2); }
-.card[data-density='table'] .card__title { font-size: var(--fs-body); font-weight: var(--fw-regular); }
-.card[data-density='table'] .card__body { flex-direction: row; align-items: center; gap: var(--sp-4); }
-.card[data-density='table'] .card__heading { flex: 1; min-width: 0; }
 
 /* ============================================================ enter/exit == */
 
@@ -1428,27 +1434,27 @@
 .dl__artist { color: var(--text-secondary); }
 .dl__dash { color: var(--text-tertiary); }
 
-/* A column row: the on/off toggle takes the width, the two movers sit at the
-   end. Not a drag handle — dragging inside a popover fights its own
-   outside-click dismissal, and arrows are reachable from a keyboard. */
-.viewmenu__item--col {
+/* A column row: its name, and one button that adds or removes it. Moving and
+   resizing happen on the table header itself (ui/columnHeaders.tsx). */
+.viewmenu__col {
   display: flex; align-items: center; gap: var(--sp-2);
-  padding: 0 var(--sp-2) 0 0;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-3);
 }
-.viewmenu__coltoggle {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3); border: none; background: transparent;
-  text-align: left; color: inherit; font: inherit; cursor: default;
-}
-.viewmenu__coltoggle:hover { background: var(--bg-hover); }
-.viewmenu__movers { display: flex; gap: 2px; flex: none; }
-.viewmenu__move {
-  width: 1.5rem; height: 1.5rem; padding: 0; line-height: 1;
+.viewmenu__col[data-on='false'] .viewmenu__item-label { color: var(--text-tertiary); }
+.viewmenu__colbtn {
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; padding: 0;
   border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
   background: transparent; color: var(--text-secondary); cursor: default;
 }
-.viewmenu__move:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
-.viewmenu__move:disabled { opacity: 0.3; }
+@media (hover: hover) and (pointer: fine) {
+  .viewmenu__colbtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+}
+.viewmenu__note {
+  padding: var(--sp-1) var(--sp-3) var(--sp-2);
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption); color: var(--text-tertiary);
+}
 
 /* The search tab strip. Deliberately quiet: it sits above the field, and the
    CHIPS appear only once there is more than one search, so the ordinary case
@@ -2161,87 +2167,89 @@
 .verify--done[data-tone='unknown'] { color: var(--text-tertiary); }
 
 /* ==================================================== table density ====== */
-/* Table density was previously five overrides on `.card` — hide the artwork,
-   flip a flex direction — which is "the card, but flatter", not a table. Flex
-   containers cannot align across siblings, so a parent row and its expanded
-   children never lined up, which is the one property that makes a table
-   readable.
- 
-   The fix is one shared column grid. `display: contents` on the intermediate
-   wrappers promotes the leaf cells to grid items of `.row__hit`, so every row
-   kind subscribes to the SAME track list and aligns by construction. */
+/* One shared column grid. `display: contents` on the intermediate wrappers
+   promotes the leaf cells to grid items of `.row__hit`, so every row kind
+   subscribes to the SAME track list: `--cols`, computed in searchColumns.ts
+   from the columns the user chose, in their order, at their widths.
+
+   Three things keep every value under its header. Each was a real drift first:
+
+   - Each cell is placed on its OWN column's line, `grid-column:
+     var(--col-<id>)`. Under `order` and auto-flow, a row that lacked a cell (a
+     release has no Time of its own, a track row no Folder) slid every later
+     cell one column to the left.
+   - The header lives inside the scroller, so it is exactly as wide as the rows.
+     Outside it, the rows lost the scrollbar's width and the header did not.
+   - The header's right padding includes the Get button, which sits beside each
+     row's grid rather than in it. Without it the header grid was wider, the
+     flexible Name column resolved wider, and everything after it drifted right
+     of its values by exactly the button's width.
+
+   Everything is left-aligned, labels and values alike, so a value starts where
+   its label starts. A table wider than the pane scrolls sideways (`--table-min`)
+   instead of cropping the name or dropping a column the user asked for. */
+
+.scroller[data-density='table'] { overflow-x: auto; }
+.list-canvas[data-density='table'] { min-width: var(--table-min); }
 
 .list-canvas[data-density='table'] .row__hit,
 .thead {
   display: grid;
-  /* The name takes every spare pixel but must be allowed to shrink well below
-     its comfortable size: the fixed columns alone can exceed a narrow pane, and
-     a rigid minimum made the whole grid overflow rather than the one column
-     that can afford to lose width. */
-  /* Fixed columns for the values, and ALL the remaining space to the name.
-     `fr` only receives space after every other track reaches its max, so
-     minmax() on the value columns starved the name whenever the pane was
-     narrow — nine columns simply do not fit, and the fix is to drop the least
-     useful ones (below), not to squeeze the one that identifies the row. */
-  /* One track list for the header and every row, now COMPUTED — `--cols` is set
-     on `.results` from the chosen columns and what fits. The nine hard-coded
-     tracks that used to live here, and the three container queries that
-     redefined them while hiding columns by `nth-child`, are in
-     domain/searchColumns.ts: a positional rule cannot survive the user
-     reordering the thing it was counting. The fallback keeps this readable if
-     the property is ever missing. */
-  grid-template-columns: var(--cols, minmax(6rem, 1fr) 4.5rem 5.5rem 3.5rem 5rem 6rem 5.5rem 1.75rem 7rem);
+  grid-template-columns: var(--cols);
   align-items: center;
   gap: var(--sp-3);
 }
 
 .thead {
-  /* Match the row's own horizontal padding exactly (rows use 20px), or the
-     header sits four pixels off every column it is supposed to label. */
-  padding: 0 1.25rem var(--sp-1);
+  position: sticky; top: 0; z-index: 3;
+  min-width: var(--table-min);
+  /* Left: the row's own padding. Right: the row's padding plus its Get button. */
+  padding: var(--sp-1) calc(var(--sp-5) + var(--row-actions-w)) var(--sp-1) var(--sp-5);
+  background: var(--bg-content);
   font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
   text-transform: uppercase; color: var(--text-tertiary);
   border-bottom: 1px solid var(--separator);
 }
-.thead span:not(:first-child) { text-align: right; }
-.thead span:last-child { text-align: left; }
 
 .list-canvas[data-density='table'] .row__main,
 .list-canvas[data-density='table'] .meta { display: contents; }
 
-/* Where the chosen column order actually lands. `--ord-*` and `--vis-*` are set
-   on `.results` from the user's choice and what fits; the cells stay in their
-   natural DOM order inside each row type and grid `order` moves them, so no row
-   component has to know anything about columns. Scoped away from
-   `.meta--source`, which is the peer list inside an expanded row and keeps its
-   own designed order. */
-.list-canvas[data-density='table'] .row__title { order: 0; }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='format'] { order: var(--ord-format, 99); display: var(--vis-format, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='spec'] { order: var(--ord-spec, 99); display: var(--vis-spec, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='time'] { order: var(--ord-time, 99); display: var(--vis-time, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='size'] { order: var(--ord-size, 99); display: var(--vis-size, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='speed'] { order: var(--ord-speed, 99); display: var(--vis-speed, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='queue'] { order: var(--ord-queue, 99); display: var(--vis-queue, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='check'] { order: var(--ord-check, 99); display: var(--vis-check, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='user'] { order: var(--ord-user, 99); display: var(--vis-user, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='bitrate'] { order: var(--ord-bitrate, 99); display: var(--vis-bitrate, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='year'] { order: var(--ord-year, 99); display: var(--vis-year, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='files'] { order: var(--ord-files, 99); display: var(--vis-files, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='country'] { order: var(--ord-country, 99); display: var(--vis-country, inline-flex); }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='folder'] { order: var(--ord-folder, 99); display: var(--vis-folder, inline-flex); }
-
-/* The folder is a path, not a number: left-align it (header included) and let it
-   ellipsize on the RIGHT, so the artist/album at the front survives and only the
-   `[FLAC]`/year tail is lost when the column is tight. The full path is in the
-   cell's title. Every other value column stays right-aligned. */
-.thead span[data-col='folder'] { text-align: left; }
-.list-canvas[data-density='table'] .meta:not(.meta--source) > [data-col='folder'] {
+/* The name owns column 1 on every row kind. */
+.list-canvas[data-density='table'] .row__title { grid-column: 1; grid-row: 1; min-width: 0; }
+/* A value cell: first row, left-aligned, and clipped by its own column rather
+   than spilling into the next when that column is dragged narrow. Hidden until
+   its column is shown. Specific enough to beat the comfortable-density rules
+   that hide `.meta` cells by position. */
+.list-canvas[data-density='table'] .meta > .meta__cell {
+  grid-row: 1; display: none;
   justify-content: flex-start; text-align: left;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 0; overflow: hidden; white-space: nowrap;
 }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='format']  { grid-column: var(--col-format);  display: var(--vis-format, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='spec']    { grid-column: var(--col-spec);    display: var(--vis-spec, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='time']    { grid-column: var(--col-time);    display: var(--vis-time, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='size']    { grid-column: var(--col-size);    display: var(--vis-size, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='speed']   { grid-column: var(--col-speed);   display: var(--vis-speed, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='queue']   { grid-column: var(--col-queue);   display: var(--vis-queue, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='check']   { grid-column: var(--col-check);   display: var(--vis-check, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='user']    { grid-column: var(--col-user);    display: var(--vis-user, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='bitrate'] { grid-column: var(--col-bitrate); display: var(--vis-bitrate, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='year']    { grid-column: var(--col-year);    display: var(--vis-year, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='files']   { grid-column: var(--col-files);   display: var(--vis-files, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='country'] { grid-column: var(--col-country); display: var(--vis-country, none); }
+.list-canvas[data-density='table'] .meta > .meta__cell[data-col='folder']  { grid-column: var(--col-folder);  display: var(--vis-folder, none); }
 
-.list-canvas[data-density='table'] .row__title { min-width: 0; }
-.list-canvas[data-density='table'] .meta__cell { justify-content: flex-end; text-align: right; }
+/* Cells that exist for the table's optional columns stay out of the designed
+   metadata line at the other densities. */
+.list-canvas:not([data-density='table']) .meta__cell[data-col='country'],
+.list-canvas:not([data-density='table']) .meta--source > .meta__cell[data-col='bitrate'] { display: none; }
+
+/* Source rows (a release's files, a track's peers) keep their nesting INSIDE
+   column 1 — the rail and an indented name — instead of padding the whole row,
+   which pushed every one of their columns right of the header's. */
+.list-canvas[data-density='table'] .row--source { padding-left: var(--sp-5); }
+.list-canvas[data-density='table'] .row--source .row__title { padding-left: var(--sp-4); }
+
 /* Artwork and avatars are dead weight at this density — and worse, they are
    EXTRA GRID ITEMS. A user row carries a leading `.art` avatar that `display:
    contents` promoted into column 1, pushing the username into the 4.5rem
@@ -2277,16 +2285,6 @@
    `min-height: 0` is what lets a flex child actually shrink and scroll. */
 .results > .scroller { flex: 1 1 auto; min-height: 0; }
 
-/* A source row has no name cell — it starts straight at the format badge — so
-   under `display: contents` its cells landed one column left of its parent's.
-   Push the first cell into column 2 and the rest auto-flow behind it, which is
-   what makes a parent and its expanded sources finally share column starts. */
-.list-canvas[data-density='table'] .row--source .meta__cell:first-child {
-  grid-column-start: 2;
-}
-/* Empty dim cells were collapsing to zero width and pulling later columns out
-   of line; an explicit min-width keeps the track occupied. */
-.list-canvas[data-density='table'] .meta__cell:empty { min-width: 1px; }
 
 /* ==================================================== search grid ======== */
 /* A wall of covers, for picking a record out of a pile. Not virtualised — the
@@ -3644,24 +3642,36 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
   text-transform: uppercase; color: var(--text-tertiary);
 }
-.yt__h {
-  position: relative; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* ------------------------------------------------------------- colhead -- */
+/* A table header cell (ui/columnHeaders.tsx), shared by the search table and
+   this sheet: drag it to move the column, drag its right edge to resize,
+   double-click the edge to reset. */
+.colhead { position: relative; min-width: 0; display: flex; align-items: center; cursor: grab; }
+.colhead[data-pinned='true'] { cursor: default; }
+.colhead[data-dragging='true'] {
+  z-index: 2; cursor: grabbing; color: var(--text-primary);
+  background: var(--bg-raised); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-popover);
 }
-.yt__hlabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* The drag handle sits in the column gap on the cell's right edge, so it reads
-   as a boundary between columns rather than part of either. */
-.yt__resize {
-  position: absolute; top: 0; right: calc(var(--sp-3) / -2 - 1px);
-  width: 9px; height: 100%; cursor: col-resize;
-  touch-action: none;
+.colhead__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The resize handle straddles the column gap, so it reads as the boundary
+   between two columns rather than part of either. The cell itself must not
+   clip (the label does), or the half of the handle in the gap is unreachable. */
+.colhead__resize {
+  position: absolute; top: 0; bottom: 0; right: calc(var(--sp-3) / -2 - 4.5px);
+  width: 9px; z-index: 1; cursor: col-resize; touch-action: none;
 }
-.yt__resize::after {
+.colhead__resize::after {
   content: ''; position: absolute; top: 20%; bottom: 20%; left: 4px;
   width: 1px; background: var(--separator);
 }
 @media (hover: hover) and (pointer: fine) {
-  .yt__resize:hover::after { background: var(--accent); left: 3px; width: 2px; }
+  .colhead__resize:hover::after { background: var(--accent); left: 3px; width: 2px; }
+}
+/* Where a dragged column will land. */
+.colhead__drop {
+  position: absolute; top: 3px; bottom: 3px; width: 2px; margin-left: -1px;
+  border-radius: 1px; background: var(--accent); pointer-events: none;
 }
 .yt__row {
   border-bottom: 0.5px solid var(--separator);

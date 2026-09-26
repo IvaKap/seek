@@ -1,5 +1,5 @@
 /*
- * Seek — the columns of the search results table, and which of them fit.
+ * Seek — the columns of the search results table.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Only the TABLE density has columns. Comfortable and Compact render a designed
@@ -8,19 +8,12 @@
  * that into a user-ordered list would be offering to break a layout rather than
  * to configure one.
  *
- * WHAT THIS REPLACES. The template was nine hard-coded track widths in CSS,
- * with three container queries that redefined it and hid columns by
- * `nth-child`. That worked exactly as long as the set never changed: an
- * `nth-child(9)` rule means "the user column" only while user IS ninth. Reorder
- * anything and the responsive rules start hiding the wrong column — which is
- * not hypothetical, because the non-table `.meta` line has three different cell
- * counts sharing one set of nth-child rules, and its release rows have been
- * dropping their track count where they meant to drop the spec.
- *
- * So the template is computed from the chosen columns, and what drops when
- * space runs short is decided by a PRIORITY on each column rather than by its
- * position. The order of sacrifice the CSS encoded is preserved exactly — user,
- * then queue, then spec — it is simply no longer tied to where a column sits.
+ * Every column can be added or removed (the View menu's + and −), moved (drag
+ * its header) and resized (drag its header's edge). The widths below are the
+ * defaults, in rem; `columns.ts` explains how a hand-set width overrides them.
+ * Name is the one `fill` column: it takes every spare pixel, because a filename
+ * cropped to "Burial — Arch…" while a column of queue counts sits half empty
+ * is the complaint this layout exists to answer.
  */
 
 import { makeColumns } from './columns.ts';
@@ -30,33 +23,26 @@ export type ColumnId =
   | 'name' | 'format' | 'spec' | 'time' | 'size' | 'speed' | 'queue' | 'check'
   | 'user' | 'bitrate' | 'year' | 'files' | 'country' | 'folder';
 
-/* The pure algorithm — fitting, ordering, normalising — now lives in
- * `columns.ts` and is shared with the YouTube sheet. This file is that engine's
- * search instantiation: the specs below, and the historical function names the
- * rest of the search UI already imports, delegating to it. */
 export type ColumnSpec = GenericColumnSpec<ColumnId>;
 
 const SPECS: ColumnSpec[] = [
-  { id: 'name', label: 'Name', track: 'minmax(6rem, 1fr)', rem: 6, priority: Infinity, pinned: true },
-  { id: 'format', label: 'Format', track: '4.5rem', rem: 4.5, priority: Infinity },
-  { id: 'spec', label: 'Spec', track: '5.5rem', rem: 5.5, priority: 3 },
-  { id: 'time', label: 'Time', track: '3.5rem', rem: 3.5, priority: 5 },
-  { id: 'size', label: 'Size', track: '5rem', rem: 5, priority: 6 },
-  { id: 'speed', label: 'Speed', track: '6rem', rem: 6, priority: 4 },
-  { id: 'queue', label: 'Queue', track: '5.5rem', rem: 5.5, priority: 2 },
-  { id: 'check', label: 'Check', track: '1.75rem', rem: 1.75, priority: Infinity },
-  { id: 'user', label: 'User', track: '7rem', rem: 7, priority: 1 },
-  // Added by this change. All opt-in, and all drop before anything that was
-  // already on screen — someone who switches one on has not asked to lose Size.
-  { id: 'bitrate', label: 'Bitrate', track: '5rem', rem: 5, priority: 0, extra: true },
-  { id: 'year', label: 'Year', track: '3.5rem', rem: 3.5, priority: 0, extra: true },
-  { id: 'files', label: 'Files', track: '4rem', rem: 4, priority: 0, extra: true },
-  { id: 'country', label: 'From', track: '3rem', rem: 3, priority: 0, extra: true },
-  // The remote folder — only the flat "Files" list has a single one to show
-  // (a grouped row spans many), so it is an opt-in extra like the others, most
-  // at home in that list and one click away in the column picker. Wide, because
-  // a Soulseek folder path carries the catalogue number and the year.
-  { id: 'folder', label: 'Folder', track: 'minmax(6rem, 12rem)', rem: 6, priority: 0, extra: true },
+  { id: 'name', label: 'Name', width: 15, fill: true, pinned: true },
+  { id: 'format', label: 'Format', width: 4.25 },
+  { id: 'spec', label: 'Spec', width: 4.5 },
+  { id: 'time', label: 'Time', width: 3.5 },
+  { id: 'size', label: 'Size', width: 4.5 },
+  { id: 'speed', label: 'Speed', width: 5.75 },
+  { id: 'queue', label: 'Queue', width: 5 },
+  { id: 'check', label: 'Check', width: 3.5 },
+  { id: 'user', label: 'User', width: 8 },
+  // Off by default; one click away in the View menu.
+  { id: 'bitrate', label: 'Bitrate', width: 5 },
+  { id: 'year', label: 'Year', width: 3.5 },
+  { id: 'files', label: 'Files', width: 4.5 },
+  { id: 'country', label: 'From', width: 3.5 },
+  // The remote folder. Wide, because a Soulseek folder path carries the
+  // catalogue number and the year.
+  { id: 'folder', label: 'Folder', width: 12 },
 ];
 
 export const COLUMNS: Record<ColumnId, ColumnSpec> = Object.fromEntries(
@@ -66,23 +52,12 @@ export const COLUMNS: Record<ColumnId, ColumnSpec> = Object.fromEntries(
 /** Every column, in the order the picker offers them. */
 export const ALL_COLUMNS: ColumnId[] = SPECS.map((c) => c.id);
 
-/** Exactly what the table showed before it was configurable. */
+/** What a fresh install shows. */
 export const DEFAULT_COLUMNS: ColumnId[] = [
   'name', 'format', 'spec', 'time', 'size', 'speed', 'queue', 'check', 'user',
 ];
 
-/*
- * The engine, with the slack the old CSS already had: the nine default columns
- * measure 44.75rem of track plus 6rem of gaps, and the old rules dropped the
- * user column at 58em, so ~7rem of headroom is the design's own.
- */
-const ENGINE = makeColumns<ColumnId>(SPECS, DEFAULT_COLUMNS, 7);
-
-/**
- * The columns that fit, dropping the least useful first — measured in rem, not
- * pixels, so it still fires when the OS scales text.
- */
-export const visibleColumns = ENGINE.visible;
+const ENGINE = makeColumns<ColumnId>(SPECS, DEFAULT_COLUMNS);
 
 /** The `grid-template-columns` value for a set of columns. */
 export const templateFor = ENGINE.template;
@@ -100,5 +75,5 @@ export const reorderColumns = ENGINE.reorder;
 /** Turn a column on (appended) or off. `name` cannot be turned off. */
 export const toggleColumn = ENGINE.toggle;
 
-/** What the ViewMenu column picker needs to configure this table. */
+/** The whole engine, for the View menu and the header row. */
 export const SEARCH_COLUMN_SET = ENGINE;

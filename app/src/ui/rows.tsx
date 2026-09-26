@@ -21,17 +21,17 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import type { Release, SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
+import type { SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
 import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/format.ts';
 import {
-  IconCheck, IconChevronDown, IconDownload, IconHistory, IconRelease, IconUser, IconWarning,
+  IconCheck, IconChevronDown, IconDownload, IconHistory, IconUser, IconWarning,
 } from '../icons/index.tsx';
 import { fileName, queueBadge, transferKey } from '../data/transferStore.ts';
 import type { QueueBadge, TransferState } from '../data/transferStore.ts';
 import type { BrowseFile } from '../data/browseStore.ts';
 import { extensionOf } from '../domain/ingest.ts';
-import { assess, worstAssessment } from '../domain/assessment.ts';
+import { assess } from '../domain/assessment.ts';
 import { QualityIndicator } from './QualityIndicator.tsx';
 import { hitTarget } from './controls.tsx';
 import { PeerHistory } from './PeerHistory.tsx';
@@ -272,6 +272,7 @@ export function TrackRow({
             </Meta>
             <Meta col="user" dim>{best.peer.username}</Meta>
             <Meta col="check"><Quality file={best} /></Meta>
+            <Meta col="country"><Flag code={best.peer.country} /></Meta>
           </span>
         </span>
 
@@ -374,6 +375,7 @@ export function FileRow({
               {source.user}
             </Meta>
             <Meta col="check"><Quality file={source} /></Meta>
+            <Meta col="country"><Flag code={source.peer.country} /></Meta>
           </span>
         </span>
 
@@ -389,90 +391,6 @@ export function FileRow({
           onQueue={onQueue}
           label={`${source.parsed.displayTitle} from ${source.user}`}
         />
-      </span>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------ release row */
-
-export function ReleaseRow({
-  release, expanded, onToggle, onQueue, selected,
-}: {
-  release: Release;
-  expanded: boolean;
-  onToggle(): void;
-  onQueue(): void;
-  selected: boolean;
-}) {
-  return (
-    <div
-      className="row row--release"
-      data-selected={selected ? 'true' : undefined}
-      data-expanded={expanded ? 'true' : undefined}
-    >
-      {/* role="button", not <button>: these rows contain the quality
-          indicator, which is a button itself. See `hitTarget`. */}
-      <div
-        className="row__hit"
-        {...hitTarget(onToggle)}
-        onPointerDown={(e) => { if (e.button === 0) onToggle(); }}
-        aria-expanded={expanded}
-        aria-label={`${release.artist ? `${release.artist}, ` : ''}${release.title}. ${count(release.trackCount, 'track')}, ${fileSize(release.totalSize)}, from ${release.user}.`}
-      >
-        {/* Artwork is a later phase. The space is reserved now so that when art
-            arrives it cannot shift the layout by a single pixel. */}
-        <span className="art" aria-hidden data-placeholder="true">
-          <IconRelease size={16} painted={1.4} />
-        </span>
-
-        <span className="row__main">
-          <span className="row__title">
-            {release.artist && (
-              <>
-                <span className="row__artist">{release.artist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name">{release.title}</span>
-            {release.year && <span className="row__year tnum">{release.year}</span>}
-          </span>
-
-          <span className="meta">
-            <Meta col="format">
-              <FormatBadge label={release.dominantLabel} tier={release.dominantTier} />
-            </Meta>
-            <Meta col="files"><span className="tnum">{release.trackCount}</span> tracks</Meta>
-            <Meta col="size"><span className="tnum">{fileSize(release.totalSize)}</span></Meta>
-            <AdvertisedSpeed bytesPerSec={release.peer.advertisedSpeed} />
-            <Meta col="year" dim>
-              {release.year ? <span className="tnum">{release.year}</span> : ''}
-            </Meta>
-            <Meta col="user" dim>{release.user}</Meta>
-            <Meta col="check">
-              <QualityIndicator assessment={worstAssessment(release.files)} />
-            </Meta>
-          </span>
-        </span>
-
-        <span className="row__tail">
-          <span className="row__sources">
-            open
-            <IconChevronDown size={14} painted={1.5} className="row__chev" />
-          </span>
-        </span>
-      </div>
-
-      <span className="row__actions">
-        <button
-          type="button"
-          className="action pressable"
-          onPointerDown={(e) => { e.stopPropagation(); onQueue(); }}
-          aria-label={`Queue all ${release.trackCount} tracks of ${release.title}`}
-          title="Grab the whole folder"
-        >
-          <IconDownload size={16} painted={1.6} />
-        </button>
       </span>
     </div>
   );
@@ -600,10 +518,11 @@ export function SourceRow({
               {source.parsed.displayTitle}
             </span>
           )}
-          {/* `meta--source` is the list of PEERS offering one track, nested
-              inside an expanded row. It carries the same column ids so it reads
-              the same way, but it is not part of the table's shared grid — the
-              choice of columns is about the top-level rows. */}
+          {/* `meta--source` is the list of PEERS (or, under a release, the
+              FILES) inside an expanded row. At table density it follows the
+              chosen columns exactly like a top-level row: when it kept its own
+              fixed order, an expanded release's files sat under the wrong
+              headers the moment a column was moved or removed. */}
           <span className="meta meta--source">
             <Meta col="format">
               <FormatBadge
@@ -627,6 +546,10 @@ export function SourceRow({
                   and "with you" is spelled out on the release card above. */}
               <PeerHistory username={source.user} peers={peers} compact />
             </Meta>
+            <Meta col="bitrate" dim>
+              {source.bitrate ? <span className="tnum">{source.bitrate} kbps</span> : ''}
+            </Meta>
+            <Meta col="country"><Flag code={source.peer.country} /></Meta>
           </span>
         </span>
         <span className="row__tail">

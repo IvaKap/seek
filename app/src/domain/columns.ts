@@ -1,65 +1,64 @@
 /*
- * Seek — the reorderable-column engine, shared by every table that has one.
+ * Seek — the column model shared by every table that has one.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * The search results table grew a proper column model — priority-based
- * responsive dropping, a computed `grid-template-columns`, a stored order that
- * survives a column being renamed or removed — and the YouTube sheet wants the
- * same thing. Rather than copy ~80 lines, the pure algorithm lives here,
- * parameterised by a spec map, and each table is one instantiation
- * (`searchColumns.ts`, `youtubeColumns.ts`). The behaviour is identical; only
- * the columns differ.
+ * The search results table and the YouTube sheet both let you choose which
+ * columns show, drag a header to move a column, and drag a header's edge to
+ * resize it. The pure part of that — which ids are valid, pinned columns kept
+ * first, add / remove / move, and the grid template the widths feed — lives
+ * here, so both tables behave identically and it is testable without a DOM.
+ * Each table is one instantiation (`searchColumns.ts`, `youtubeColumns.ts`).
  *
- * Everything here is pure — no React, no DOM — so it is unit-testable in
- * isolation, which is where the fitting and normalising logic is actually
- * pinned.
+ * WIDTHS ARE CSS CUSTOM PROPERTIES. Every track is `var(--w-<id>, <n>rem)`: the
+ * rem fallback is the default, so it scales with the user's text size, and a
+ * hand-resized column sets `--w-<id>` (in px) on the table's container. A drag
+ * therefore repaints ONE property and every row reflows through CSS, with no
+ * React render per pointer move.
+ *
+ * NOTHING IS DROPPED FOR SPACE. The table used to hide its lowest-priority
+ * columns as the pane narrowed. With columns the user picked, placed and sized
+ * by hand, silently removing one fights them — so a table wider than its pane
+ * scrolls sideways instead, the way Finder's list view does, and the one
+ * `fill` column (the search table's Name) takes whatever width is spare.
  */
 
 export interface ColumnSpec<Id extends string> {
   id: Id;
   /** Header text. Rendered uppercase by CSS, so written in sentence case. */
   label: string;
-  /** The grid track. The one flexible column uses a `minmax(_, 1fr)`. */
-  track: string;
-  /** Width in rem for the fitting calculation. A flexible column counts its min. */
-  rem: number;
-  /** Lower drops first when space runs short. `Infinity` never drops. */
-  priority: number;
-  /** Cannot be turned off or moved, and is forced to the front. */
+  /** Default width in rem. A hand-resized width overrides it, in px. */
+  width: number;
+  /** Takes the spare width, and never goes narrower than `width`. One per table. */
+  fill?: boolean;
+  /** Cannot be removed or moved, and is kept at the front. */
   pinned?: boolean;
-  /** Not shown by default — a column the user opts into. */
-  extra?: boolean;
 }
 
 /**
- * What a column picker needs to render and edit a chosen set. `ViewMenu` takes
- * one of these so it does not have to know which table it is configuring.
+ * What a column picker needs to add and remove columns. `ViewMenu` takes one of
+ * these so it does not have to know which table it is configuring.
  */
 export interface ColumnSet<Id extends string> {
   all: Id[];
   label(id: Id): string;
   isPinned(id: Id): boolean;
-  reorder(ids: Id[], id: Id, to: number): Id[];
   toggle(ids: Id[], id: Id): Id[];
 }
 
 export interface ColumnEngine<Id extends string> extends ColumnSet<Id> {
   spec(id: Id): ColumnSpec<Id>;
   defaults: Id[];
-  visible(chosen: Id[], availableRem: number): Id[];
-  template(ids: Id[]): string;
   normalise(raw: unknown): Id[];
+  reorder(ids: Id[], id: Id, to: number): Id[];
+  /** The `grid-template-columns` value for these columns, in this order. */
+  template(ids: Id[]): string;
+  /** The columns' combined width as a CSS sum (gaps excluded), for a `calc()`. */
+  trackSum(ids: Id[]): string;
 }
-
-const GAP_REM = 0.75;   // --sp-3, the grid gap
 
 export function makeColumns<Id extends string>(
   specs: ColumnSpec<Id>[],
   defaults: Id[],
-  /* Headroom before a column is dropped — a table packed to its exact minimum
-   * is unreadable. The search table calibrated this at ~7rem; a caller can
-   * override for a denser or airier table. */
-  slackRem = 7,
 ): ColumnEngine<Id> {
   const byId = new Map(specs.map((s) => [s.id, s]));
   const all = specs.map((s) => s.id);
@@ -69,27 +68,13 @@ export function makeColumns<Id extends string>(
     return found;
   };
 
-  const needs = (ids: Id[]): number => {
-    const tracks = ids.reduce((n, id) => n + spec(id).rem, 0);
-    return tracks + Math.max(0, ids.length - 1) * GAP_REM + slackRem;
-  };
+  const track = (id: Id) => `var(--w-${id}, ${spec(id).width}rem)`;
 
-  const visible = (chosen: Id[], availableRem: number): Id[] => {
-    const out = [...chosen];
-    while (out.length > 1 && needs(out) > availableRem) {
-      let worst = -1;
-      let worstPriority = Infinity;
-      out.forEach((id, i) => {
-        const p = spec(id).priority;
-        if (p < worstPriority) { worstPriority = p; worst = i; }
-      });
-      if (worst < 0 || worstPriority === Infinity) break;   // only undroppable left
-      out.splice(worst, 1);
-    }
-    return out;
-  };
+  const template = (ids: Id[]): string =>
+    ids.map((id) => (spec(id).fill ? `minmax(${track(id)}, 1fr)` : track(id))).join(' ');
 
-  const template = (ids: Id[]): string => ids.map((id) => spec(id).track).join(' ');
+  const trackSum = (ids: Id[]): string =>
+    ids.length === 0 ? '0px' : `(${ids.map(track).join(' + ')})`;
 
   const pinnedFirst = specs.filter((s) => s.pinned).map((s) => s.id);
 
@@ -134,10 +119,10 @@ export function makeColumns<Id extends string>(
     spec,
     label: (id) => spec(id).label,
     isPinned: (id) => Boolean(spec(id).pinned),
-    visible,
-    template,
     normalise,
     reorder,
     toggle,
+    template,
+    trackSum,
   };
 }

@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns, ytTemplateFor, ytVisibleColumns,
+  YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns, ytTemplateFor,
 } from './youtubeColumns.ts';
 
 describe('youtube columns', () => {
@@ -44,23 +44,11 @@ describe('youtube columns', () => {
     expect(moved.indexOf('album')).toBeGreaterThanOrEqual(2);
   });
 
-  it('drops the lowest-priority column first when space is tight', () => {
-    // url has the lowest priority of the defaults, so it goes before style.
-    const fits = ytVisibleColumns(YT_DEFAULT_COLUMNS, 20);
-    expect(fits).toContain('title');
-    expect(fits).toContain('search');
-    expect(fits).not.toContain('url');
-  });
-
-  it('never drops a pinned column, however narrow', () => {
-    const fits = ytVisibleColumns(YT_DEFAULT_COLUMNS, 1);
-    expect(fits).toContain('title');
-    expect(fits).toContain('search');
-  });
-
-  it('builds a grid template of the right length', () => {
-    expect(ytTemplateFor(['title', 'search', 'duration']).split(' ').length)
-      .toBeGreaterThanOrEqual(3);
+  it('builds one fixed, resizable track per column — nothing fills', () => {
+    // The sheet scrolls sideways instead of stretching a column to fit.
+    expect(ytTemplateFor(['title', 'search', 'duration'])).toBe(
+      'var(--w-title, 16.25rem) var(--w-search, 3.25rem) var(--w-duration, 4.25rem)',
+    );
   });
 
   it('repairs an unknown stored column away', () => {

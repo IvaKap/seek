@@ -33,10 +33,11 @@ import { useNearViewport } from './useNearViewport.ts';
 import type { PeerLookup } from './PeerHistory.tsx';
 import type { SearchDensity } from './ViewMenu.tsx';
 import {
-  ALL_COLUMNS, COLUMNS, DEFAULT_COLUMNS, templateFor, visibleColumns,
+  ALL_COLUMNS, DEFAULT_COLUMNS, SEARCH_COLUMN_SET, reorderColumns, templateFor,
 } from '../domain/searchColumns.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
-import { useRootFontSize, useWidthRem } from './useColumnFit.ts';
+import { useRootFontSize } from './useColumnFit.ts';
+import { ColumnHeaderRow, useColumnWidths } from './columnHeaders.tsx';
 import { IconArrowUp } from '../icons/index.tsx';
 import { integer } from '../domain/format.ts';
 import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
@@ -72,7 +73,7 @@ const STAGGER_MAX = 130;
 
 export function ResultList({
   rows, currentTick, expanded, onToggle, onQueue, onBrowse, onContext, pendingCount, onFoldIn,
-  onViewport, emptyState, density, columns = DEFAULT_COLUMNS, artwork, library, peers,
+  onViewport, emptyState, density, columns = DEFAULT_COLUMNS, onColumns, artwork, library, peers,
   copies, onCompare, queueStates, folderStates,
 }: {
   rows: Row[];
@@ -80,6 +81,8 @@ export function ResultList({
   density: SearchDensity;
   /** Chosen table columns, in order. Ignored at other densities. */
   columns?: ColumnId[];
+  /** A header was dragged to a new place. */
+  onColumns?(next: ColumnId[]): void;
   expanded: Set<string>;
   onToggle(id: string): void;
   onQueue(row: Row): void;
@@ -105,34 +108,38 @@ export function ResultList({
   const scrollRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const theadRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const rootPx = useRootFontSize();
-  /* Which columns actually fit, and the grid they imply. Computed here and
-     handed down as a custom property so the header and every row subscribe to
-     ONE track list — the alignment guarantee the table has always depended on,
-     now with a set that can change. */
-  const widthRem = useWidthRem(resultsRef, rootPx);
-  const shownColumns = useMemo(
-    () => (density === 'table' ? visibleColumns(columns, widthRem) : columns),
-    [density, columns, widthRem],
-  );
-  /* The template, plus a position and a visibility for every column.
+  /* Hand-set widths live as `--w-<id>` on `.results`, the one element above
+     both the header and the rows. */
+  const widths = useColumnWidths<ColumnId>('seek.search.colwidths', ALL_COLUMNS, resultsRef);
+  /* The template, the table's minimum width, and a line and a visibility for
+   * every column — all custom properties on `.results`, so the header and every
+   * row subscribe to ONE track list.
    *
-   * Custom properties rather than restructuring the rows: the cells already sit
-   * in a fixed DOM order inside each row type, and grid `order` moves them
-   * without any of the three row components needing to know what the user
-   * chose. A column that is not shown is hidden rather than unmounted, so the
-   * DOM stays identical whatever the width — which is what lets the header and
-   * the rows share one track list without either counting children. */
+   * Each cell is placed on its column's grid line explicitly (`--col-<id>`),
+   * never by `order` and auto-flow. Row kinds carry different cells — a release
+   * has no Time of its own, a track row has no Folder — and under auto-flow a
+   * missing cell shifted every later one a column to the left, so values
+   * drifted out from under their headers. A column that is not shown is hidden
+   * rather than unmounted, so no row component needs to know what was chosen. */
   const columnStyle = useMemo(() => {
-    const style: Record<string, string> = { '--cols': templateFor(shownColumns) };
+    const style: Record<string, string> = {
+      '--cols': templateFor(columns),
+      // Every track and gap, the row's side padding, and its Get button: the
+      // width below which the table scrolls sideways rather than cropping.
+      '--table-min': `calc(${SEARCH_COLUMN_SET.trackSum(columns)} + ${Math.max(0, columns.length - 1)}`
+        + ' * var(--sp-3) + 2 * var(--sp-5) + var(--row-actions-w))',
+      ...widths.style,
+    };
     for (const id of ALL_COLUMNS) {
-      const at = shownColumns.indexOf(id);
-      style[`--ord-${id}`] = String(at < 0 ? 99 : at);
+      const at = columns.indexOf(id);
+      if (at >= 0) style[`--col-${id}`] = String(at + 1);
       style[`--vis-${id}`] = at < 0 ? 'none' : 'inline-flex';
     }
     return style as React.CSSProperties;
-  }, [shownColumns]);
+  }, [columns, widths.style]);
 
   /* ---- [rows lag the store so removals can animate out] ---- */
   const [display, setDisplay] = useState<Row[]>(rows);
@@ -183,8 +190,28 @@ export function ResultList({
     return () => el.removeEventListener('scroll', cancel);
   }, [reflowing]);
 
+  /* ---- the header, measured ----
+   *
+   * The header now sits INSIDE the scroller, sticky at its top, so it is always
+   * exactly as wide as the rows — outside, it was wider by the scrollbar, and
+   * the flexible Name column resolved differently in each. Rows therefore start
+   * below it, which the virtualiser is told as `scrollMargin`. */
+  const showHead = density === 'table' && display.length > 0;
+  const [headH, setHeadH] = useState(0);
+  useLayoutEffect(() => {
+    const el = theadRef.current;
+    if (!showHead || !el) { setHeadH(0); return; }
+    const read = () => setHeadH(el.offsetHeight);
+    read();
+    if (typeof ResizeObserver !== 'function') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [showHead]);
+
   /* ---- virtualiser ---- */
   const virtualizer = useVirtualizer({
+    scrollMargin: headH,
     count: display.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {
@@ -330,17 +357,22 @@ export function ResultList({
         )}
       </div>
 
-      {density === 'table' && rows.length > 0 && (
-        /* A table without a header row cannot be read: nothing tells you whether
-           a bare number is a queue depth or a file count. */
-        <div className="thead" role="row" aria-hidden>
-          {shownColumns.map((id: ColumnId) => (
-            <span key={id} data-col={id}>{COLUMNS[id].label}</span>
-          ))}
-        </div>
-      )}
-
-      <div className="scroller" ref={scrollRef} tabIndex={-1}>
+      <div className="scroller" ref={scrollRef} tabIndex={-1} data-density={density}>
+        {/* A table without a header row cannot be read: nothing tells you
+            whether a bare number is a queue depth or a file count. Drag a
+            header to move its column, drag its edge to resize it. */}
+        {showHead && (
+          <ColumnHeaderRow<ColumnId>
+            className="thead"
+            rowRef={theadRef}
+            hidden
+            columns={columns}
+            label={SEARCH_COLUMN_SET.label}
+            isPinned={SEARCH_COLUMN_SET.isPinned}
+            onReorder={(id, to) => onColumns?.(reorderColumns(columns, id, to))}
+            {...widths.handlers}
+          />
+        )}
         {display.length === 0 ? (
           emptyState
         ) : density === 'grid' ? (
@@ -392,7 +424,8 @@ export function ResultList({
                     onContext(row, e.clientX, e.clientY);
                   }}
                   style={{
-                    transform: `translate3d(0, ${item.start}px, 0)`,
+                    // `start` counts from the scroller's top, header included.
+                    transform: `translate3d(0, ${item.start - headH}px, 0)`,
                     animationDelay: delay ? `${delay}ms` : undefined,
                   }}
                 >

@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useId, useRef, useState } from 'react';
-import { IconCheck, IconFilters } from '../icons/index.tsx';
+import { IconCheck, IconFilters, IconMinus, IconPlus } from '../icons/index.tsx';
 import { SORT_LABELS, naturallyDescending } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
 import { SEARCH_COLUMN_SET } from '../domain/searchColumns.ts';
@@ -144,55 +144,32 @@ export function ViewMenu<Id extends string = ColumnId>({
 
           {/* Only at table density, because only the table has columns. The
               other densities render a designed metadata line whose order is
-              part of the reading, and offering to reorder it would be offering
-              to break a layout rather than to configure one. */}
+              part of the reading. Here the menu only adds (+) and removes (−);
+              moving and resizing are done on the table header by dragging,
+              which is where the eye already is. */}
           {columns && onColumns && density === 'table' && (
             <>
               <div className="viewmenu__section">Columns</div>
               {cols.all.filter((id) => !cols.isPinned(id)).map((id) => {
                 const on = columns.includes(id);
-                const at = columns.indexOf(id);
-                const pinnedCount = columns.filter((c) => cols.isPinned(c)).length;
                 return (
-                  <div key={id} className="viewmenu__item viewmenu__item--col">
+                  <div key={id} className="viewmenu__col" data-on={on ? 'true' : 'false'}>
+                    <span className="viewmenu__item-label">{cols.label(id)}</span>
                     <button
                       type="button"
-                      role="menuitemcheckbox"
-                      aria-checked={on}
-                      className="viewmenu__coltoggle"
+                      className="viewmenu__colbtn"
+                      aria-label={`${on ? 'Remove' : 'Add'} the ${cols.label(id)} column`}
+                      title={on ? 'Remove this column' : 'Add this column'}
                       onClick={() => onColumns(cols.toggle(columns, id))}
                     >
-                      <span className="viewmenu__check" aria-hidden>
-                        {on && <IconCheck size={13} painted={1.9} />}
-                      </span>
-                      <span className="viewmenu__item-label">{cols.label(id)}</span>
+                      {on ? <IconMinus size={12} painted={1.8} /> : <IconPlus size={12} painted={1.8} />}
                     </button>
-                    {/* Buttons rather than a drag handle: dragging inside a
-                        popover fights the outside-click dismissal, and two
-                        keystrokes move a column for someone who cannot drag. */}
-                    <span className="viewmenu__movers">
-                      <button
-                        type="button"
-                        className="viewmenu__move"
-                        disabled={!on || at <= pinnedCount}
-                        aria-label={`Move ${cols.label(id)} left`}
-                        onClick={() => onColumns(cols.reorder(columns, id, at - 1))}
-                      >
-                        ↑
-                      </button>
-                      <button
-                        type="button"
-                        className="viewmenu__move"
-                        disabled={!on || at === columns.length - 1}
-                        aria-label={`Move ${cols.label(id)} right`}
-                        onClick={() => onColumns(cols.reorder(columns, id, at + 1))}
-                      >
-                        ↓
-                      </button>
-                    </span>
                   </div>
                 );
               })}
+              <div className="viewmenu__note">
+                Drag a column header to move it, or its edge to resize it.
+              </div>
             </>
           )}
 

@@ -27,7 +27,7 @@ import {
   Search, ArrowDownUp, Library, Settings, Music4, Folder, User, Check,
   ChevronDown, ChevronRight, X, AlertTriangle, HelpCircle,
   Users, Download, ArrowUp, SlidersHorizontal, Inbox,
-  MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Info,
+  MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Minus, Info,
   FolderCheck, Clover, List,
 } from 'lucide-react';
 
@@ -191,6 +191,7 @@ export const IconEmpty = wrap(Inbox, 'Empty');
 export const IconFolderOpen = wrap(FolderOpen, 'FolderOpen');
 export const IconList = wrap(List, 'List');
 export const IconPlus = wrap(Plus, 'Plus');
+export const IconMinus = wrap(Minus, 'Minus');
 /* Distinct from IconUnknown, which is the quality indicator's "we don't know".
  * This one opens an explanation that exists. */
 export const IconInfo = wrap(Info, 'Info');

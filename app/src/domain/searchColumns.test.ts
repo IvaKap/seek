@@ -1,65 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
  *
- * The reason columns became data rather than CSS: the rules they replace hid
- * columns by POSITION (`nth-child(9)` meaning "user"), which is only true while
- * the set never changes. These tests pin that dropping now follows the column,
- * not its index — and that the order of sacrifice the CSS encoded survived.
+ * The search table's columns are data, not CSS: a stored choice is repaired
+ * rather than trusted, Name can never be removed or moved, and the grid
+ * template reads each width from a custom property so a hand-resize is one
+ * property write.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_COLUMNS, normaliseColumns, reorderColumns, templateFor, toggleColumn,
-  visibleColumns,
+  DEFAULT_COLUMNS, SEARCH_COLUMN_SET, normaliseColumns, reorderColumns, templateFor,
+  toggleColumn,
 } from './searchColumns.ts';
-import type { ColumnId } from './searchColumns.ts';
-
-describe('visibleColumns', () => {
-  it('keeps every default column when there is room', () => {
-    expect(visibleColumns(DEFAULT_COLUMNS, 100)).toEqual(DEFAULT_COLUMNS);
-  });
-
-  it('drops user, then queue, then spec — the order the CSS encoded', () => {
-    /* The old rules dropped nth-child(9) at 58em, (7) at 46em and (3) at 38em,
-     * which were user, queue and spec. Same sequence, now by priority. */
-    const dropped: ColumnId[][] = [90, 52, 46, 40].map(
-      (rem) => visibleColumns(DEFAULT_COLUMNS, rem),
-    );
-    expect(dropped[0]).toContain('user');
-    expect(dropped[1]).not.toContain('user');
-    expect(dropped[1]).toContain('queue');
-    expect(dropped[2]).not.toContain('queue');
-    expect(dropped[2]).toContain('spec');
-    expect(dropped[3]).not.toContain('spec');
-  });
-
-  it('drops the right column AFTER a reorder', () => {
-    /* The whole point. Move user to the front of the value columns and it must
-     * still be the first thing sacrificed — under the old nth-child rules the
-     * table would instead have hidden whatever had landed in ninth place. */
-    const moved = reorderColumns(DEFAULT_COLUMNS, 'user', 1);
-    expect(moved[1]).toBe('user');
-    const tight = visibleColumns(moved, 52);
-    expect(tight).not.toContain('user');
-    expect(tight).toContain('size');
-  });
-
-  it('never drops name, format or the quality check', () => {
-    /* The row must stay identifiable, the badge is the only colour in the line,
-     * and the check is the verdict the screen exists to deliver. */
-    const squeezed = visibleColumns(DEFAULT_COLUMNS, 1);
-    expect(squeezed).toContain('name');
-    expect(squeezed).toContain('format');
-    expect(squeezed).toContain('check');
-  });
-
-  it('sacrifices an added column before one that was already there', () => {
-    /* Switching on Bitrate is not a request to lose Size. */
-    const withExtra = toggleColumn(DEFAULT_COLUMNS, 'bitrate');
-    const tight = visibleColumns(withExtra, 52);
-    expect(tight).not.toContain('bitrate');
-    expect(tight).toContain('size');
-  });
-});
 
 describe('normaliseColumns', () => {
   it('drops ids it does not recognise', () => {
@@ -73,8 +24,8 @@ describe('normaliseColumns', () => {
   });
 
   it('forces name to the front', () => {
-    /* Every other column is right-aligned against the name, so a table that
-     * put it third would be unreadable rather than merely unusual. */
+    /* Every value is read against the name, so a table that put it third
+     * would be unreadable rather than merely unusual. */
     expect(normaliseColumns(['size', 'name', 'user'])[0]).toBe('name');
   });
 
@@ -108,8 +59,21 @@ describe('toggleColumn and reorderColumns', () => {
 });
 
 describe('templateFor', () => {
-  it('gives the name all the slack and everything else a fixed track', () => {
-    expect(templateFor(['name', 'format', 'check']))
-      .toBe('minmax(6rem, 1fr) 4.5rem 1.75rem');
+  it('lets only the name absorb spare width, never going below its own width', () => {
+    expect(templateFor(['name', 'format', 'check'])).toBe(
+      'minmax(var(--w-name, 15rem), 1fr) var(--w-format, 4.25rem) var(--w-check, 3.5rem)',
+    );
+  });
+
+  it('follows the chosen order, so a dragged column moves its track too', () => {
+    const moved = reorderColumns(['name', 'format', 'check'], 'check', 1);
+    expect(templateFor(moved)).toBe(
+      'minmax(var(--w-name, 15rem), 1fr) var(--w-check, 3.5rem) var(--w-format, 4.25rem)',
+    );
+  });
+
+  it('sums the same widths for the table minimum', () => {
+    expect(SEARCH_COLUMN_SET.trackSum(['name', 'size']))
+      .toBe('(var(--w-name, 15rem) + var(--w-size, 4.5rem))');
   });
 });

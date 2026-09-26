@@ -14,14 +14,14 @@
  */
 
 import type { Release, SourceFile } from '../domain/types.ts';
-import { audioSpec, count, fileSize, speed } from '../domain/format.ts';
+import { audioSpec, count, duration, fileSize, speed } from '../domain/format.ts';
 import { worstAssessment } from '../domain/assessment.ts';
 import { QualityIndicator } from './QualityIndicator.tsx';
 import { hitTarget } from './controls.tsx';
 import { PeerHistory } from './PeerHistory.tsx';
 import { Flag } from './Flag.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
-import { FormatBadge, QueueButton } from './rows.tsx';
+import { AdvertisedSpeed, FormatBadge, Meta, QueueButton } from './rows.tsx';
 import type { ArtState } from '../data/artworkStore.ts';
 import type { QueueBadge } from '../data/transferStore.ts';
 import { IconChevronDown, IconRelease, IconUsers } from '../icons/index.tsx';
@@ -85,6 +85,122 @@ export function ReleaseCard({
   const rec = recommended(release.files);
   const spec = audioSpec(rec.sampleRate, rec.bitDepth);
   const assessment = worstAssessment(release.files);
+  const label = `${release.artist ? `${release.artist}, ` : ''}${release.title}`
+    + `${release.year ? `, ${release.year}` : ''}. `
+    + `${release.dominantLabel}, ${count(release.trackCount, 'track')}, ${fileSize(release.totalSize)}. `
+    + `Quality: ${assessment.label}.`;
+
+  const compare = onCompare && copyCount > 1 ? (
+    <button
+      type="button"
+      className="copies pressable"
+      /* Identifies WHICH release this node currently shows. The list is
+         virtualised, so this same DOM node is recycled to other releases as the
+         user scrolls — the sheet reads this before handing focus back, or it
+         would return a keyboard user to a record they never opened. */
+      data-release={release.id}
+      /* Nested inside the row's own hit region, so both events have to be
+         stopped or opening the comparison also collapses the row underneath it.
+         `preventDefault` suppresses the focus the browser would otherwise give
+         this button on mousedown, which arrives after the sheet has mounted and
+         steals focus back out of the dialog. */
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onCompare();
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        e.stopPropagation();
+        onCompare();
+      }}
+      aria-label={`Compare ${copyCount} copies of ${release.title}`}
+      title={`${copyCount} people have this record — compare the copies`}
+    >
+      <IconUsers size={12} painted={1.5} />
+      <span className="tnum">{copyCount}</span>
+      {/* The word is dropped in a table row, where it shares the name's cell
+          and every letter of it is a letter of the title cropped. */}
+      {density !== 'table' && <span>copies</span>}
+    </button>
+  ) : null;
+
+  /* TABLE density is a row of the shared column grid, not a flattened card: a
+   * card's facts are a flex line packed to the right, which is why they never
+   * sat under the column headers. Every value here is a `Meta` cell naming its
+   * column, so it lands on that column's grid line whatever the user chose. */
+  if (density === 'table') {
+    const total = release.files.reduce((n, f) => n + (f.duration ?? 0), 0);
+    return (
+      <div className="row row--release" data-expanded={expanded ? 'true' : undefined}>
+        <div
+          className="row__hit"
+          {...hitTarget(onToggle)}
+          onPointerDown={(e) => { if (e.button === 0) onToggle(); }}
+          aria-expanded={expanded}
+          aria-label={label}
+        >
+          <span className="row__main">
+            <span className="row__title">
+              {release.artist && (
+                <>
+                  <span className="row__artist">{release.artist}</span>
+                  <span className="row__dash" aria-hidden> — </span>
+                </>
+              )}
+              <span className="row__name">{release.title}</span>
+              {owned && (
+                <span className="row__owned" title="You already have this release on disk">
+                  in library
+                </span>
+              )}
+              {release.files.some((f) => f.private) && (
+                <span
+                  className="row__private"
+                  title="Only this peer's buddies can download this. Requesting it is refused unless they have added you."
+                >
+                  buddies only
+                </span>
+              )}
+              {compare}
+            </span>
+            <span className="meta">
+              <Meta col="format">
+                <FormatBadge label={release.dominantLabel} tier={release.dominantTier} />
+              </Meta>
+              <Meta col="spec" dim>{spec ?? ''}</Meta>
+              <Meta col="time">{total > 0 ? <span className="tnum">{duration(total)}</span> : ''}</Meta>
+              <Meta col="size"><span className="tnum">{fileSize(release.totalSize)}</span></Meta>
+              <AdvertisedSpeed bytesPerSec={release.peer.advertisedSpeed} />
+              <Meta col="queue" dim={release.peer.queueLength === 0}>
+                <span className="tnum">{release.peer.queueLength}</span> queued
+              </Meta>
+              <Meta col="check"><QualityIndicator assessment={assessment} /></Meta>
+              <Meta col="user" dim>
+                <Flag code={rec.peer.country} />
+                {release.user}
+              </Meta>
+              <Meta col="bitrate" dim>
+                {rec.bitrate ? <span className="tnum">{rec.bitrate} kbps</span> : ''}
+              </Meta>
+              <Meta col="year" dim>{release.year ? <span className="tnum">{release.year}</span> : ''}</Meta>
+              <Meta col="files"><span className="tnum">{release.trackCount}</span> tracks</Meta>
+              <Meta col="country"><Flag code={rec.peer.country} /></Meta>
+              <Meta col="folder" dim title={release.folderPath}>{release.folder}</Meta>
+            </span>
+          </span>
+        </div>
+        <span className="row__actions">
+          <QueueButton
+            badge={queueBadge}
+            onQueue={onQueue}
+            label={`all ${release.trackCount} tracks of ${release.title} from ${release.user}`}
+          />
+        </span>
+      </div>
+    );
+  }
 
   return (
     <article className="card" data-density={density} data-expanded={expanded ? 'true' : undefined}>
@@ -95,12 +211,7 @@ export function ReleaseCard({
         {...hitTarget(onToggle)}
         onPointerDown={(e) => { if (e.button === 0) onToggle(); }}
         aria-expanded={expanded}
-        aria-label={
-          `${release.artist ? `${release.artist}, ` : ''}${release.title}` +
-          `${release.year ? `, ${release.year}` : ''}. ` +
-          `${release.dominantLabel}, ${count(release.trackCount, 'track')}, ${fileSize(release.totalSize)}. ` +
-          `Quality: ${assessment.label}.`
-        }
+        aria-label={label}
       >
         {/* The placeholder always renders and always occupies the space, so a
             cover arriving later fades in over it and nothing shifts. */}
@@ -166,41 +277,7 @@ export function ReleaseCard({
             <span className="card__sep" aria-hidden>·</span>
             <span className="card__fact"><span className="tnum">{release.trackCount}</span> tracks</span>
             <QualityIndicator assessment={assessment} showLabel={density !== 'compact'} />
-            {onCompare && copyCount > 1 && (
-              <button
-                type="button"
-                className="copies pressable"
-                /* Identifies WHICH release this node currently shows. The list
-                   is virtualised, so this same DOM node is recycled to other
-                   releases as the user scrolls — the sheet reads this before
-                   handing focus back, or it would return a keyboard user to a
-                   record they never opened. */
-                data-release={release.id}
-                /* Nested inside the card's own hit region, so both events have
-                   to be stopped or opening the comparison also collapses the
-                   card underneath it. `preventDefault` suppresses the focus
-                   the browser would otherwise give this button on mousedown,
-                   which arrives after the sheet has mounted and steals focus
-                   back out of the dialog. */
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onCompare();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key !== 'Enter' && e.key !== ' ') return;
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onCompare();
-                }}
-                aria-label={`Compare ${copyCount} copies of ${release.title}`}
-                title="Other people have this record too — compare the copies"
-              >
-                <IconUsers size={12} painted={1.5} />
-                <span className="tnum">{copyCount}</span>
-                <span>copies</span>
-              </button>
-            )}
+            {compare}
           </span>
 
           {density === 'comfortable' && (

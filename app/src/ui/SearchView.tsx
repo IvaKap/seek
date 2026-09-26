@@ -576,6 +576,7 @@ export function SearchView({
         currentTick={session.tick}
         density={density}
         columns={columns}
+        onColumns={onColumns}
         expanded={session.expanded}
         onToggle={session.toggleExpanded}
         onQueue={onQueue}

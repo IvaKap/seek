@@ -1,13 +1,11 @@
 /*
- * Seek — measuring a table's width in rem, so its columns fit.
+ * Seek — the live root font size.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Extracted from ResultList so the YouTube sheet drops the least-useful column
- * first on exactly the same rule the search table does. Rem, not pixels, and
- * measured rather than declared in a media query: `rem` in a media query
- * resolves against the INITIAL font size, so it never fires when the OS scales
- * text, and a table that keeps every column at 200% text is a table that
- * overflows.
+ * The result list's row-height estimates are in rem, so they have to follow the
+ * user's text size. Measured rather than read from a media query: `rem` in a
+ * media query resolves against the INITIAL font size, so it never changes when
+ * the OS scales text.
  */
 
 import { useEffect, useState } from 'react';
@@ -30,27 +28,4 @@ export function useRootFontSize(): number {
     return () => ro.disconnect();
   }, []);
   return px;
-}
-
-/**
- * A container's width in REM, tracked live. Infinity before the first
- * measurement, so the first paint shows every chosen column rather than
- * flashing a stripped-down table.
- */
-export function useWidthRem(ref: React.RefObject<HTMLElement | null>, rootPx: number): number {
-  const [px, setPx] = useState(0);
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    if (typeof ResizeObserver !== 'function') {
-      setPx(node.getBoundingClientRect().width);
-      return;
-    }
-    const ro = new ResizeObserver(([entry]) => {
-      setPx(entry.contentRect.width);
-    });
-    ro.observe(node);
-    return () => ro.disconnect();
-  }, [ref]);
-  return px === 0 ? Number.POSITIVE_INFINITY : px / rootPx;
 }
