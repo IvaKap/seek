@@ -1187,28 +1187,23 @@
 .quality[data-state='suspicious'] .quality__trigger,
 .quality[data-state='likely-transcode'] .quality__trigger { color: var(--warn); }
 
+/* Portalled to <body> and placed by QualityIndicator from the trigger's rect,
+   flipping and clamping so it never leaves the window. Above sheets (100),
+   because CopiesSheet shows this indicator too; below the context menu (120). */
 .quality__pop {
-  position: absolute; z-index: 30; top: calc(100% + var(--sp-2)); left: -0.5rem;
-  width: 21rem; display: flex; flex-direction: column; gap: var(--sp-2);
+  position: fixed; z-index: 110; top: 0; left: 0;
+  width: 21rem; max-width: calc(100vw - 1rem);
+  display: flex; flex-direction: column; gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--radius-md);
-  /* OPAQUE, not the frosted material the other popovers use. This one lives
-     inside a virtualised result row, and the row is positioned by a `transform`
-     (see `.row-slot`) — under a transformed ancestor `backdrop-filter` silently
-     does nothing, so the frosted surface would let the rows behind bleed
-     straight through and the card turns to unreadable overlapping text. A solid
-     surface is readable whether or not the blur ever fires. */
+  /* Opaque rather than frosted: it sits over dense result rows, and a solid
+     surface is readable whatever is underneath it. */
   background: var(--bg-raised);
   box-shadow: var(--shadow-popover);
   border: 0.5px solid var(--separator-strong);
   animation: popIn var(--dur-fast) var(--ease-out);
   white-space: normal;
 }
-/* Lift the whole row while its popover is open. Each `.row-slot` is its own
-   stacking context (transform), so without this the SIBLING rows below — later
-   in the DOM — paint on top of this row's popover, which is the interleaving
-   that made it look garbled. */
-.row-slot:has(.quality__pop) { z-index: 5; }
 .quality__pop-head { display: flex; align-items: center; gap: var(--sp-2); }
 .quality__pop-title {
   font-size: var(--fs-body); letter-spacing: var(--tr-body); font-weight: var(--fw-semibold);
