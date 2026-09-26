@@ -17,7 +17,7 @@ import signal
 import sys
 
 from .core_host import CoreHost
-from . import logfile
+from . import logfile, singleton
 from .server import Bridge, generate_token
 
 DEFAULT_APP_SUPPORT = os.path.expanduser("~/Library/Application Support/Seek")
@@ -70,6 +70,18 @@ def main(argv=None):
     # bundle, every settings save failing on one absent field — was invisible
     # for exactly that reason.
     log_file = logfile.attach(args.app_folder, verbose=args.verbose)
+
+    # One sidecar per install. A previous one orphaned by an abrupt exit (crash,
+    # kill -9, `tauri dev` rebuild) still holds the Soulseek login and
+    # seek-state.json, so without this a fresh launch becomes a second client and
+    # the server bumps one — the "sign-in didn't work" report. Evict any
+    # predecessor before we bind or sign in. `lock` is held for the life of the
+    # process: closing it releases the lock, so it must stay referenced.
+    try:
+        lock = singleton.ensure_single_instance(args.app_folder)  # noqa: F841
+    except singleton.SingletonError as exc:
+        logging.getLogger("seek.main").error("%s", exc)
+        return 1
 
     token = args.token or os.environ.get("SEEK_TOKEN") or generate_token()
 
