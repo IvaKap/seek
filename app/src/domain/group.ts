@@ -13,8 +13,11 @@
  *   - a release is `(user, parent folder)` — inherently stable
  *   - a user group is the username — inherently stable
  *   - a track cluster is `(fuzzy artist, fuzzy title)` plus the duration of the
- *     FIRST source that created it. Later sources within ±2s join it; the
- *     anchor never moves.
+ *     first source that HAS one. Later sources within ±2s join it; once set,
+ *     the anchor never moves. (A cluster started by a copy with no duration
+ *     used to accept every later copy, so a radio edit and an extended mix
+ *     shared a row.) The anchor is not the identity — the id is — so filling
+ *     it in late moves nothing on screen.
  */
 
 import type {
@@ -36,7 +39,7 @@ const NATURAL = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base
 interface ClusterState {
   id: string;
   key: string;
-  /** Duration of the source that created this cluster. Never revised. */
+  /** Duration of the first source that had one. Never revised once set. */
   anchor: number | null;
   sources: SourceFile[];
   tick: number;
@@ -102,6 +105,7 @@ export function createGrouper(): Grouper {
       };
       bucket.push(target);
     }
+    if (target.anchor === null) target.anchor = s.duration;
     target.sources.push(s);
     clusterOf.set(s.id, target.id);
     return target.id;

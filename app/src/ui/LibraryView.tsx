@@ -173,6 +173,15 @@ function ReleaseRow({
         <span className="browse__stat tnum">{fileSize(r.bytes)}</span>
         {gap === 'looking' ? (
           <span className="verify verify--busy">Checking…</span>
+        ) : gap && gap.lookupFailed ? (
+          <button
+            type="button"
+            className="verify pressable"
+            title="MusicBrainz did not answer. That says nothing about the release."
+            onClick={() => library.findGaps(r.key, r.artist, r.release)}
+          >
+            MusicBrainz didn’t answer — try again
+          </button>
         ) : gap && !gap.matched ? (
           <span className="verify verify--failed" title="MusicBrainz has no confident match for this release.">
             No match
@@ -309,7 +318,7 @@ export function LibraryView({
   return (
     <>
       <header data-tauri-drag-region="deep" className="header header--plain">
-        <h1 className="pane__title">Library</h1>
+        <h1 className="pane__title">Collections</h1>
         <p className="pane__subtitle">
           {tab === 'youtube'
             ? 'Playlists, cross-referenced to Discogs.'
@@ -331,6 +340,11 @@ export function LibraryView({
               >
                 {state.scanning ? 'Scanning…' : state.scannedAt ? 'Rescan' : 'Scan my downloads'}
               </button>
+              {state.scanning && (
+                <button type="button" className="btn pressable" onClick={library.cancelScan}>
+                  Stop
+                </button>
+              )}
               {/* Absent in a plain browser, where there is no native panel — the
                   same contract as the folder settings, which is why this reuses
                   their `chooseFolder` rather than growing a second one. */}

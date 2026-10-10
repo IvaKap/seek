@@ -16,7 +16,8 @@
  * byte of it.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lostInTransit } from './sidecarClient.ts';
 import type { ChecksumReport } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
@@ -83,11 +84,17 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
     )
       .then((r) => pending.current.set(r.requestId, transferId))
       .catch((e: Error) => {
-        setByTransfer((prev) => new Map(prev).set(transferId, {
-          state: 'failed', reason: e.message,
-        }));
+        // Never answered: the button comes back instead of "could not check".
+        setByTransfer((prev) => {
+          const next = new Map(prev);
+          if (lostInTransit(e)) next.delete(transferId);
+          else next.set(transferId, { state: 'failed', reason: e.message });
+          return next;
+        });
       });
   }, [client]);
 
-  return { byTransfer, check, available: Boolean(client) };
+  return useMemo(
+    () => ({ byTransfer, check, available: Boolean(client) }), [byTransfer, check, client],
+  );
 }

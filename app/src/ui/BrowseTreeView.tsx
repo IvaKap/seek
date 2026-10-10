@@ -9,7 +9,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { BrowseFile, Shelf } from '../data/browseStore.ts';
+import type { BrowseFile, BrowseFolder, Shelf } from '../data/browseStore.ts';
+import { filesUnder } from '../data/browseStore.ts';
+import type { BrowseGet } from './BrowseView.tsx';
 import type { TransferSession } from '../data/transferStore.ts';
 import { buildQueueMaps, fileName } from '../data/transferStore.ts';
 import { nextSelection } from '../domain/select.ts';
@@ -72,11 +74,14 @@ function useTreeResize() {
 }
 
 export function BrowseTreeView({
-  shelves, username, transfers,
+  shelves, folders, username, transfers, get,
 }: {
   shelves: Shelf[];
+  /** Every folder with every file, for counting what a folder Get fetches. */
+  folders: BrowseFolder[];
   username: string;
   transfers: TransferSession;
+  get: BrowseGet;
 }) {
   const root = useMemo(() => buildFolderTree(shelves), [shelves]);
 
@@ -145,9 +150,9 @@ export function BrowseTreeView({
     });
   }, [order]);
 
-  const queueFiles = useCallback((targets: BrowseFile[]) => {
-    for (const f of targets) void transfers.enqueue(username, f.path, f.size);
-  }, [transfers, username]);
+  const queueFiles = useCallback((targets: BrowseFile[], destination: string | null = null) => {
+    for (const f of targets) get.file(f, destination);
+  }, [get]);
 
   /* The single selected file, when there is exactly one — what arrow-key
    * navigation moves and what Enter downloads. A multi-selection (shift or
@@ -222,16 +227,24 @@ export function BrowseTreeView({
       setSelected(new Set([path]));
     }
     const targets = paths.map((p) => byPath.get(p)).filter((x): x is BrowseFile => x !== undefined);
+    const pick = get.pickDestination;
     const items = browseFileMenuItems(targets, username, {
       queue: queueFiles,
+      queueTo: pick ? (fs) => pick((dest) => queueFiles(fs, dest)) : undefined,
       copy: (text) => { void copyText(text); },
     });
     if (items.length === 0) return;
     const title = targets.length > 1 ? `${targets.length} files` : fileName(targets[0].path);
     setMenu({ x: e.clientX, y: e.clientY, title, items });
-  }, [selected, byPath, username, queueFiles]);
+  }, [selected, byPath, username, queueFiles, get]);
 
   const { files: queueStates } = useMemo(() => buildQueueMaps(transfers.all), [transfers.all]);
+  const fetch = useMemo(() => {
+    const all = filesUnder(folders, node.path, true);
+    return { count: all.length, size: all.reduce((n, f) => n + f.size, 0) };
+  }, [folders, node.path]);
+  // Not for the root: "All folders" is not a folder a peer can send.
+  const fetchCount = node.path ? fetch.count : 0;
   const resize = useTreeResize();
 
   if (root.children.length === 0 && root.files.length === 0) {
@@ -266,47 +279,60 @@ export function BrowseTreeView({
       />
 
       <div className="btree__files">
-        {files.length === 0 ? (
-          <p className="settings__hint">
-            {node.children.length > 0 ? 'Pick a folder to see its files.' : 'This folder is empty.'}
-          </p>
-        ) : (
-          <>
-            <div className="btree__toolbar">
-              <span className="btree__path" title={node.path || 'All folders'}>
-                {node.path || 'All folders'}
-              </span>
+        {/* Get whenever there is anything under the folder: an artist folder
+            whose albums are all subfolders used to offer no Get at all. The
+            count is what the engine will fetch — subfolders, covers and
+            checksums included — not the audio shown in the list below. */}
+        {fetchCount > 0 && (
+          <div className="btree__toolbar">
+            <span className="btree__path" title={node.path || 'All folders'}>
+              {node.path || 'All folders'}
+            </span>
+            <button
+              type="button"
+              className="btn pressable"
+              onClick={() => get.folder(node.path, true)}
+            >
+              <IconDownload size={13} painted={1.5} />
+              Get this folder — <span className="tnum">{fetchCount.toLocaleString()}</span> files, {fileSize(fetch.size)}
+            </button>
+            {get.pickDestination && (
               <button
                 type="button"
                 className="btn pressable"
-                onClick={() => void transfers.enqueueFolder(username, node.path)}
+                onClick={() => get.pickDestination?.((dest) => get.folder(node.path, true, dest))}
               >
-                <IconDownload size={13} painted={1.5} />
-                Get this folder — <span className="tnum">{files.length}</span> files, {fileSize(node.size)}
+                Get to…
               </button>
-            </div>
-            <div
-              ref={listRef}
-              className="btree__list"
-              tabIndex={0}
-              role="listbox"
-              aria-label="Files in this folder"
-              onKeyDown={onListKeyDown}
-            >
-              {files.map((f) => (
-                <BrowseFileRow
-                  key={f.path}
-                  file={f}
-                  username={username}
-                  selected={selected.has(f.path)}
-                  onSelect={(mods) => onFileSelect(f.path, mods)}
-                  onQueue={() => void transfers.enqueue(username, f.path, f.size)}
-                  onContextMenu={(e) => onContext(f.path, e)}
-                  queueStates={queueStates}
-                />
-              ))}
-            </div>
-          </>
+            )}
+          </div>
+        )}
+        {files.length === 0 ? (
+          <p className="settings__hint">
+            {node.children.length > 0 ? 'Its files are in the folders inside it.' : 'This folder is empty.'}
+          </p>
+        ) : (
+          <div
+            ref={listRef}
+            className="btree__list"
+            tabIndex={0}
+            role="listbox"
+            aria-label="Files in this folder"
+            onKeyDown={onListKeyDown}
+          >
+            {files.map((f) => (
+              <BrowseFileRow
+                key={f.path}
+                file={f}
+                username={username}
+                selected={selected.has(f.path)}
+                onSelect={(mods) => onFileSelect(f.path, mods)}
+                onQueue={() => get.file(f)}
+                onContextMenu={(e) => onContext(f.path, e)}
+                queueStates={queueStates}
+              />
+            ))}
+          </div>
         )}
       </div>
 

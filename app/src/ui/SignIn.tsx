@@ -26,7 +26,7 @@ export function SignIn({
   /** Soulseek connection state, not the socket's. */
   state: string | null;
   /** So the form can say whose account is remembered. */
-  settings?: { hasCredentials: boolean; username: string };
+  settings?: { hasCredentials: boolean; username: string; autoConnect?: boolean };
 }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -100,7 +100,9 @@ export function SignIn({
       <div className="signin">
         <p className="settings__hint">
           Signed in{settings?.username ? <> as <strong>{settings.username}</strong></> : ''}.
-          Seek signs in again automatically next launch.
+          {settings?.autoConnect
+            ? ' Seek signs in again automatically next launch.'
+            : ' Seek will not sign in by itself next launch; turn on Sign in automatically below for that.'}
         </p>
         <div className="import__actions">
           <button type="button" className="btn pressable" onClick={disconnect}>
@@ -162,7 +164,8 @@ export function SignIn({
         <button
           type="button"
           className="btn pressable"
-          disabled={busy}
+          disabled={busy || !settings?.hasCredentials}
+          title={settings?.hasCredentials ? undefined : 'Nothing is stored yet.'}
           onClick={() => void connect(true)}
         >
           Use stored details

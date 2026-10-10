@@ -9,6 +9,7 @@
 # and seen-sets already get, for the same reason.
 
 import pytest
+from types import SimpleNamespace
 
 from seek_sidecar.core_host import CommandError, CoreHost
 
@@ -25,15 +26,21 @@ class FakeSearch:
     """The shape the wishlist handlers touch on `core.search`."""
 
     def __init__(self):
-        self.wishlist = []            # add appends; the state reverses for display
+        # A dict, as upstream's is: term -> its wish search. Insertion order;
+        # the state reverses for display.
+        self.wishlist = {}
         self.wishlist_interval = 720
+        self.removed_tokens = []
 
     def add_wish(self, query):
         if query not in self.wishlist:
-            self.wishlist.append(query)
+            self.wishlist[query] = SimpleNamespace(token=len(self.wishlist) + 1)
 
     def remove_wish(self, query):
-        self.wishlist = [q for q in self.wishlist if q != query]
+        self.wishlist.pop(query, None)
+
+    def remove_search(self, token):
+        self.removed_tokens.append(token)
 
 
 class FakeCore:
@@ -43,7 +50,7 @@ class FakeCore:
 
 class Host:
     METHODS = (
-        "_state_path", "_load_state", "_save_state",
+        "_state_path", "_load_state", "_save_state", "_store",
         "_wish_filters", "_wish_seen", "_wish_auto", "_wishlist_state",
         "_auto_claims", "_cmd_wishlist_add", "_cmd_wishlist_auto",
         "_cmd_wishlist_remove", "_cmd_wishlist_claims", "_cmd_wishlist_claimsList",

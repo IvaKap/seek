@@ -443,12 +443,12 @@ def read_tags(path):
     return out
 
 
-def write_tags(path, tags, art=None):
+def write_tags(path, tags, art=None, clear=()):
     """Apply tags, and optionally embed cover art.
 
     Only the keys present in `tags` are touched — a caller that wants to leave
     a field alone omits it, rather than passing an empty string and silently
-    erasing what was there.
+    erasing what was there. Removing a field is explicit: `clear`.
     """
     import mutagen
     from mutagen.flac import FLAC, Picture
@@ -461,6 +461,9 @@ def write_tags(path, tags, art=None):
     for field, value in tags.items():
         if field in TAG_FIELDS and value:
             audio[field] = str(value)
+    for field in clear:
+        if field in TAG_FIELDS and field in audio:
+            del audio[field]
     audio.save()
 
     if not art:

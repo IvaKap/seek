@@ -751,6 +751,9 @@ class LibraryGaps(TypedDict):
     score: int
     # The full official track list, marked.
     tracks: List["LibraryGap"]
+    # MusicBrainz could not be reached. Not the same as no match: an outage is
+    # worth retrying, an unknown release is not.
+    lookupFailed: bool
 
 
 class LibraryOwned(TypedDict):
@@ -849,12 +852,21 @@ class MetadataProposal(TypedDict):
     mbid: str
     # Only fields that would actually change.
     changes: List["TagChange"]
+    # MusicBrainz could not be reached, so `matched: false` means nothing
+    # about the release.
+    lookupFailed: bool
+    # The release came with an `.md5`, which covers the whole file: any tag
+    # change breaks it. (An `.ffp` hashes the audio alone and survives.)
+    md5Sibling: bool
 
 
 class MetadataApplyParams(TypedDict):
     path: str
     # The subset the user accepted.
     fields: List["TagChange"]
+    # Fields to remove outright. Only Undo uses it, to empty a field that was
+    # empty before. Null clears nothing.
+    clear: Optional[List[str]]
     # Also write the cover into the file.
     embedArtwork: bool
     # For the artwork lookup, if embedding.
@@ -867,6 +879,10 @@ class MetadataApplyResult(TypedDict):
     path: str
     written: int
     artworkEmbedded: bool
+    # What each written field held before, as `proposed` with `current` the
+    # value just written — so applying them back is Undo. Text tags only:
+    # replaced artwork is not kept.
+    previous: List["TagChange"]
 
 
 class WantTrack(TypedDict):
@@ -2119,6 +2135,28 @@ class Settings(TypedDict):
     # Upstream's `server.upnp`, on by default as in Nicotine+. Without it, a
     # peer who is also behind a router cannot reach us at all.
     portMapping: Optional[bool]
+    # Minutes without input before the app sets away. 0 = never. Upstream's
+    # `server.autoaway`; the frontend does the timing, because only it can see
+    # input.
+    autoAwayMinutes: Optional[int]
+    # Sent once to each user who messages you while you are away. Empty =
+    # none. Upstream's `server.autoreply`.
+    autoReply: Optional[str]
+    # Buddies go to the front of the upload queue. Upstream's
+    # `transfers.preferfriends`.
+    preferBuddies: Optional[bool]
+    # Serve uploads first come, first served instead of one file per user in
+    # turn. Upstream's `transfers.fifoqueue`.
+    fifoQueue: Optional[bool]
+    # Most files one user may queue from you. 0 = no limit. Upstream's
+    # `transfers.filelimit`.
+    queueLimitFiles: Optional[int]
+    # Most megabytes one user may queue from you. 0 = no limit. Upstream's
+    # `transfers.queuelimit`.
+    queueLimitMb: Optional[int]
+    # The two limits above do not apply to buddies. Upstream's
+    # `transfers.friendsnolimits`.
+    buddiesUnlimited: Optional[bool]
 
 
 class ConnectionState(TypedDict):
@@ -2566,11 +2604,34 @@ class ChatRoomList(TypedDict):
     rooms: List["ChatRoom"]
 
 
+class ChatRoomMember(TypedDict):
+    """One person in a room, with what the server told us about them."""
+    username: str
+    status: "UserStatus"
+    # How many files they share. Null when unknown.
+    files: Optional[int]
+
+
 class ChatRoomMembers(TypedDict):
-    """Who is in a room. Emitted on join and as people come and go."""
+    """
+    Who is in a room, sent once when we join. Comings and goings follow as
+    `chat.member`, so a busy room does not resend everyone each time.
+    """
     room: str
-    # Usernames, unsorted — ordering is the UI's job.
-    users: List[str]
+    # Unsorted — ordering is the UI's job.
+    members: List["ChatRoomMember"]
+
+
+class ChatMemberChange(TypedDict):
+    """Someone joined or left a room we are in."""
+    room: str
+    member: "ChatRoomMember"
+    # True on join, false on leave.
+    present: bool
+
+
+class ChatCloseParams(TypedDict):
+    username: str
 
 
 class ChatJoinParams(TypedDict):
@@ -2661,6 +2722,31 @@ class ShareSetParams(TypedDict):
 class ShareRescanParams(TypedDict):
     # Rescan even if upstream believes the index is current.
     force: Optional[bool]
+
+
+class UserLists(TypedDict):
+    """
+    Who you ignore and who you ban. Ignored users' chat and private messages
+    are dropped; banned users cannot download from you. Upstream's
+    `server.ignorelist` and `server.banlist`.
+    """
+    ignored: List[str]
+    banned: List[str]
+
+
+class AwayParams(TypedDict):
+    """Show as away, or back. The current status arrives on `connection.state`."""
+    on: bool
+    # Keep it across restarts (upstream's `server.away`). True when the user
+    # chose it; false for auto-away, which must not outlive the idle spell
+    # that caused it.
+    remember: bool
+
+
+class UserFlagParams(TypedDict):
+    """Turn ignore or ban on or off for one user."""
+    username: str
+    on: bool
 
 
 class RevealParams(TypedDict):
@@ -3003,6 +3089,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("releaseArtist", "str", False, False),
         ("score", "int", False, False),
         ("tracks", "LibraryGap", True, False),
+        ("lookupFailed", "bool", False, False),
     ),
     "LibraryOwned": (
         ("releases", "str", True, False),
@@ -3055,10 +3142,13 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("label", "str", False, False),
         ("mbid", "str", False, False),
         ("changes", "TagChange", True, False),
+        ("lookupFailed", "bool", False, False),
+        ("md5Sibling", "bool", False, False),
     ),
     "MetadataApplyParams": (
         ("path", "str", False, False),
         ("fields", "TagChange", True, False),
+        ("clear", "str", True, True),
         ("embedArtwork", "bool", False, False),
         ("artist", "str", False, False),
         ("release", "str", False, False),
@@ -3067,6 +3157,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("path", "str", False, False),
         ("written", "int", False, False),
         ("artworkEmbedded", "bool", False, False),
+        ("previous", "TagChange", True, False),
     ),
     "WantTrack": (
         ("position", "int", False, False),
@@ -3539,6 +3630,13 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("autoConnect", "bool", False, True),
         ("stallSeconds", "int", False, True),
         ("portMapping", "bool", False, True),
+        ("autoAwayMinutes", "int", False, True),
+        ("autoReply", "str", False, True),
+        ("preferBuddies", "bool", False, True),
+        ("fifoQueue", "bool", False, True),
+        ("queueLimitFiles", "int", False, True),
+        ("queueLimitMb", "int", False, True),
+        ("buddiesUnlimited", "bool", False, True),
     ),
     "ConnectionState": (
         ("status", "ConnectionStatus", False, False),
@@ -3720,9 +3818,22 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "ChatRoomList": (
         ("rooms", "ChatRoom", True, False),
     ),
+    "ChatRoomMember": (
+        ("username", "str", False, False),
+        ("status", "UserStatus", False, False),
+        ("files", "int", False, True),
+    ),
     "ChatRoomMembers": (
         ("room", "str", False, False),
-        ("users", "str", True, False),
+        ("members", "ChatRoomMember", True, False),
+    ),
+    "ChatMemberChange": (
+        ("room", "str", False, False),
+        ("member", "ChatRoomMember", False, False),
+        ("present", "bool", False, False),
+    ),
+    "ChatCloseParams": (
+        ("username", "str", False, False),
     ),
     "ChatJoinParams": (
         ("room", "str", False, False),
@@ -3767,6 +3878,18 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     ),
     "ShareRescanParams": (
         ("force", "bool", False, True),
+    ),
+    "UserLists": (
+        ("ignored", "str", True, False),
+        ("banned", "str", True, False),
+    ),
+    "AwayParams": (
+        ("on", "bool", False, False),
+        ("remember", "bool", False, False),
+    ),
+    "UserFlagParams": (
+        ("username", "str", False, False),
+        ("on", "bool", False, False),
     ),
     "RevealParams": (
         ("transferId", "str", False, True),
@@ -3830,6 +3953,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "transfer.cancel": ("TransferIdsParams", None),
     "transfer.retry": ("TransferIdsParams", None),
     "transfer.clear": ("TransferIdsParams", None),
+    "transfer.findMissing": (None, "TransferIdsParams"),
     "transfer.list": (None, "TransferListResult"),
     "analysis.spectral": ("SpectralRequestParams", "SpectralRequestResult"),
     "analysis.checksums": ("ChecksumRequestParams", "ChecksumRequestResult"),
@@ -3838,6 +3962,8 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "chat.leave": ("ChatLeaveParams", None),
     "chat.say": ("ChatSayParams", None),
     "chat.open": ("ChatOpenParams", None),
+    "chat.close": ("ChatCloseParams", None),
+    "chat.closeAll": (None, None),
     "chat.history": ("ChatHistoryParams", "ChatHistory"),
     "wishlist.add": ("WishParams", "WishlistState"),
     "wishlist.remove": ("WishParams", "WishlistState"),
@@ -3862,6 +3988,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "app.settings.patch": ("AppSettingsPatch", "AppSettings"),
     "peers.stats": (None, "PeerHistory"),
     "library.state": (None, "LibraryState"),
+    "library.cancel": (None, "LibraryState"),
     "library.scan": ("LibraryScanParams", "LibraryState"),
     "library.releases": (None, "LibraryReleases"),
     "library.gaps": ("ArtworkParams", "RequestAccepted"),
@@ -3923,6 +4050,10 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "fs.ensureFolder": ("EnsureFolderParams", "PathCheck"),
     "fs.reveal": ("RevealParams", None),
     "fs.open": ("RevealParams", None),
+    "users.lists": (None, "UserLists"),
+    "users.away": ("AwayParams", None),
+    "users.ignore": ("UserFlagParams", "UserLists"),
+    "users.ban": ("UserFlagParams", "UserLists"),
 }
 
 EVENTS: Dict[str, str] = {
@@ -3934,6 +4065,7 @@ EVENTS: Dict[str, str] = {
     "search.failed": "SearchFailedEvent",
     "user.stats": "PeerStats",
     "user.status": "UserStatusEvent",
+    "users.lists": "UserLists",
     "user.browse.result": "UserBrowseResultEvent",
     "user.browse.failed": "UserBrowseFailedEvent",
     "user.info.result": "UserInfoResultEvent",
@@ -3951,6 +4083,7 @@ EVENTS: Dict[str, str] = {
     "chat.message": "ChatMessage",
     "chat.rooms": "ChatRoomList",
     "chat.members": "ChatRoomMembers",
+    "chat.member": "ChatMemberChange",
     "shares.state": "ShareState",
     "wishlist.state": "WishlistState",
     "buddies.state": "BuddyState",

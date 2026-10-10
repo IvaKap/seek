@@ -26,7 +26,7 @@ const msg = (over: Partial<ChatMessage>): ChatMessage => ({
   kind: 'message', mentioned: false, timestamp: 1, ...over,
 });
 const conv = (scope: 'private' | 'room', target: string, messages: ChatMessage[]): Conversation => ({
-  scope, target, messages, members: [], unread: 0,
+  scope, target, messages, members: [], unread: 0, mentions: 0,
 });
 
 describe('useChatNotifications', () => {

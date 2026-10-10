@@ -35,6 +35,8 @@ import type { PrefsSession } from '../data/prefsStore.ts';
 import type { EngineSession } from '../data/engineStore.ts';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { ConnectionsSession, ProfileSession } from '../data/profileStore.ts';
+import type { People } from '../data/peopleStore.ts';
+import { reportFailure } from '../data/failures.ts';
 import { readableError } from '../domain/folders.ts';
 import { IconInfo } from '../icons/index.tsx';
 
@@ -301,7 +303,7 @@ function SpeedLimit({
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsView({
-  client, serverState, prefs, engine, profile, connections, youtube,
+  client, serverState, prefs, engine, profile, connections, youtube, people,
 }: {
   client: SidecarClient | null;
   serverState: string | null;
@@ -310,8 +312,10 @@ export function SettingsView({
   profile: ProfileSession;
   connections: ConnectionsSession;
   youtube: YoutubeSession;
+  people: People;
 }) {
   const [tab, setTab] = useState<Tab>('account');
+  const signedIn = serverState === 'online' || serverState === 'away';
   const { settings } = prefs;
   const engineSettings = engine.settings;
   const [error, setError] = useState<string | null>(null);
@@ -390,11 +394,55 @@ export function SettingsView({
                   )}
                 />
                 <div className="settings__row settings__row--block">
-                  <ImportPanel client={client} />
+                  <ImportPanel client={client} onApplied={engine.reload} />
                 </div>
               </Group>
 
               <ProfilePanel profile={profile} />
+
+              <Group
+                title="Away"
+                footnote="Away tells people you may be slow to answer. The automatic reply goes once to each person per away spell, and only for messages sent while you are away."
+              >
+                <Row
+                  label="Show me as away"
+                  hint={signedIn ? 'Remembered until you turn it off.' : 'Available once you are signed in.'}
+                  control={(
+                    <Toggle
+                      checked={serverState === 'away'}
+                      disabled={!signedIn}
+                      onChange={(v) => {
+                        void client?.request('users.away', { on: v, remember: true })
+                          .catch((e) => reportFailure(v ? 'Set away' : 'Come back', e));
+                      }}
+                      label="Show me as away"
+                    />
+                  )}
+                />
+                <Row
+                  label="Go away automatically after"
+                  hint="Minutes without touching Seek. 0 never does. Coming back clears it, unless you set away yourself."
+                  control={(
+                    <NumberSetting
+                      value={engineSettings?.autoAwayMinutes ?? 0}
+                      min={0}
+                      max={1440}
+                      step={5}
+                      suffix="minutes"
+                      ariaLabel="Minutes before going away automatically, 0 for never"
+                      available={engine.available}
+                      onCommit={(v) => saveEngine({ autoAwayMinutes: v })}
+                    />
+                  )}
+                />
+                <TextSetting
+                  label="Automatic reply"
+                  hint="Sent when someone messages you while you are away. Leave it empty to send nothing."
+                  value={engineSettings?.autoReply ?? ''}
+                  available={engine.available}
+                  onCommit={(v) => saveEngine({ autoReply: v })}
+                />
+              </Group>
 
               <Group
                 title="Privacy"
@@ -677,6 +725,79 @@ export function SettingsView({
                   )}
                 />
               </Group>
+
+              <Group
+                title="Upload queue"
+                footnote="Limits apply to new requests; files someone has already queued stay queued. Soulseek's server-privileged users always go first, whatever is set here."
+              >
+                <Row
+                  label="Serve buddies first"
+                  hint="People you follow go to the front of your queue."
+                  control={engineSettings ? (
+                    <Toggle
+                      checked={engineSettings.preferBuddies}
+                      onChange={(v) => saveEngine({ preferBuddies: v })}
+                      label="Serve buddies first"
+                    />
+                  ) : <span className="settings__static">Not connected</span>}
+                />
+                <Row
+                  label="First come, first served"
+                  hint="Off, the default: everyone waiting gets one file in turn, so one big request cannot hold up everybody else."
+                  control={engineSettings ? (
+                    <Toggle
+                      checked={engineSettings.fifoQueue}
+                      onChange={(v) => saveEngine({ fifoQueue: v })}
+                      label="First come, first served"
+                    />
+                  ) : <span className="settings__static">Not connected</span>}
+                />
+                <Row
+                  label="Files one person may queue"
+                  hint="0 means no limit."
+                  control={(
+                    <NumberSetting
+                      value={engineSettings?.queueLimitFiles ?? 0}
+                      min={0}
+                      max={100000}
+                      step={10}
+                      suffix="files"
+                      ariaLabel="Files one person may queue, 0 for no limit"
+                      available={engine.available}
+                      onCommit={(v) => saveEngine({ queueLimitFiles: v })}
+                    />
+                  )}
+                />
+                <Row
+                  label="Megabytes one person may queue"
+                  hint="0 means no limit."
+                  control={(
+                    <NumberSetting
+                      value={engineSettings?.queueLimitMb ?? 0}
+                      min={0}
+                      max={10000000}
+                      step={100}
+                      suffix="MB"
+                      ariaLabel="Megabytes one person may queue, 0 for no limit"
+                      available={engine.available}
+                      onCommit={(v) => saveEngine({ queueLimitMb: v })}
+                    />
+                  )}
+                />
+                <Row
+                  label="No limits for buddies"
+                  hint="The two limits above do not apply to people you follow."
+                  control={engineSettings ? (
+                    <Toggle
+                      checked={engineSettings.buddiesUnlimited}
+                      onChange={(v) => saveEngine({ buddiesUnlimited: v })}
+                      label="No limits for buddies"
+                    />
+                  ) : <span className="settings__static">Not connected</span>}
+                />
+              </Group>
+
+              <PeopleLists people={people} available={signedIn} />
 
               <ConnectionsPanel connections={connections} />
 
@@ -967,6 +1088,105 @@ function NumberSetting({
       />
       {suffix && <span className="settings__unit">{suffix}</span>}
     </span>
+  );
+}
+
+/** One line of text, committed on blur or Return like `NumberSetting`. */
+function TextSetting({
+  label, hint, value, available, onCommit,
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  available: boolean;
+  onCommit(v: string): void;
+}) {
+  const id = useId();
+  const [draft, setDraft] = useState(value);
+  const last = useRef(value);
+  useEffect(() => {
+    if (value !== last.current) {
+      last.current = value;
+      setDraft(value);
+    }
+  }, [value]);
+  const commit = () => { if (draft.trim() !== value) onCommit(draft.trim()); };
+  return (
+    <div className="settings__row settings__row--block">
+      <div className="folderset__head">
+        <label className="settings__label" htmlFor={id}>{label}</label>
+        <span className="settings__hint">{hint}</span>
+      </div>
+      <input
+        id={id}
+        className="settings__input settings__input--wide"
+        type="text"
+        value={draft}
+        disabled={!available}
+        spellCheck
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit();
+          if (e.key === 'Escape') setDraft(value);
+        }}
+      />
+    </div>
+  );
+}
+
+/*
+ * Who you ignore and who you ban. Usually set from a person's menu; listed
+ * here so they can be undone, and so someone you cannot see right now (a
+ * leecher who has gone offline) can still be banned by name.
+ */
+function PeopleLists({ people, available }: { people: People; available: boolean }) {
+  const [name, setName] = useState('');
+  const who = name.trim();
+  const list = (title: string, names: ReadonlySet<string>, undo: (u: string) => void, verb: string) => (
+    <div className="settings__row settings__row--block">
+      <div className="folderset__head">
+        <span className="settings__label">{title}</span>
+        <span className="settings__hint tnum">{names.size === 0 ? 'Nobody.' : `${names.size}`}</span>
+      </div>
+      {names.size > 0 && (
+        <ul className="peoplelist">
+          {[...names].sort((a, b) => a.localeCompare(b)).map((u) => (
+            <li key={u} className="peoplelist__item">
+              <span className="peoplelist__name">{u}</span>
+              <button type="button" className="verify pressable" onClick={() => undo(u)}>{verb}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+  return (
+    <Group
+      title="Ignored and banned"
+      footnote="Ignore hides someone's messages in rooms and private chat; they can still search and download from you. Ban stops them searching your shares and downloading from you, and cancels what they had queued."
+    >
+      {list('Ignored', people.ignored, (u) => people.ignore(u, false), 'Stop ignoring')}
+      {list('Banned', people.banned, (u) => people.ban(u, false), 'Lift ban')}
+      <div className="settings__row">
+        <input
+          className="settings__input"
+          value={name}
+          placeholder="Username"
+          aria-label="Username to ignore or ban"
+          spellCheck={false}
+          autoCapitalize="none"
+          disabled={!available}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <span className="settings__inline">
+          <button type="button" className="btn pressable" disabled={!who || !available}
+            onClick={() => { people.ignore(who, true); setName(''); }}>Ignore</button>
+          <button type="button" className="btn pressable" disabled={!who || !available}
+            onClick={() => { people.ban(who, true); setName(''); }}>Ban</button>
+        </span>
+      </div>
+    </Group>
   );
 }
 

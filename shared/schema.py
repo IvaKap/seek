@@ -787,6 +787,12 @@ STRUCTS = {
             ("releaseArtist", "str", ""),
             ("score", "int", ""),
             ("tracks", "LibraryGap[]", "The full official track list, marked."),
+            (
+                "lookupFailed",
+                "bool",
+                "MusicBrainz could not be reached. Not the same as no match: "
+                "an outage is worth retrying, an unknown release is not.",
+            ),
         ],
     ),
     "LibraryOwned": (
@@ -868,6 +874,19 @@ STRUCTS = {
             ("label", "str", ""),
             ("mbid", "str", ""),
             ("changes", "TagChange[]", "Only fields that would actually change."),
+            (
+                "lookupFailed",
+                "bool",
+                "MusicBrainz could not be reached, so `matched: false` means "
+                "nothing about the release.",
+            ),
+            (
+                "md5Sibling",
+                "bool",
+                "The release came with an `.md5`, which covers the whole file: "
+                "any tag change breaks it. (An `.ffp` hashes the audio alone and "
+                "survives.)",
+            ),
         ],
     ),
     "MetadataApplyParams": (
@@ -875,6 +894,12 @@ STRUCTS = {
         [
             ("path", "str", ""),
             ("fields", "TagChange[]", "The subset the user accepted."),
+            (
+                "clear",
+                "str[]?",
+                "Fields to remove outright. Only Undo uses it, to empty a field "
+                "that was empty before. Null clears nothing.",
+            ),
             ("embedArtwork", "bool", "Also write the cover into the file."),
             ("artist", "str", "For the artwork lookup, if embedding."),
             ("release", "str", "For the artwork lookup, if embedding."),
@@ -882,7 +907,18 @@ STRUCTS = {
     ),
     "MetadataApplyResult": (
         "",
-        [("path", "str", ""), ("written", "int", ""), ("artworkEmbedded", "bool", "")],
+        [
+            ("path", "str", ""),
+            ("written", "int", ""),
+            ("artworkEmbedded", "bool", ""),
+            (
+                "previous",
+                "TagChange[]",
+                "What each written field held before, as `proposed` with "
+                "`current` the value just written — so applying them back is "
+                "Undo. Text tags only: replaced artwork is not kept.",
+            ),
+        ],
     ),
     # ---- discovery ---------------------------------------------------------
     #
@@ -2148,6 +2184,49 @@ STRUCTS = {
                 "Without it, a peer who is also behind a router cannot reach us "
                 "at all.",
             ),
+            (
+                "autoAwayMinutes",
+                "int?",
+                "Minutes without input before the app sets away. 0 = never. "
+                "Upstream's `server.autoaway`; the frontend does the timing, "
+                "because only it can see input.",
+            ),
+            (
+                "autoReply",
+                "str?",
+                "Sent once to each user who messages you while you are away. "
+                "Empty = none. Upstream's `server.autoreply`.",
+            ),
+            (
+                "preferBuddies",
+                "bool?",
+                "Buddies go to the front of the upload queue. "
+                "Upstream's `transfers.preferfriends`.",
+            ),
+            (
+                "fifoQueue",
+                "bool?",
+                "Serve uploads first come, first served instead of one file per "
+                "user in turn. Upstream's `transfers.fifoqueue`.",
+            ),
+            (
+                "queueLimitFiles",
+                "int?",
+                "Most files one user may queue from you. 0 = no limit. "
+                "Upstream's `transfers.filelimit`.",
+            ),
+            (
+                "queueLimitMb",
+                "int?",
+                "Most megabytes one user may queue from you. 0 = no limit. "
+                "Upstream's `transfers.queuelimit`.",
+            ),
+            (
+                "buddiesUnlimited",
+                "bool?",
+                "The two limits above do not apply to buddies. "
+                "Upstream's `transfers.friendsnolimits`.",
+            ),
         ],
     ),
     # ---- event payloads ----------------------------------------------------
@@ -2661,13 +2740,31 @@ STRUCTS = {
         "The server's room directory plus whatever we have joined.",
         [("rooms", "ChatRoom[]", "")],
     ),
-    "ChatRoomMembers": (
-        "Who is in a room. Emitted on join and as people come and go.",
+    "ChatRoomMember": (
+        "One person in a room, with what the server told us about them.",
         [
-            ("room", "str", ""),
-            ("users", "str[]", "Usernames, unsorted — ordering is the UI's job."),
+            ("username", "str", ""),
+            ("status", "UserStatus", ""),
+            ("files", "int?", "How many files they share. Null when unknown."),
         ],
     ),
+    "ChatRoomMembers": (
+        "Who is in a room, sent once when we join. Comings and goings follow "
+        "as `chat.member`, so a busy room does not resend everyone each time.",
+        [
+            ("room", "str", ""),
+            ("members", "ChatRoomMember[]", "Unsorted — ordering is the UI's job."),
+        ],
+    ),
+    "ChatMemberChange": (
+        "Someone joined or left a room we are in.",
+        [
+            ("room", "str", ""),
+            ("member", "ChatRoomMember", ""),
+            ("present", "bool", "True on join, false on leave."),
+        ],
+    ),
+    "ChatCloseParams": ("", [("username", "str", "")]),
     "ChatJoinParams": ("", [("room", "str", "")]),
     "ChatLeaveParams": ("", [("room", "str", "")]),
     "ChatSayParams": (
@@ -2777,6 +2874,35 @@ STRUCTS = {
                 "bool?",
                 "Rescan even if upstream believes the index is current.",
             )
+        ],
+    ),
+    "UserLists": (
+        "Who you ignore and who you ban. Ignored users' chat and private "
+        "messages are dropped; banned users cannot download from you. Upstream's "
+        "`server.ignorelist` and `server.banlist`.",
+        [
+            ("ignored", "str[]", ""),
+            ("banned", "str[]", ""),
+        ],
+    ),
+    "AwayParams": (
+        "Show as away, or back. The current status arrives on `connection.state`.",
+        [
+            ("on", "bool", ""),
+            (
+                "remember",
+                "bool",
+                "Keep it across restarts (upstream's `server.away`). True when the "
+                "user chose it; false for auto-away, which must not outlive the "
+                "idle spell that caused it.",
+            ),
+        ],
+    ),
+    "UserFlagParams": (
+        "Turn ignore or ban on or off for one user.",
+        [
+            ("username", "str", ""),
+            ("on", "bool", ""),
         ],
     ),
     "RevealParams": (
@@ -2968,6 +3094,15 @@ COMMANDS = {
         "TransferIdsParams",
         None,
     ),
+    "transfer.findMissing": (
+        "Finished downloads whose file is no longer on disk. A read: the app "
+        "clears them with transfer.clear, leaving out anything awaiting review. "
+        "Matched by name — upstream's own check matches the size too, and Seek's "
+        "tag writing changes it. A file on a drive that is not mounted is never "
+        "reported: an unplugged drive is not a deleted file.",
+        None,
+        "TransferIdsParams",
+    ),
     "transfer.list": ("Snapshot of every known transfer, both directions.", None, "TransferListResult"),
     "analysis.spectral": (
         "Queue a post-download spectral analysis. Returns immediately.",
@@ -2999,6 +3134,13 @@ COMMANDS = {
         "ChatOpenParams",
         None,
     ),
+    "chat.close": (
+        "Close a private conversation. Not a block: their next message opens "
+        "it again, with its history.",
+        "ChatCloseParams",
+        None,
+    ),
+    "chat.closeAll": ("Close every private conversation.", None, None),
     "chat.history": (
         "Earlier lines of a conversation, read from the log Nicotine+ keeps on "
         "disk, so a restart does not wipe every conversation.",
@@ -3120,6 +3262,11 @@ COMMANDS = {
         "PeerHistory",
     ),
     "library.state": ("Index size and when it was last built.", None, "LibraryState"),
+    "library.cancel": (
+        "Stop a library scan at the next folder. The index from before stands.",
+        None,
+        "LibraryState",
+    ),
     "library.scan": (
         "Rebuild the index by walking the download folder and any extra roots. "
         "Runs on a worker; progress arrives as `library.state` events.",
@@ -3372,6 +3519,18 @@ COMMANDS = {
         "RevealParams",
         None,
     ),
+    "users.lists": ("Who you ignore and ban.", None, "UserLists"),
+    "users.away": ("Set or clear away.", "AwayParams", None),
+    "users.ignore": (
+        "Ignore a user, or stop. Replies with both lists.",
+        "UserFlagParams",
+        "UserLists",
+    ),
+    "users.ban": (
+        "Ban a user, or lift it. Replies with both lists.",
+        "UserFlagParams",
+        "UserLists",
+    ),
 }
 
 # --------------------------------------------------------------------------
@@ -3387,6 +3546,10 @@ EVENTS = {
     "search.failed": ("The search could not be sent.", "SearchFailedEvent"),
     "user.stats": ("A peer's server-side stats changed.", "PeerStats"),
     "user.status": ("A peer's presence changed.", "UserStatusEvent"),
+    "users.lists": (
+        "The ignore or ban list changed, from Seek or a slash command.",
+        "UserLists",
+    ),
     "user.browse.result": ("A peer's share list arrived.", "UserBrowseResultEvent"),
     "user.browse.failed": ("A share list request failed.", "UserBrowseFailedEvent"),
     "user.info.result": ("A peer answered a direct profile request.", "UserInfoResultEvent"),
@@ -3419,7 +3582,8 @@ EVENTS = {
     ),
     "chat.message": ("A chat line, incoming or echoed.", "ChatMessage"),
     "chat.rooms": ("The room list changed.", "ChatRoomList"),
-    "chat.members": ("A room's membership changed.", "ChatRoomMembers"),
+    "chat.members": ("Who was in a room when we joined it.", "ChatRoomMembers"),
+    "chat.member": ("Someone joined or left a room.", "ChatMemberChange"),
     "shares.state": ("Share configuration or scan state changed.", "ShareState"),
     "wishlist.state": ("The wishlist or its interval changed.", "WishlistState"),
     "buddies.state": ("The buddy list changed.", "BuddyState"),

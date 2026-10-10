@@ -12,6 +12,8 @@ import type { Filters, GroupBy, Release, SortKey } from '../domain/types.ts';
 import { filtersActive } from '../domain/types.ts';
 import { integer } from '../domain/format.ts';
 import type { Row, SearchSession } from '../data/searchStore.ts';
+import { closedLabel } from '../data/searchStore.ts';
+import type { SearchScope } from '../data/mockSidecar.ts';
 import { SegmentedControl, Select, Chip } from './controls.tsx';
 import { ViewMenu } from './ViewMenu.tsx';
 import type { Density, SearchDensity } from './ViewMenu.tsx';
@@ -67,13 +69,72 @@ const QUICK = [
   { id: 'clean', kind: 'clean' as const, label: 'No transcodes' },
 ];
 
+/**
+ * Where the search goes: everyone, your buddies, one room you are in, or one
+ * user's shares. Upstream's four modes; Nicotine+ shows the same choice beside
+ * its search field.
+ */
+function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
+  scope: SearchScope;
+  rooms: string[];
+  userRef: React.RefObject<HTMLInputElement | null>;
+  onChange(scope: SearchScope): void;
+  onSubmit(): void;
+}) {
+  const value = scope.mode === 'rooms' ? `room:${scope.room}` : scope.mode;
+  const listed = scope.mode === 'rooms' && !rooms.includes(scope.room)
+    ? [scope.room, ...rooms] : rooms;
+  return (
+    <>
+      {scope.mode === 'user' && (
+        <input
+          ref={userRef}
+          className="search__user"
+          value={scope.user}
+          placeholder="Username"
+          aria-label="Whose files to search"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => onChange({ mode: 'user', user: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (scope.user.trim()) onSubmit();
+          }}
+        />
+      )}
+      <label className="search__scope" title="Where to search">
+        <span className="sr-only">Search where</span>
+        <select
+          value={value}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === 'global' || v === 'buddies') onChange({ mode: v });
+            else if (v === 'user') {
+              onChange({ mode: 'user', user: '' });
+              window.setTimeout(() => userRef.current?.focus(), 0);
+            } else onChange({ mode: 'rooms', room: v.slice('room:'.length) });
+          }}
+        >
+          <option value="global">Everyone</option>
+          <option value="buddies">Buddies</option>
+          {listed.map((r) => <option key={r} value={`room:${r}`}>In {r}</option>)}
+          <option value="user">One user…</option>
+        </select>
+      </label>
+    </>
+  );
+}
+
 export function SearchView({
   session, searchRef, density, onDensity, columns, onColumns, tabs, transfers, onBrowse, onSave,
   artwork, library,
   onContext, onWish, prefs, discover, onOpenSettings, onWant, wanted, onBrowseCatalog, onWantTracklist, onWantPlaylist,
-  peers,
+  peers, rooms = [],
 }: {
   session: SearchSession;
+  /** Rooms you are in, for searching one of them. */
+  rooms?: string[];
   searchRef: React.RefObject<HTMLInputElement | null>;
   density: SearchDensity;
   /** Chosen table columns, in order. */
@@ -117,6 +178,7 @@ export function SearchView({
    * switch — the data goes on screen and the choice stays with the user. */
   const [comparing, setComparing] = useState<Release | null>(null);
   const countRef = useRef<HTMLSpanElement>(null);
+  const userRef = useRef<HTMLInputElement>(null);
   const setCount = useSpringNumber(countRef, (n) => integer(Math.max(0, Math.round(n))));
 
   useEffect(() => {
@@ -170,7 +232,7 @@ export function SearchView({
     /* This tab has done its job. Stamped rather than closed — you often take a
        second record from the same results — and swept 45 minutes later. */
     tabs?.markUsed();
-    void transfers.enqueueFolder(release.user, release.folderPath);
+    void transfers.enqueueFolder(release.user, release.folderPath, false, { count: release.files.length });
   }, [transfers, tabs, rules]);
 
   const onQueue = useCallback((row: Row) => {
@@ -242,19 +304,13 @@ export function SearchView({
     if (discover) runQuery(discover.query());
   }, [discover, runQuery]);
 
-  const onSearchKey = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Escape' && discover?.preview) {
-      // preventDefault matters on a type="search" input: WebKit's own Escape
-      // handling clears the field, which would take the URL with it.
-      event.preventDefault();
-      discover.dismiss();
-      return;
-    }
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
+  /* Return in the search field, or in the username field beside it. One path,
+     so a URL in the box is looked up rather than searched for whichever field
+     the Return came from. */
+  const submit = useCallback((alt = false) => {
     // ⌥↵ keeps it for later instead of searching now — the whole point of the
     // want list is that finding time and listening time are different times.
-    if (event.altKey && discover?.preview && onWant) {
+    if (alt && discover?.preview && onWant) {
       onWant();
       return;
     }
@@ -269,12 +325,32 @@ export function SearchView({
     // Typed rather than pasted: a URL in the field is a link to look up, not a
     // phrase to search Soulseek for.
     if (discover?.inspect(session.query)) return;
+    // One user's files, but no user named yet: ask for the name, not the network.
+    if (session.scope.mode === 'user' && !session.scope.user.trim()) {
+      userRef.current?.focus();
+      return;
+    }
     /* Every search gets its own tab, so the last one is never destroyed.
        `openWith` decides whether that means a NEW tab — a fresh tab and a
-       re-run of the same text both stay where they are. */
-    if (tabs) tabs.openWith(session.query);
+       re-run of the same text both stay where they are. The scope is the one
+       picked beside the field; searches started anywhere else (the wishlist,
+       history, a preview card) go to everyone. */
+    if (tabs) tabs.openWith(session.query, session.scope);
     else session.run();
   }, [discover, runFromPreview, session, onWant, onBrowseCatalog, tabs]);
+
+  const onSearchKey = useCallback((event: React.KeyboardEvent) => {
+    if (event.key === 'Escape' && discover?.preview) {
+      // preventDefault matters on a type="search" input: WebKit's own Escape
+      // handling clears the field, which would take the URL with it.
+      event.preventDefault();
+      discover.dismiss();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    submit(event.altKey);
+  }, [discover, submit]);
 
   return (
     <>
@@ -379,6 +455,13 @@ export function SearchView({
                * the card is supposed to leave the URL sitting there to edit. */
               discover?.inspect(e.clipboardData?.getData('text') ?? '');
             }}
+          />
+          <ScopePicker
+            scope={session.scope}
+            rooms={rooms}
+            userRef={userRef}
+            onChange={session.setScope}
+            onSubmit={() => submit()}
           />
           <kbd className="search__kbd" aria-hidden>⌘↵</kbd>
         </div>
@@ -523,11 +606,8 @@ export function SearchView({
               </span>
             )}
             {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
-              <span
-                className="resultbar__closed"
-                title="Soulseek has no completion signal. Peers answer whenever they like and stragglers can arrive minutes later — this only means Seek stopped listening."
-              >
-                stopped listening
+              <span className="resultbar__closed" title={closedLabel(session.closedReason).title}>
+                {closedLabel(session.closedReason).text}
               </span>
             )}
           </div>

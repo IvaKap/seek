@@ -168,7 +168,7 @@ export function Sidebar({
       id: 'discovery',
       title: 'Discovery',
       items: [
-        { id: 'collections', label: 'Library', icon: <IconLibrary size={16} /> },
+        { id: 'collections', label: 'Collections', icon: <IconLibrary size={16} /> },
         // The badge counts entries not yet looked for, and DISAPPEARS at zero
         // rather than showing 0 — a nav item permanently wearing a "0" is
         // noise that trains you to stop reading badges.

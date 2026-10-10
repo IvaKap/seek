@@ -85,6 +85,7 @@ class _Host:
     _profile = CoreHost._profile
     _cmd_profile_get = CoreHost._cmd_profile_get
     _cmd_profile_set = CoreHost._cmd_profile_set
+    _persist_config = CoreHost._persist_config
 
 
 @pytest.fixture

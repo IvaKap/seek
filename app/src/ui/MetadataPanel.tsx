@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
+import { reportFailure, showNotice } from '../data/failures.ts';
 
 interface TagChange { field: string; current: string; proposed: string }
 
@@ -33,7 +34,13 @@ interface Proposal {
   label: string;
   mbid: string;
   changes: TagChange[];
+  /** MusicBrainz did not answer, so "not matched" means nothing yet. */
+  lookupFailed: boolean;
+  /** The release has an .md5, which any tag change will break. */
+  md5Sibling: boolean;
 }
+
+interface ApplyResult { written: number; artworkEmbedded: boolean; previous: TagChange[] }
 
 const FIELD_LABEL: Record<string, string> = {
   title: 'Title',
@@ -60,7 +67,8 @@ export function useMetadata(client: SidecarClient | null, transferId: string) {
   const [chosen, setChosen] = useState<Set<string>>(() => new Set());
   const [embedArt, setEmbedArt] = useState(true);
   const [result, setResult] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  /** The last write's old values and file, for Undo. */
+  const [undoable, setUndoable] = useState<{ path: string; previous: TagChange[] } | null>(null);
 
   useEffect(() => {
     if (!client) return;
@@ -78,18 +86,23 @@ export function useMetadata(client: SidecarClient | null, transferId: string) {
   const inspect = useCallback(() => {
     if (!client) return;
     setState('looking');
-    setError(null);
+    setProposal(null);
     setResult(null);
+    setUndoable(null);
     void client.request('metadata.inspect', { path: null, transferId })
-      .catch((e: Error) => { setError(e.message); setState('failed'); });
+      // A refused request (lookups off, file gone) is a failure of the action,
+      // said once; the button comes back. It used to read "Lookup failed" for
+      // any error at all, including a failed WRITE.
+      .catch((e) => { reportFailure('Look up the tags', e); setState('idle'); });
   }, [client, transferId]);
 
   const apply = useCallback(() => {
     if (!client || !proposal) return;
     const fields = proposal.changes.filter((c) => chosen.has(c.field));
-    void client.request<{ written: number; artworkEmbedded: boolean }>('metadata.apply', {
+    void client.request<ApplyResult>('metadata.apply', {
       path: proposal.path,
       fields,
+      clear: null,
       embedArtwork: embedArt,
       artist: proposal.releaseArtist,
       release: proposal.releaseTitle,
@@ -102,14 +115,38 @@ export function useMetadata(client: SidecarClient | null, transferId: string) {
           + (r.artworkEmbedded ? ', artwork embedded.'
             : embedArt ? '. No cover was found to embed.' : '.'),
         );
+        setUndoable(r.previous?.length ? { path: proposal.path, previous: r.previous } : null);
         setProposal(null);
       })
-      .catch((e: Error) => setError(e.message));
+      .catch((e) => reportFailure('Fix the tags', e));
   }, [client, proposal, chosen, embedArt]);
 
+  /* Put back what the write replaced: text tags only, and the reply says so. A
+     field that was empty before is removed again rather than left changed. */
+  const undo = useCallback(() => {
+    if (!client || !undoable) return;
+    const { path, previous } = undoable;
+    void client.request<ApplyResult>('metadata.apply', {
+      path,
+      fields: previous.filter((c) => c.proposed !== ''),
+      clear: previous.filter((c) => c.proposed === '').map((c) => c.field),
+      embedArtwork: false,
+      artist: '',
+      release: '',
+    })
+      .then(() => {
+        // Back to the start, so Fix tags can be run again on this file.
+        setUndoable(null);
+        setResult(null);
+        setState('idle');
+        showNotice('Tags put back. Where a tag had several values only the first is kept, and replaced cover art is not restored.');
+      })
+      .catch((e) => reportFailure('Undo the tag change', e));
+  }, [client, undoable]);
+
   return {
-    proposal, state, error, result, chosen, setChosen, embedArt, setEmbedArt,
-    inspect, apply,
+    proposal, state, result, chosen, setChosen, embedArt, setEmbedArt,
+    inspect, apply, undo, canUndo: undoable !== null,
   };
 }
 
@@ -118,12 +155,28 @@ export type MetadataState = ReturnType<typeof useMetadata>;
 /** The compact control that lives in the file row. */
 export function MetadataTrigger({ m }: { m: MetadataState }) {
   if (m.result) {
-    return <span className="verify verify--done" data-tone="good">{m.result}</span>;
-  }
-  if (m.error) {
-    return <span className="verify verify--failed" title={m.error}>Lookup failed</span>;
+    return (
+      <span className="verify verify--done" data-tone="good">
+        {m.result}
+        {m.canUndo && (
+          <button type="button" className="verify pressable" onClick={m.undo}>Undo</button>
+        )}
+      </span>
+    );
   }
   if (m.state === 'looking') return <span className="verify verify--busy">Matching…</span>;
+  if (m.proposal?.lookupFailed) {
+    return (
+      <button
+        type="button"
+        className="verify pressable"
+        title="MusicBrainz did not answer. That says nothing about the release."
+        onClick={m.inspect}
+      >
+        MusicBrainz didn’t answer — try again
+      </button>
+    );
+  }
   if (m.proposal && !m.proposal.matched) {
     return (
       <span
@@ -209,6 +262,13 @@ export function MetadataPanel({ m }: { m: MetadataState }) {
             </li>
           ))}
         </ul>
+      )}
+
+      {proposal.md5Sibling && (
+        <p className="mdpanel__warn">
+          This release came with an .md5 checksum, which covers the whole file:
+          changing any tag makes it fail. (An .ffp would not mind.)
+        </p>
       )}
 
       <div className="mdpanel__actions">

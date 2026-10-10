@@ -130,7 +130,7 @@ class TestArtworkAfterDownload:
         monkeypatch.setattr(enrich, "fetch_artwork",
                             lambda a, r, c: (calls.append((a, r)) or (b"JPEGDATA", "image/jpeg", "caa")))
         written = []
-        monkeypatch.setattr(enrich, "write_tags", lambda path, tags, art=None: written.append(path))
+        monkeypatch.setattr(enrich, "write_tags", lambda path, tags, art=None, clear=(): written.append(path))
         monkeypatch.setattr(enrich, "has_artwork", lambda path: False)
         return calls, written
 
@@ -214,7 +214,7 @@ class TestSlowCommandsDoNotBlock:
         written = []
         monkeypatch.setattr(enrich, "fetch_artwork",
                             lambda *a: (_ for _ in ()).throw(enrich.EnrichError("no cover")))
-        monkeypatch.setattr(enrich, "write_tags", lambda path, tags, art=None: written.append((tags, art)))
+        monkeypatch.setattr(enrich, "write_tags", lambda path, tags, art=None, clear=(): written.append((tags, art)))
         host._replying = ("ws", "r8", "metadata.apply")
         host._cmd_metadata_apply({
             "path": track, "fields": [{"field": "album", "proposed": "Neptune's Lair"}],
@@ -222,6 +222,53 @@ class TestSlowCommandsDoNotBlock:
         })
         assert written == [({"album": "Neptune's Lair"}, None)]
         assert host.bridge.replies[0][1]["artworkEmbedded"] is False
+
+    def test_fix_tags_offers_the_old_values_back(self, tmp_path, monkeypatch):
+        host, downloads = _host(tmp_path, monkeypatch)
+        track = _file(str(downloads), "01.flac")
+        monkeypatch.setattr(enrich, "read_tags", lambda p: {"album": "untrue", "date": ""})
+        calls = []
+        monkeypatch.setattr(enrich, "write_tags",
+                            lambda path, tags, art=None, clear=(): calls.append((tags, list(clear))))
+        host._replying = ("ws", "r10", "metadata.apply")
+        host._cmd_metadata_apply({
+            "path": track, "embedArtwork": False, "artist": "", "release": "", "clear": None,
+            "fields": [{"field": "album", "proposed": "Untrue"}, {"field": "date", "proposed": "2007"}],
+        })
+        previous = host.bridge.replies[0][1]["previous"]
+        assert {p["field"]: p["proposed"] for p in previous} == {"album": "untrue", "date": ""}
+        # Undo: the old album back, and the date that was empty removed again.
+        host._replying = ("ws", "r11", "metadata.apply")
+        host._cmd_metadata_apply({
+            "path": track, "embedArtwork": False, "artist": "", "release": "",
+            "fields": [{"field": "album", "proposed": "untrue"}], "clear": ["date"],
+        })
+        assert calls[-1] == ({"album": "untrue"}, ["date"])
+
+    def test_an_outage_is_not_a_miss(self, tmp_path, monkeypatch):
+        host, downloads = _host(tmp_path, monkeypatch)
+        track = _file(str(downloads), "01.flac")
+        monkeypatch.setattr(enrich, "read_tags", lambda p: {"album": "x"})
+        monkeypatch.setattr(enrich, "mb_search_release",
+                            lambda *a: (_ for _ in ()).throw(enrich.EnrichError("timed out")))
+        sent = []
+        host.bridge.broadcast = lambda name, data: sent.append((name, data))
+        host._run_metadata("m1", track, None)
+        assert sent[0][1]["lookupFailed"] is True and sent[0][1]["matched"] is False
+        monkeypatch.setattr(enrich, "mb_search_release", lambda *a: None)
+        host._run_metadata("m2", track, None)
+        assert sent[1][1]["lookupFailed"] is False
+
+    def test_a_folder_with_an_md5_is_flagged_before_a_tag_change(self, tmp_path, monkeypatch):
+        host, downloads = _host(tmp_path, monkeypatch)
+        track = _file(str(downloads / "Album"), "01.flac")
+        (downloads / "Album" / "album.md5").write_text("x")
+        monkeypatch.setattr(enrich, "read_tags", lambda p: {})
+        monkeypatch.setattr(enrich, "mb_search_release", lambda *a: None)
+        sent = []
+        host.bridge.broadcast = lambda name, data: sent.append(data)
+        host._run_metadata("m3", track, None)
+        assert sent[0]["md5Sibling"] is True
 
     def test_a_failing_deferred_command_still_answers(self, tmp_path, monkeypatch):
         host, _downloads = _host(tmp_path, monkeypatch)
@@ -270,8 +317,9 @@ def test_the_log_never_names_a_wish(tmp_path, caplog):
     """Settings promises the log holds "not what you searched for"."""
     host = object.__new__(CoreHost)
     host.searches = types.SimpleNamespace(get=lambda t: None, add=lambda *a: types.SimpleNamespace(info=lambda: {}))
-    host.core = types.SimpleNamespace(search=types.SimpleNamespace(searches={
-        5: types.SimpleNamespace(mode="wishlist", term="Drexciya Neptune", term_transmitted="Drexciya Neptune"),
+    wish = types.SimpleNamespace(mode="wishlist", term="Drexciya Neptune", term_transmitted="Drexciya Neptune")
+    host.core = types.SimpleNamespace(search=types.SimpleNamespace(wishlist={wish.term: wish}, searches={
+        5: wish,
     }))
     host.bridge = Bridge()
     with caplog.at_level("INFO", logger="seek.core"):

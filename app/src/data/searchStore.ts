@@ -30,8 +30,38 @@ import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import type { SidecarConnection } from './connectionStore.ts';
 import type { ConnectionPhase, SidecarClient } from './sidecarClient.ts';
+import { GLOBAL_SCOPE } from './mockSidecar.ts';
+import type { SearchScope } from './mockSidecar.ts';
 
 export const TICK_MS = 250;
+
+/** Set on a tab that was still searching when you switched away from it. */
+export const SWITCHED_REASON = 'switched';
+
+/**
+ * How a finished search ended, in words. Each reason is a different fact:
+ * Seek's own quiet timeout is not a cap, and neither is a refusal.
+ */
+export function closedLabel(reason: string): { text: string; title?: string } {
+  switch (reason) {
+    case 'timeout':
+      return {
+        text: 'stopped listening',
+        title: 'Soulseek has no completion signal. Peers answer whenever they like and '
+          + 'stragglers can arrive minutes later — this only means Seek stopped listening.',
+      };
+    case 'result_cap':
+      return { text: 'stopped at the result limit', title: 'Seek keeps at most 5,000 files per search.' };
+    case 'failed':
+      return { text: 'could not search' };
+    case SWITCHED_REASON:
+      return { text: 'stopped when you switched tabs', title: 'Press Return in the search field to search again.' };
+    case 'disconnected':
+      return { text: 'signed out' };
+    default:
+      return { text: 'stopped' };
+  }
+}
 
 /**
  * ConnectionStatus is `offline | connecting | online | away | failed` — there is
@@ -141,6 +171,7 @@ function compare(a: Row, b: Row, key: SortKey): number {
  */
 export interface SearchSnapshot {
   query: string;
+  scope: SearchScope;
   files: SourceFile[];
   peers: string[];
   filters: Filters;
@@ -158,7 +189,11 @@ export interface SearchSessionOptions {
 export interface SearchSession {
   query: string;
   setQuery(q: string): void;
-  run(query?: string): void;
+  /** Where the next search goes. Kept with the tab, like the query. */
+  scope: SearchScope;
+  setScope(scope: SearchScope): void;
+  /** Run `query` (or the box's text) in `scope` (or the current scope). */
+  run(query?: string, scope?: SearchScope): void;
   stop(): void;
   running: boolean;
   closedReason: string | null;
@@ -229,6 +264,7 @@ export function useSearchSession(
    * to be deleted before you can type your own. The offline replay sets it
    * explicitly when it starts (App.tsx), so the demo still reads correctly. */
   const [query, setQuery] = useState('');
+  const [scope, setScope] = useState<SearchScope>(GLOBAL_SCOPE);
   const [running, setRunning] = useState(false);
   const [closedReason, setClosedReason] = useState<string | null>(null);
   const [filters, setFiltersState] = useState<Filters>(EMPTY_FILTERS);
@@ -284,9 +320,11 @@ export function useSearchSession(
   }, [running, flush]);
 
   const run = useCallback(
-    (q?: string) => {
+    (q?: string, where?: SearchScope) => {
       const text = (q ?? query).trim();
       if (!text) return;
+      const target = where ?? scope;
+      if (where) setScope(where);
 
       /* The box always shows the search that is running.
        *
@@ -301,7 +339,9 @@ export function useSearchSession(
       // Record it before running. Fire-and-forget: a history write that fails
       // must never stop a search, which is the thing the user actually asked
       // for. Only real searches count — replaying the fixture is not history.
-      if (client) void client.request('history.record', { query: text }).catch(() => {});
+      if (client && target.mode === 'global') {
+        void client.request('history.record', { query: text }).catch(() => {});
+      }
 
       sidecar.stop();
       grouper.reset();
@@ -325,9 +365,9 @@ export function useSearchSession(
           setRunning(false);
           setClosedReason(data.reason);
         },
-      });
+      }, target);
     },
-    [query, sidecar, grouper, flush],
+    [query, scope, client, sidecar, grouper, flush],
   );
 
   const stop = useCallback(() => {
@@ -522,11 +562,18 @@ export function useSearchSession(
 
   /* ---- tabs: putting a search away and bringing it back ---- */
 
-  const snapshot = useCallback((): SearchSnapshot => ({
-    query, files: grouper.all.slice(), peers: [...peers.current],
-    filters, groupBy, sort, expanded, closedReason,
-    tick: tickRef.current,
-  }), [query, grouper, filters, groupBy, sort, expanded, closedReason]);
+  const snapshot = useCallback((): SearchSnapshot => {
+    // Whatever arrived since the last tick belongs to this tab, not the next.
+    if (running) flush();
+    return {
+      query, scope, files: grouper.all.slice(), peers: [...peers.current],
+      filters, groupBy, sort, expanded,
+      // Put away mid-search, it stops (one search at a time): say so, rather
+      // than letting it read as a search that finished on its own.
+      closedReason: running ? SWITCHED_REASON : closedReason,
+      tick: tickRef.current,
+    };
+  }, [query, scope, grouper, filters, groupBy, sort, expanded, closedReason, running, flush]);
 
   const restore = useCallback((snap: SearchSnapshot) => {
     /* Stop first. Only one search can run at a time — `sidecar.start` replaces
@@ -548,6 +595,7 @@ export function useSearchSession(
     resortAll.current = true;
     setPending([]);
     setQuery(snap.query);
+    setScope(snap.scope ?? GLOBAL_SCOPE);
     setFiltersState(snap.filters);
     setGroupByState(snap.groupBy);
     setSortState(snap.sort);
@@ -558,7 +606,7 @@ export function useSearchSession(
   }, [sidecar, grouper]);
 
   return {
-    query, setQuery, run, stop, running, closedReason,
+    query, setQuery, scope, setScope, run, stop, running, closedReason,
     snapshot, restore,
     rows,
     pendingCount: pending.length,

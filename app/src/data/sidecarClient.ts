@@ -24,8 +24,9 @@
  * needs nothing.
  */
 
-import type { Sidecar, SidecarHandlers } from './mockSidecar.ts';
+import type { SearchScope, Sidecar, SidecarHandlers } from './mockSidecar.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
+import { reportFailure } from './failures.ts';
 
 export interface SidecarEndpoint {
   host: string;
@@ -105,8 +106,8 @@ export class EngineBusyError extends Error {
  *
  * Matched on the verb rather than a list of names: a list is a thing to forget
  * to update, and every command in this protocol is `noun.verb`. Anything not
- * recognised is treated as a read, which is the safe default — the worst case
- * is an early give-up on something that had no side effect.
+ * recognised is treated as a read, so a new write must be added here: a write
+ * given up on early is reported as failed while the engine still applies it.
  */
 const WRITE_VERBS = new Set([
   'connect', 'disconnect', 'patch', 'set', 'apply', 'add', 'remove', 'update',
@@ -116,7 +117,21 @@ const WRITE_VERBS = new Set([
   // MusicBrainz lookup and was being given up on after 15 s mid-move; the
   // rest change stored state.
   'file', 'claims', 'seen', 'filters', 'auto', 'sent', 'record',
+  'ignore', 'ban', 'away', 'close', 'closeAll',
+  // Writes named for what they do, which an early give-up would report as
+  // failed while the engine applies them anyway.
+  'say', 'join', 'leave', 'watch', 'unwatch', 'note', 'create', 'rename',
+  'ensureFolder', 'addSheet', 'removeSheet', 'refreshSheet', 'setDownloaded', 'signOut',
+  // A read, but a slow one: it looks for every finished download on disk.
+  'findMissing',
 ]);
+
+/** The request never got an answer — no socket, a dropped one, or a busy
+ *  engine — as opposed to an answer that said no. Worth asking again. */
+export function lostInTransit(error: unknown): boolean {
+  if (error instanceof EngineBusyError) return true;
+  return /^sidecar (not connected|connection closed)/.test((error as Error)?.message ?? '');
+}
 
 export function requestBudget(cmd: string): number {
   const verb = cmd.slice(cmd.lastIndexOf('.') + 1);
@@ -141,6 +156,7 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
 
   /* ---- the active search, if any ---- */
   let searchId: number | null = null;
+  let startGen = 0;
   let handlers: SidecarHandlers | null = null;
   let running = false;
 
@@ -295,7 +311,7 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
       if (running && handlers && d.searchId === searchId) {
         running = false;
         handlers.onClosed({
-          searchId: searchId ?? 0, reason: 'stopped', resultCount: 0, peerCount: 0,
+          searchId: searchId ?? 0, reason: 'failed', resultCount: 0, peerCount: 0,
         });
       }
     }
@@ -374,10 +390,13 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
       /* Replay rate is a fixture concept. The network sets its own pace. */
     },
 
-    start(query: string, next: SidecarHandlers) {
+    start(query: string, next: SidecarHandlers, scope: SearchScope = { mode: 'global' }) {
       handlers = next;
       running = true;
       searchId = null;
+      // Which start this is: a reply to an earlier one, superseded before it
+      // came back, must neither become the current search nor end it.
+      const gen = ++startGen;
       next.onStarted?.(query);
 
       // Every key must be present. `Optional` in the sidecar's schema means
@@ -386,13 +405,17 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
       // keys, so this object must match the struct exactly.
       void request<{ searchId: number }>('search.start', {
         query,
-        mode: 'global',
-        room: null,
-        users: [],
+        mode: scope.mode,
+        room: scope.mode === 'rooms' ? scope.room : null,
+        users: scope.mode === 'user' ? [scope.user.trim()] : [],
         resultCap: null,
         timeoutSeconds: null,
       })
         .then((result) => {
+          if (gen !== startGen) {
+            void request('search.stop', { searchId: result.searchId }).catch(() => {});
+            return;
+          }
           if (!running) {
             // Stopped while the command was in flight — cancel it rather than
             // leaving an orphaned search running on the network.
@@ -402,10 +425,16 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
           searchId = result.searchId;
         })
         .catch((error: Error) => {
+          if (gen !== startGen || !running) return;
           running = false;
+          // The engine's own "not signed in", or no socket at all: both are
+          // offline, which the empty state explains; neither is a refusal.
+          const offline = /^(not_connected|sidecar not connected)/.test(error.message);
+          // A refusal names its reason ("choose a room to search"); say it.
+          if (!offline) reportFailure('Search', error);
           handlers?.onClosed({
             searchId: 0,
-            reason: error.message.startsWith('not_connected') ? 'disconnected' : 'stopped',
+            reason: offline ? 'disconnected' : 'failed',
             resultCount: 0,
             peerCount: 0,
           });
@@ -455,6 +484,16 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
         socket.onerror = null;
         socket.close();
       }
+      /* A search in flight ends here: nothing will tell the store otherwise,
+       * and a tab would show "searching…" for good. Pending REQUESTS are left
+       * to run to their budget — on a live socket the engine usually still
+       * applies a write, and "connection closed" would call a saved setting
+       * lost. */
+      if (running && handlers) {
+        running = false;
+        handlers.onClosed({ searchId: searchId ?? 0, reason: 'disconnected', resultCount: 0, peerCount: 0 });
+      }
+      searchId = null;
       setPhase('closed');
     },
   };

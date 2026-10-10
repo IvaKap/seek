@@ -3880,3 +3880,84 @@
   border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
 }
 .failures__close:hover { background: var(--bg-hover); }
+
+/* Search scope: where the query goes. Sits inside the pill, quiet until used —
+   most searches are of everyone, and the choice should not shout. */
+.search__scope { position: relative; display: inline-flex; flex: none; }
+.search__scope select {
+  appearance: none; -webkit-appearance: none;
+  border: none; background: none; outline: none;
+  padding: 0 var(--sp-4) 0 var(--sp-1);
+  max-width: 10rem; overflow: hidden; text-overflow: ellipsis;
+  font: inherit; font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary);
+}
+.search__scope::after {
+  content: '⌄'; position: absolute; right: 0; top: 40%;
+  transform: translateY(-50%); pointer-events: none;
+  color: var(--text-tertiary); font-size: var(--fs-caption);
+}
+.search__scope select:focus-visible { color: var(--accent); }
+.search__user {
+  flex: none; width: 8rem; height: 1.5rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: var(--bg-sunken); outline: none;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+}
+.search__user:focus { border-color: var(--accent); }
+
+/* Chat: names you can act on, the member list, and the badge for mentions. */
+.chat__who--link {
+  border: none; background: none; padding: 0; font: inherit; text-align: left;
+  cursor: pointer;
+}
+.chat__who--link:hover { color: var(--accent); text-decoration: underline; }
+.chat__line[data-outgoing='true'] .chat__who--link { color: var(--accent); }
+.chat__members--btn {
+  flex: 1; text-align: left; border: none; background: none; padding: 0;
+  font: inherit; font-size: var(--fs-caption); color: var(--text-tertiary); cursor: pointer;
+}
+.chat__members--btn:hover, .chat__members--btn[aria-expanded='true'] { color: var(--text-primary); }
+.chat__body { flex: 1; min-height: 0; display: flex; }
+.chat__body .chat__scroll { flex: 1; }
+.chat__people {
+  flex: none; width: 13rem; overflow-y: auto; list-style: none; margin: 0;
+  padding: var(--sp-2); border-left: 0.5px solid var(--separator);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.chat__person {
+  display: flex; align-items: center; gap: var(--sp-2);
+  padding: 2px var(--sp-1); font-size: var(--fs-caption); min-width: 0;
+}
+.chat__person .chat__who { flex: 1; min-width: 0; }
+.chat__dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--text-quaternary); }
+.chat__person[data-status='online'] .chat__dot { background: var(--success); }
+.chat__person[data-status='away'] .chat__dot { background: var(--warn); }
+.chat__buddy { color: var(--accent); font-size: var(--fs-micro); }
+.chat__files { color: var(--text-quaternary); }
+.chat__unread[data-mention='true'] { background: var(--accent); color: var(--text-on-accent); }
+.chat__heading { display: flex; align-items: center; }
+.chat__headbtn {
+  margin-left: auto; border: none; background: none; padding: 0;
+  font: inherit; color: var(--text-tertiary); cursor: pointer; text-transform: none; letter-spacing: normal;
+}
+.chat__headbtn:hover { color: var(--accent); }
+.btn[data-confirm='true'] { color: var(--danger); }
+
+/* Settings → Ignored and banned. */
+.peoplelist { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.peoplelist__item { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
+.peoplelist__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toggle:disabled { opacity: 0.5; cursor: default; }
+
+/* A yes/no question (a very large folder, say). Narrow, and the title wraps. */
+.sheet--confirm { width: min(26rem, calc(100vw - 2rem)); align-self: flex-start; }
+.sheet--confirm .sheet__head { border-bottom: none; }
+.sheet--confirm .sheet__title { white-space: normal; }
+.sheet__actions {
+  display: flex; justify-content: flex-end; gap: var(--sp-2);
+  padding: 0 var(--sp-5) var(--sp-4);
+}
+.peer__menu { flex: none; align-self: flex-start; }
+.up__user--link { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+.up__user--link:hover { color: var(--accent); text-decoration: underline; }

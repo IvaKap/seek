@@ -13,6 +13,18 @@
 import type { WireFrame, WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import { recordSession } from './fixture.ts';
 
+/**
+ * Where a search goes. The whole network, your buddies, one room you are in,
+ * or one user's shares — upstream's four search modes (`search.py`).
+ */
+export type SearchScope =
+  | { mode: 'global' }
+  | { mode: 'buddies' }
+  | { mode: 'rooms'; room: string }
+  | { mode: 'user'; user: string };
+
+export const GLOBAL_SCOPE: SearchScope = { mode: 'global' };
+
 export interface RecordedLine {
   offsetMs: number;
   frame: WireFrame;
@@ -25,7 +37,8 @@ export interface SidecarHandlers {
 }
 
 export interface Sidecar {
-  start(query: string, handlers: SidecarHandlers): void;
+  /** Scope is ignored by the fixture replay, which has only one network. */
+  start(query: string, handlers: SidecarHandlers, scope?: SearchScope): void;
   stop(): void;
   /** Replay faster or slower. 1 = as recorded. */
   setRate(rate: number): void;

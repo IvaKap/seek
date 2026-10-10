@@ -13,9 +13,12 @@
 import type { BrowseFile } from '../data/browseStore.ts';
 import { fileName } from '../data/transferStore.ts';
 import type { MenuItem } from './ContextMenu.tsx';
+import { soulseekUrl } from '../domain/soulseekUrl.ts';
 
 export interface BrowseFileMenuActions {
   queue(files: BrowseFile[]): void;
+  /** Ask for a folder, then queue there. Absent where there is no folder panel. */
+  queueTo?(files: BrowseFile[]): void;
   copy(text: string): void;
 }
 
@@ -28,12 +31,17 @@ export function browseFileMenuItems(
   const items: MenuItem[] = [
     { id: 'get', label: many ? `Get ${targets.length} files` : 'Get', run: () => a.queue(targets) },
   ];
+  if (a.queueTo) {
+    const to = a.queueTo;
+    items.push({ id: 'getto', label: many ? `Get ${targets.length} files to…` : 'Get to…', run: () => to(targets) });
+  }
 
   // Copy targets a single file — three copy rows for a selection is just noise.
   if (!many) {
     items.push(
       { id: 'copypath', separated: true, label: 'Copy file path', run: () => a.copy(targets[0].path) },
       { id: 'copyname', label: 'Copy file name', run: () => a.copy(fileName(targets[0].path)) },
+      { id: 'copylink', label: 'Copy Soulseek link', run: () => a.copy(soulseekUrl(username, targets[0].path)) },
     );
   }
   items.push({

@@ -50,7 +50,7 @@ import { WishlistView } from './ui/WishlistView.tsx';
 import { ErrorBoundary } from './ui/ErrorBoundary.tsx';
 import { Failures } from './ui/Failures.tsx';
 import { reportFailure, showNotice } from './data/failures.ts';
-import { judgeRelease } from './domain/preferences.ts';
+import { judge, judgeRelease } from './domain/preferences.ts';
 import { useWishHits } from './data/wishHits.ts';
 import { useAutoDownloads } from './data/autoDownloads.ts';
 import { useAutoGreet } from './data/autoGreet.ts';
@@ -67,8 +67,17 @@ import type { MenuItem } from './ui/ContextMenu.tsx';
 import type { Row } from './data/searchStore.ts';
 import './styles/components.css';
 import { copyText } from './data/clipboard.ts';
+import { usePeople } from './data/peopleStore.ts';
+import { useAutoAway } from './data/presence.ts';
+import { userMenuItems } from './ui/userMenu.ts';
+import { ConfirmSheet } from './ui/ConfirmSheet.tsx';
+import { canChooseFolder, chooseFolder } from './data/choose.ts';
+import { soulseekUrl } from './domain/soulseekUrl.ts';
+import type { UserMenuActions } from './ui/userMenu.ts';
 
 /** ⌘1–4, per docs/PRODUCT.md §2. */
+const MAC = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform);
+
 const NUMBER_KEYS: Record<string, Section> = {
   '1': 'search',
   '2': 'downloads',
@@ -123,6 +132,12 @@ function storedDensity(key: string, fallback: Density): Density {
  * behaviour this app exists to avoid.
  */
 function connectionStatus(session: SearchSession): ConnectionStatus {
+  /* The shell could not start the engine, or gave up restarting it. First,
+     because in that state there may be no client at all, and "mock data" or
+     "unreachable" would hide the reason the shell already knows. */
+  if (session.startupError) {
+    return { dot: 'offline', label: 'Engine stopped', detail: session.startupError };
+  }
   if (session.isMock) {
     return {
       dot: 'offline',
@@ -140,6 +155,9 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
       label: 'Sidecar unreachable',
       detail: 'The sidecar is not answering. It may have exited, or the token may be wrong.',
     };
+  }
+  if (session.serverState === 'away') {
+    return { dot: 'online', label: 'Away', detail: 'Signed in, and shown to others as away.' };
   }
   if (!isSignedIn(session.serverState)) {
     return {
@@ -214,9 +232,11 @@ export default function App() {
   // The client is created inside the session, so hand it back to prefs once.
   useEffect(() => { setPrefsClient(session.client); }, [session.client]);
   const chat = useChatSession(session.client, isSignedIn(session.serverState));
+  const people = usePeople(session.client);
   /* pynicotine's own configuration — folders, port, limits, shares. Distinct
    * from `prefs`, which is Seek's; see the header on `data/engineStore.ts`. */
   const engine = useEngine(session.client);
+  useAutoAway(session.client, session.serverState, engine.settings?.autoAwayMinutes ?? 0);
   const transferStats = useTransferStats(session.client);
   const profile = useProfile(session.client);
   const connections = useConnections(session.client);
@@ -227,10 +247,14 @@ export default function App() {
   /* Minutes in the setting, seconds in the store — the setting is a number a
    * person picks and the store compares against a clock. Converting at the one
    * boundary keeps the unit out of both. */
+  /* Filled in once the auto-download claims are known (below): a file held
+     for review must never be cleared by the retention sweep. */
+  const awaitingReview = useRef<ReadonlySet<string>>(new Set());
   const transfers = useTransfers(
     session.client,
     prefs.settings.stalledFailMinutes * 60,
     prefs.settings.clearCompletedDays,
+    awaitingReview,
   );
   const updates = useUpdates(prefs.loaded ? prefs.settings.checkUpdates : null);
   const analysis = useAnalysis(session.client);
@@ -254,6 +278,10 @@ export default function App() {
      review UI in a later step; here it is mounted for its effect. */
   const autoDownloads = useAutoDownloads(
     session.client, wishHits, transfers, analysis, prefs.settings, isSignedIn(session.serverState),
+  );
+  awaitingReview.current = new Set(
+    autoDownloads.claims.filter((c) => c.status === 'awaiting-review' && c.transferId)
+      .map((c) => c.transferId as string),
   );
   /* Greet somebody the first time they finish downloading from you. Mounted
      here for the same reason as auto-download: an upload completes whether or
@@ -354,6 +382,20 @@ export default function App() {
       tracklist: [],
     }]);
   }, [want]);
+
+  /* For the Downloads rows, memoised so a progress tick does not hand all of
+   * them a new object. The two actions go through a ref: they close over
+   * objects that change every render, and only their behaviour matters. */
+  const catalogActions = useRef({ searchCatalogEntry, wantCatalogEntry });
+  catalogActions.current = { searchCatalogEntry, wantCatalogEntry };
+  const downloadsDiscovery = useMemo(() => (related.enabled ? {
+    related,
+    artwork,
+    library,
+    wantedUrls,
+    onSearch: (e: { artist: string; title: string }) => catalogActions.current.searchCatalogEntry(e),
+    onWant: (e: Parameters<typeof wantCatalogEntry>[0]) => catalogActions.current.wantCatalogEntry(e),
+  } : undefined), [related, artwork, library, wantedUrls]);
 
   /* What the open catalogue would be watched AS. Null for anything that
    * cannot be re-opened later — `labels.watch` refuses those, and offering a
@@ -523,7 +565,10 @@ export default function App() {
         return;
       }
 
-      const meta = e.metaKey || e.ctrlKey;
+      /* ⌘ only, on a Mac. Ctrl-F, Ctrl-K and Ctrl-T are the system's own text
+       * editing keys there (forward a character, delete to the end of the line,
+       * swap two letters), and taking them broke every text field. */
+      const meta = MAC ? e.metaKey : e.ctrlKey;
       if (!meta) return;
 
       if (e.key === 'k') {
@@ -579,6 +624,9 @@ export default function App() {
         return;
       }
       if (e.key === 'Enter') {
+        // ⌘↵ in the search field was already handled there; running it again
+        // here sent two searches in one keystroke.
+        if (e.defaultPrevented) return;
         e.preventDefault();
         setSection('search');
         session.run();
@@ -647,7 +695,7 @@ export default function App() {
          shortcut nor the palette, so the only way in was clicking it — and the
          sidebar activates on pointerdown, which a keyboard never sends. A
          keyboard user could focus the item and press Return all day. */
-      { id: 'go.library', group: 'Go', label: 'Library', run: go2('collections') },
+      { id: 'go.library', group: 'Go', label: 'Collections', run: go2('collections') },
       {
         id: 'search.newtab', group: 'Search', label: 'New search tab', shortcut: '⌘T',
         run: () => { setSection('search'); searchTabs.open(); searchRef.current?.focus(); },
@@ -760,6 +808,18 @@ export default function App() {
     return list;
   }, [go, session, transfers, browse, changeDensity, labels.labels.length]);
 
+  const userActions = useMemo<UserMenuActions>(() => ({
+    browse: (who) => { browse.browse(who); go('browsing'); },
+    message: (who) => { chat.openPrivate(who); go('messages'); },
+    searchFiles: (who) => {
+      // Pick the scope and put the cursor in the field; the words are theirs.
+      go('search');
+      session.setScope({ mode: 'user', user: who });
+      window.setTimeout(() => searchRef.current?.focus(), 0);
+    },
+    copy: (text) => { void copyText(text); },
+  }), [browse, chat, go, session]);
+
   /* The right-click menu. Built per row because the useful actions differ:
    * a release is a folder, a track cluster is a choice of peers, and a user
    * header is a person. Anything not applicable is omitted rather than shown
@@ -775,25 +835,23 @@ export default function App() {
     if (row.kind === 'release') {
       const r = row.release;
       const who = r.peer.username;
+      // The same rules as the card's Get; this path skipped them.
+      const getFolder = (destination: string | null) => {
+        const verdict = judgeRelease(r.files, prefs.settings);
+        if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+        void transfers.enqueueFolder(who, r.folderPath, false, { destination, count: r.files.length });
+      };
       items.push(
-        { id: 'get', label: `Download folder — ${r.trackCount} tracks`,
-          run: () => {
-            // The same rules as the card's Get; this path skipped them.
-            const verdict = judgeRelease(r.files, prefs.settings);
-            if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
-            void transfers.enqueueFolder(who, r.folderPath);
-          } },
-        { id: 'browse', label: `Browse ${who}`, separated: true,
-          run: () => { browse.browse(who); go('browsing'); } },
-        { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who })
-            .catch((e) => reportFailure(`Follow ${who}`, e)) },
-        { id: 'msg', label: `Message ${who}`,
-          run: () => { chat.openPrivate(who); go('messages'); } },
-        { id: 'wish', label: 'Add to wishlist', separated: true,
+        { id: 'get', label: `Download folder — ${r.trackCount} tracks`, run: () => getFolder(null) },
+        ...(canChooseFolder() ? [{
+          id: 'getto', label: 'Download folder to…',
+          run: () => { void chooseFolder('Download to').then((dest) => { if (dest) getFolder(dest); }); },
+        }] : []),
+        { id: 'wish', label: 'Add to wishlist',
           run: () => addWish(`${r.artist ?? ''} ${r.title}`.trim()) },
         { id: 'copyfolder', label: 'Copy folder path', separated: true, run: copy(r.folderPath) },
-        { id: 'copyuser', label: 'Copy username', run: copy(who) },
+        { id: 'copylink', label: 'Copy Soulseek link', run: copy(soulseekUrl(who, r.folderPath, true)) },
+        ...userMenuItems(who, people, userActions, { separated: true }),
       );
     } else if (row.kind === 'track' || row.kind === 'source' || row.kind === 'file') {
       // A 'file' row (the classic flat list) carries its source just like a
@@ -803,48 +861,47 @@ export default function App() {
       const label = row.kind === 'track'
         ? `Download best of ${row.track.sources.length} sources`
         : 'Download this file';
+      const getFile = (destination: string | null) => {
+        const verdict = judge(file, prefs.settings);
+        if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+        void transfers.enqueue(who, file.path, file.size, destination);
+      };
+      const getFolder = () => {
+        // The folder's files as far as these results show them, judged by
+        // the same rules as a release Get.
+        const inFolder = session.snapshot().files.filter((s) => (
+          s.user === who && s.parsed.folderPath === file.parsed.folderPath
+        ));
+        const verdict = judgeRelease(inFolder.length > 0 ? inFolder : [file], prefs.settings);
+        if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+        void transfers.enqueueFolder(who, file.parsed.folderPath, false, { count: inFolder.length });
+      };
       items.push(
-        { id: 'get', label, run: () => void transfers.enqueue(who, file.path, file.size) },
-        { id: 'getfolder', label: 'Download the whole folder',
-          run: () => {
-            // The folder's files as far as these results show them, judged by
-            // the same rules as a release Get.
-            const inFolder = session.snapshot().files.filter((s) => (
-              s.user === who && s.parsed.folderPath === file.parsed.folderPath
-            ));
-            const verdict = judgeRelease(inFolder.length > 0 ? inFolder : [file], prefs.settings);
-            if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
-            void transfers.enqueueFolder(who, file.parsed.folderPath);
-          } },
-        { id: 'browse', label: `Browse ${who}`, separated: true,
-          run: () => { browse.browse(who); go('browsing'); } },
-        { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who })
-            .catch((e) => reportFailure(`Follow ${who}`, e)) },
-        { id: 'msg', label: `Message ${who}`,
-          run: () => { chat.openPrivate(who); go('messages'); } },
+        { id: 'get', label, run: () => getFile(null) },
+        ...(canChooseFolder() ? [{
+          id: 'getto', label: 'Download to…',
+          run: () => { void chooseFolder('Download to').then((dest) => { if (dest) getFile(dest); }); },
+        }] : []),
+        { id: 'getfolder', label: 'Download the whole folder', run: getFolder },
         { id: 'wish', label: 'Add to wishlist', separated: true,
           run: () => addWish(file.parsed.displayTitle) },
         { id: 'copypath', label: 'Copy file path', separated: true, run: copy(file.path) },
         { id: 'copyname', label: 'Copy file name', run: copy(file.parsed.filename) },
-        { id: 'copyuser', label: 'Copy username', run: copy(who) },
+        { id: 'copylink', label: 'Copy Soulseek link', run: copy(soulseekUrl(who, file.path)) },
+        ...userMenuItems(who, people, userActions, { separated: true }),
       );
     } else {
-      const who = row.group.user;
-      items.push(
-        { id: 'browse', label: `Browse everything ${who} shares`,
-          run: () => { browse.browse(who); go('browsing'); } },
-        { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who })
-            .catch((e) => reportFailure(`Follow ${who}`, e)) },
-        { id: 'msg', label: `Message ${who}`,
-          run: () => { chat.openPrivate(who); go('messages'); } },
-        { id: 'copyuser', label: 'Copy username', separated: true, run: copy(who) },
-      );
+      items.push(...userMenuItems(row.group.user, people, userActions));
     }
 
     setMenu({ x, y, items });
-  }, [transfers, browse, chat, session.client, go, addWish, prefs.settings]);
+  }, [transfers, session, addWish, prefs.settings, people, userActions]);
+
+  /* A person's own menu, for places that show a name and nothing else: a chat
+   * line, a room's member list. */
+  const openUserMenu = useCallback((who: string, x: number, y: number) => {
+    setMenu({ x, y, title: who, items: userMenuItems(who, people, userActions) });
+  }, [people, userActions]);
 
   return (
     <div className="app">
@@ -854,6 +911,17 @@ export default function App() {
         onDismiss={updates.dismiss}
       />
       <ContextMenu request={menu} onClose={() => setMenu(null)} />
+      {transfers.pendingFolder && (
+        <ConfirmSheet
+          title={`Download ${transfers.pendingFolder.count.toLocaleString()} files?`}
+          body={`From ${transfers.pendingFolder.username}: ${
+            transfers.pendingFolder.folderPath.split('\\').pop() || transfers.pendingFolder.folderPath
+          }${transfers.pendingFolder.recurse ? ', with its subfolders' : ''}. They will all wait in that person's queue.`}
+          action="Download all"
+          onConfirm={transfers.confirmFolder}
+          onCancel={transfers.dismissFolder}
+        />
+      )}
       <CommandPalette
         open={paletteOpen}
         commands={commands}
@@ -904,6 +972,7 @@ export default function App() {
             onWantTracklist={want.enabled ? addTracklistToWant : undefined}
             onWantPlaylist={want.enabled ? addPlaylistToWant : undefined}
             onContext={openMenu}
+            rooms={chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target)}
             onWish={() => addWish(session.query)}
             onSave={() => {
               void session.client?.request('saved.add', {
@@ -917,6 +986,9 @@ export default function App() {
             chat={chat}
             signedIn={isSignedIn(session.serverState)}
             scope={section === 'chat' ? 'room' : 'private'}
+            onUserMenu={openUserMenu}
+            self={profile.profile?.username ?? null}
+            buddies={people.buddies}
           />
         ) : section === 'history' ? (
           <HistoryView
@@ -1003,6 +1075,7 @@ export default function App() {
           <UploadsView
             session={transfers}
             peers={(u) => prefs.peers.get(u)}
+            onUserMenu={openUserMenu}
             // null when the engine has not reported yet — NOT false. See the
             // prop's own note: the two are different claims.
             sharing={engine.shares ? engine.shares.folders.length > 0 : null}
@@ -1034,6 +1107,8 @@ export default function App() {
             transfers={transfers}
             signedIn={isSignedIn(session.serverState)}
             peers={(u) => prefs.peers.get(u)}
+            rules={prefs.settings}
+            onUserMenu={openUserMenu}
           />
         ) : section === 'downloads' || section === 'completed' || section === 'failed' ? (
           <DownloadsView
@@ -1050,14 +1125,7 @@ export default function App() {
             autoClaims={autoDownloads.claims}
             onApproveAuto={autoDownloads.approve}
             onRejectAuto={autoDownloads.reject}
-            discovery={related.enabled ? {
-              related,
-              artwork,
-              library,
-              wantedUrls,
-              onSearch: searchCatalogEntry,
-              onWant: wantCatalogEntry,
-            } : undefined}
+            discovery={downloadsDiscovery}
           />
         ) : (
           <SectionView
@@ -1069,6 +1137,7 @@ export default function App() {
             profile={profile}
             connections={connections}
             youtube={youtube}
+            people={people}
           />
         )}
         </ErrorBoundary>

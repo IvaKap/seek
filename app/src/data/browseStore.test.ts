@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 
 import { describe, expect, it } from 'vitest';
-import { enrichFile, filterShelves, toShelves } from './browseStore.ts';
+import { enrichFile, filesUnder, filterShelves, toShelves } from './browseStore.ts';
 import type { WireFileRef } from './adapt.ts';
 
 function flac(overrides: Partial<WireFileRef> = {}): WireFileRef {
@@ -89,5 +89,20 @@ describe('filterShelves', () => {
       { path: 'A', private: false, files: [enrichFile(flac({ path: 'A\\x.flac' }))] },
     ]);
     expect(filterShelves(shelves, '  ')).toBe(shelves);
+  });
+});
+
+describe('filesUnder', () => {
+  const f = (path: string) => ({ path } as unknown as import('./browseStore.ts').BrowseFile);
+  const folders = [
+    { path: 'Music\\Artist', private: false, files: [f('Music\\Artist\\cover.jpg')] },
+    { path: 'Music\\Artist\\Album', private: false, files: [f('Music\\Artist\\Album\\01.flac'), f('Music\\Artist\\Album\\a.md5')] },
+    { path: 'Music\\Artistic', private: false, files: [f('Music\\Artistic\\x.flac')] },
+  ];
+  it('takes only the folder itself without recurse', () => {
+    expect(filesUnder(folders, 'Music\\Artist', false).map((x) => x.path)).toEqual(['Music\\Artist\\cover.jpg']);
+  });
+  it('takes subfolders with recurse, but not a sibling that shares the prefix', () => {
+    expect(filesUnder(folders, 'Music\\Artist', true)).toHaveLength(3);
   });
 });

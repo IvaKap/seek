@@ -42,10 +42,11 @@ SIDECAR_VERSION = "0.2.17"
 # Upstream speed limits are in KiB/s; our wire is bytes/sec everywhere.
 KIB = 1024
 
-# How many already-seen results one wish remembers. Chosen against the frontend
-# cap of 400 results per run: high enough that a normal run is remembered whole,
-# low enough that twenty wishes cost tens of kilobytes rather than megabytes.
-WISH_SEEN_CAP = 250
+# How many already-seen results one wish remembers. Twice the frontend's 1,000
+# results per run, because ids collect across runs as peers come and go: at
+# 250, a big wish forgot part of what you had seen and announced it as new
+# after every restart. Ids are 8 hex characters, so a full wish is ~24 KB.
+WISH_SEEN_CAP = 2000
 
 # How many greeted peers we remember. Far larger than WISH_SEEN_CAP because the
 # entries are just usernames and forgetting one means greeting somebody twice —
@@ -210,6 +211,11 @@ class CoreHost:
         self._post_pool = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="SeekPostDownload"
         )
+        # The library walk, alone. On the analysis worker, a scan of a big
+        # collection held covers, Verify and gap checks behind it for minutes.
+        self._scan_pool = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="SeekLibraryScan"
+        )
         # Where a file went when Seek moved it: old path -> new path. Read by the
         # resolver so Verify and Fix tags keep working after an Organise, and by
         # a queued job whose file moved before it ran.
@@ -318,6 +324,10 @@ class CoreHost:
             ("remove-search", self._on_search_removed),
             ("user-stats", self._on_user_stats),
             ("user-status", self._on_user_status),
+            ("ignore-user", self._on_user_lists_changed),
+            ("unignore-user", self._on_user_lists_changed),
+            ("ban-user", self._on_user_lists_changed),
+            ("unban-user", self._on_user_lists_changed),
             ("user-info-response", self._on_user_info_response),
             ("user-info-failed", self._on_user_info_failed),
             ("shared-file-list-response", self._on_browse_response),
@@ -342,8 +352,8 @@ class CoreHost:
             ("echo-private-message", self._on_private_echo),
             ("join-room", self._on_join_room),
             ("leave-room", self._on_leave_room),
-            ("user-joined-room", self._on_room_user_change),
-            ("user-left-room", self._on_room_user_change),
+            ("user-joined-room", self._on_user_joined_room),
+            ("user-left-room", self._on_user_left_room),
             ("room-list", self._on_room_list),
             ("shares-scanning", self._on_shares_scanning),
             ("shares-ready", self._on_shares_ready),
@@ -418,6 +428,7 @@ class CoreHost:
         self._analysis_pool.shutdown(wait=False)
         self._discover_pool.shutdown(wait=False)
         self._post_pool.shutdown(wait=False)
+        self._scan_pool.shutdown(wait=False)
 
         try:
             self.config.write_configuration()
@@ -493,8 +504,11 @@ class CoreHost:
 
     def _on_server_login(self, msg):
         if msg.success:
+            # Upstream's own login handler runs first and restores a saved
+            # away status (users.py), so ask it rather than assume online.
+            away = self.core.users.login_status == self.UserStatus.AWAY
             self._connection.update({
-                "status": "online",
+                "status": "away" if away else "online",
                 "username": msg.username,
                 "publicAddress": msg.ip_address,
                 "error": None,
@@ -665,7 +679,7 @@ class CoreHost:
         if params.get("pictureVisible") is not None:
             info["picture_visible"] = bool(params["pictureVisible"])
 
-        self.config.write_configuration()
+        self._persist_config()
         return self._profile()
 
     # -- who we are talking to ----------------------------------------------
@@ -807,6 +821,10 @@ class CoreHost:
         upstream = self.core.search.searches.get(token)
         if upstream is None or getattr(upstream, "mode", None) != "wishlist":
             return
+        # A wish you removed, answered by a peer who was still replying to its
+        # last run. Adopting it would bring the removed wish back on screen.
+        if upstream.term not in self.core.search.wishlist:
+            return
         # `add` REPLACES any entry under this token, which is what a re-run
         # needs: the previous run's results are done with, and carrying them
         # forward would walk the result cap up until the search closed itself
@@ -869,6 +887,14 @@ class CoreHost:
         # users.py:355 sets msg.user = None for stale self-status updates.
         if not msg.user:
             return
+        # Our own status: away was set or cleared (upstream fakes this event
+        # for itself in `set_away_mode`, since the server sends none).
+        if msg.user == self._connection.get("username") and \
+                self._connection.get("status") in ("online", "away"):
+            status = translate.user_status(msg.status)
+            if status in ("online", "away") and status != self._connection["status"]:
+                self._connection["status"] = status
+                self.bridge.broadcast("connection.state", dict(self._connection))
         self.bridge.broadcast("user.status", {
             "username": msg.user,
             "status": translate.user_status(msg.status),
@@ -1112,9 +1138,45 @@ class CoreHost:
                     handle.flush()
                     os.fsync(handle.fileno())
                 os.replace(tmp, path)
+                self._state_write_failed = False
             except OSError:
                 log.exception("could not persist Seek state")
+                self._state_write_failed = True
             return state
+
+    def _store(self, **updates):
+        """`_save_state` for a command that answers the person who asked: a
+        write that never reached the disk is an error, not a success. (Every
+        save used to reply "done" and log the failure where nobody looks.)"""
+        # Under the lock, so a worker's save cannot change the flag in between.
+        with _STATE_LOCK:
+            state = self._save_state(**updates)
+            failed = getattr(self, "_state_write_failed", False)
+        if failed:
+            raise CommandError("internal", "could not save that to disk")
+        return state
+
+    def _persist_config(self):
+        """Write the Nicotine+ config and check it landed. Upstream reports a
+        failed write only in its log (config.write_configuration returns
+        nothing), so the file itself is the evidence: upstream renames the old
+        one to `.old` and writes a new file, so a real write changes the inode
+        — which, unlike the modification time, cannot collide on a drive that
+        keeps only whole seconds (HFS+)."""
+        path = getattr(self.config, "config_file_path", None)
+
+        def identity():
+            try:
+                st = os.stat(path) if path else None
+            except OSError:
+                return None
+            return (st.st_ino, st.st_mtime_ns) if st else None
+
+        before = identity()
+        self.config.write_configuration()
+        after = identity()
+        if path and (after is None or after == before):
+            raise CommandError("internal", "could not save the configuration to disk")
 
     def _stored_consent(self):
         """Read the persisted sharing decision.
@@ -1497,7 +1559,6 @@ class CoreHost:
             self.config.sections["server"]["auto_connect_startup"] = bool(
                 params["autoConnect"]
             )
-            self.config.write_configuration()
         if params.get("minBitrate") is not None:
             stored["minBitrate"] = max(0, int(params["minBitrate"]))
         # Clamped, not trusted. These come off number inputs, and a negative
@@ -1536,7 +1597,11 @@ class CoreHost:
             else:
                 stored.pop("discogsToken", None)
 
-        self._save_state(app_settings=stored)
+        self._store(app_settings=stored)
+        # The config after Seek's own file, so a failed config write costs
+        # only this flag and the rest of the patch is still saved.
+        if params.get("autoConnect") is not None:
+            self._persist_config()
         # Apply the cap immediately rather than at next launch: a cache that
         # ignores its own setting until restart is a setting that does nothing.
         if getattr(self, "_artwork_cache", None) is not None:
@@ -1709,7 +1774,7 @@ class CoreHost:
     def _run_gaps(self, key, artist, release):
         blank = {
             "key": key, "matched": False, "releaseTitle": release,
-            "releaseArtist": artist, "score": 0, "tracks": [],
+            "releaseArtist": artist, "score": 0, "tracks": [], "lookupFailed": False,
         }
         try:
             cache = self._art_cache()
@@ -1738,13 +1803,15 @@ class CoreHost:
                             "have": index.has_track(
                                 t.get("artist") or summary.get("artist") or "",
                                 t.get("title") or "",
+                                key,
                             ),
                         }
                         for t in (summary.get("tracks") or [])
                     ],
                 })
         except Exception as error:                     # noqa: BLE001 - worker
-            log.debug("gap lookup failed for %s - %s: %s", artist, release, error)
+            log.debug("gap lookup failed: %s", error)
+            blank["lookupFailed"] = True
         self.bridge.broadcast("library.gaps", blank)
 
     def _cmd_library_scan(self, params):
@@ -1755,12 +1822,18 @@ class CoreHost:
         # instead of it, so a scan cannot silently forget where things land.
         roots = [self._download_root()] + list(params.get("roots") or [])
         read_tags = params.get("readTags")
-        self._analysis_pool.submit(
+        self._scan_pool.submit(
             self._run_library_scan, roots, True if read_tags is None else bool(read_tags),
         )
         state = index.state()
         state["scanning"] = True
         return state
+
+    def _cmd_library_cancel(self, _params):
+        # Takes effect at the next folder; the index from before stands.
+        index = self._library()
+        index.cancel()
+        return index.state()
 
     def _run_library_scan(self, roots, read_tags):
         index = self._library()
@@ -1867,10 +1940,20 @@ class CoreHost:
             "requestId": request_id, "path": path, "transferId": transfer_id,
             "matched": False, "score": 0, "query": "", "trackMatched": False,
             "releaseTitle": "", "releaseArtist": "", "date": "", "label": "",
-            "mbid": "", "changes": [],
+            "mbid": "", "changes": [], "lookupFailed": False,
+            "md5Sibling": any(
+                p.lower().endswith(".md5")
+                for p in checksums.find_sidecars(self._checksum_folder(path))
+            ),
         }
+        # Read outside the lookup's try: a file whose tags cannot be read is
+        # not a MusicBrainz outage, and must not be reported as one. The match
+        # still runs, from the folder name.
         try:
             current = enrich.read_tags(path)
+        except Exception:                              # noqa: BLE001 - a bad header
+            current = {}
+        try:
             # The folder is the release, the same assumption the whole app makes.
             folder = os.path.basename(os.path.dirname(path))
             artist = current.get("albumartist") or current.get("artist") or ""
@@ -1893,13 +1976,16 @@ class CoreHost:
                 "date": summary["date"],
                 "label": summary["label"],
                 "mbid": summary["mbid"],
+                # Only fields a file can hold. The label used to be proposed,
+                # ticked, "written" in the count, and never written at all.
                 "changes": [
                     {"field": f, "current": str(current.get(f, "")), "proposed": str(v)}
-                    for f, v in changes.items()
+                    for f, v in changes.items() if f in enrich.TAG_FIELDS
                 ],
             })
         except Exception as error:                     # noqa: BLE001 - worker
-            log.debug("metadata lookup failed for %s: %s", path, error)
+            log.debug("metadata lookup failed: %s", error)
+            blank["lookupFailed"] = True
         self.bridge.broadcast("metadata.proposal", blank)
 
     def _cmd_metadata_apply(self, params):
@@ -1913,12 +1999,13 @@ class CoreHost:
         embed = bool(params.get("embedArtwork"))
         if embed and not self._lookups_allowed():
             raise CommandError("unsupported", "external lookups are switched off")
+        clear = [f for f in (params.get("clear") or []) if f in enrich.TAG_FIELDS]
         return self._defer(
             self._apply_metadata, path, fields, embed,
-            params.get("artist") or "", params.get("release") or "",
+            params.get("artist") or "", params.get("release") or "", clear,
         )
 
-    def _apply_metadata(self, path, fields, embed, artist, release):
+    def _apply_metadata(self, path, fields, embed, artist, release, clear=()):
         """Worker body of Fix tags.
 
         A missing cover no longer refuses the whole write. It used to raise
@@ -1934,12 +2021,26 @@ class CoreHost:
                 art = (data, mime)
             except Exception:                          # noqa: BLE001 - no cover is normal
                 art = None
+        # What is there now, so the reply can offer it back as Undo. If it
+        # cannot be read, no Undo is offered: inventing empty values would make
+        # Undo erase the tags it claims to restore.
         try:
-            enrich.write_tags(path, fields, art)
+            before = enrich.read_tags(path)
+        except Exception:                              # noqa: BLE001 - undo is a bonus
+            before = None
+        try:
+            enrich.write_tags(path, fields, art, clear)
         except Exception as error:                     # noqa: BLE001
             raise CommandError("internal", str(error)) from error
+        touched = [f for f in fields if f in enrich.TAG_FIELDS] + list(clear)
         return {
-            "path": path, "written": len(fields), "artworkEmbedded": art is not None,
+            "path": path,
+            "written": len([f for f in fields if f in enrich.TAG_FIELDS]),
+            "artworkEmbedded": art is not None,
+            "previous": [] if before is None else [
+                {"field": f, "current": str(fields.get(f, "")), "proposed": str(before.get(f) or "")}
+                for f in touched
+            ],
         }
 
     # -- after a download finishes -------------------------------------------
@@ -3463,7 +3564,7 @@ class CoreHost:
             stored.pop(query, None)
         else:
             stored[query] = dict(filters)
-        self._save_state(wish_filters=stored)
+        self._store(wish_filters=stored)
 
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
@@ -3480,7 +3581,7 @@ class CoreHost:
             enabled.add(query)
         else:
             enabled.discard(query)
-        self._save_state(wish_auto=sorted(enabled))
+        self._store(wish_auto=sorted(enabled))
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
         return state
@@ -3513,7 +3614,7 @@ class CoreHost:
                 "path": str(it.get("path") or ""),
                 "status": str(it.get("status") or ""),
             })
-        self._save_state(auto_claims=clean)
+        self._store(auto_claims=clean)
         return {"items": clean}
 
     # -- who has already been sent the upload greeting ----------------------
@@ -3547,24 +3648,30 @@ class CoreHost:
 
     def _cmd_wishlist_remove(self, params):
         query = (params.get("query") or "").strip()
+        wish = self.core.search.wishlist.get(query)
         self.core.search.remove_wish(query)
+        # `remove_wish` keeps the search entry once the wish has run, and with it
+        # the token peers answer on. `remove_search` drops both and emits
+        # remove-search, which closes the run here.
+        if wish is not None:
+            self.core.search.remove_search(wish.token)
         # Otherwise re-adding the same text later silently inherits filters the
         # user last saw months ago — and, worse, starts life believing it has
         # already shown you results you have never seen.
         stored = self._wish_filters()
         if stored.pop(query, None) is not None:
-            self._save_state(wish_filters=stored)
+            self._store(wish_filters=stored)
         seen = self._wish_seen()
         if seen.pop(query, None) is not None:
-            self._save_state(wish_seen=seen)
+            self._store(wish_seen=seen)
         enabled = set(self._wish_auto())
         if query in enabled:
             enabled.discard(query)
-            self._save_state(wish_auto=sorted(enabled))
+            self._store(wish_auto=sorted(enabled))
         claims = self._auto_claims()
         kept = [c for c in claims if c.get("query") != query]
         if len(kept) != len(claims):
-            self._save_state(auto_claims=kept)
+            self._store(auto_claims=kept)
         state = self._wishlist_state()
         self.bridge.broadcast("wishlist.state", state)
         return state
@@ -3640,9 +3747,15 @@ class CoreHost:
 
         removed = already - {path for _virtual, path in resolved}
 
-        self._save_state(share_consent=consent)
         self.config.sections["transfers"]["shared"] = resolved
-        self.config.write_configuration()
+        try:
+            self._store(share_consent=consent)
+            self._persist_config()
+        finally:
+            # The rescan runs even when the save failed: it is what stops a
+            # withdrawn folder being served, and the change is in force now.
+            if self.core.shares is not None:
+                self.core.shares.rescan_shares(force=bool(removed))
 
         # Shares is always running now (see start()), so a consent change takes
         # effect THIS session: re-index to match the new folder set — a granted
@@ -3654,9 +3767,6 @@ class CoreHost:
         # index, still browsable and downloadable by anyone. Forcing drops an
         # unplugged drive's files from the index too — but those requests fail
         # anyway, and a folder you withdrew staying public is the worse error.
-        if self.core.shares is not None:
-            self.core.shares.rescan_shares(force=bool(removed))
-
         state = self._share_state()
         self.bridge.broadcast("shares.state", state)
         return state
@@ -3689,16 +3799,19 @@ class CoreHost:
         except Exception as error:
             raise CommandError("internal", f"import failed: {error}") from error
 
-        if result["importedShares"]:
-            # Importing shares is itself an explicit act of sharing.
-            self._save_state(share_consent="granted")
-
-        self.config.write_configuration()
-        # Shares runs from launch now, so imported folders take effect this
-        # session with a rescan rather than needing a restart.
-        if result["importedShares"] and self.core.shares is not None:
-            self.core.shares.rescan_shares()
-        self.bridge.broadcast("shares.state", self._share_state())
+        try:
+            if result["importedShares"]:
+                # Importing shares is itself an explicit act of sharing.
+                self._store(share_consent="granted")
+            self._persist_config()
+        finally:
+            # Shares runs from launch now, so imported folders take effect this
+            # session with a rescan rather than needing a restart.
+            if result["importedShares"] and self.core.shares is not None:
+                self.core.shares.rescan_shares()
+            self.bridge.broadcast("shares.state", self._share_state())
+            # Account details changed: Settings reads them from app.settings.
+            self.bridge.broadcast("app.settings", self._app_settings())
 
         # Importing credentials writes them to disk but does NOT log in — that
         # was the whole failure: the panel reported success while the app stayed
@@ -3801,8 +3914,11 @@ class CoreHost:
                 continue
             if recurse and path != root and not path.startswith(root + "\\"):
                 continue
-            target = destination or self.core.downloads.get_folder_destination(
-                username, path, root_folder_path=root
+            # Into the chosen folder, but with the release's own folders kept,
+            # as upstream's Download to does (userbrowse.download_folder). This
+            # used to drop every file of every subfolder flat into the target.
+            target = self.core.downloads.get_folder_destination(
+                username, path, root_folder_path=root, download_folder_path=destination or None
             )
             for file in folder["files"]:
                 self.core.downloads.enqueue_download(
@@ -3878,22 +3994,92 @@ class CoreHost:
         if not self.config.sections["server"].get("passw"):
             raise CommandError("bad_request", "no password stored or supplied")
 
-        # Persist so a restart does not lose the login. Neither value is ever
-        # logged, echoed, or returned by any command.
-        self.config.write_configuration()
-
         self._connection.update({"status": "connecting", "error": None})
         self.bridge.broadcast("connection.state", dict(self._connection))
         self.core.connect()
+        # Persist so a restart does not lose the login — after connecting, so
+        # a failed save never stands between you and this session. Neither
+        # value is ever logged, echoed, or returned by any command.
+        self.bridge.broadcast("app.settings", self._app_settings())
+        self._persist_config()
         return {}
 
     def _cmd_connection_disconnect(self, _params):
+        # Signing out means staying out, next launch included: automatic
+        # sign-in used to bring the account straight back. Signing in again
+        # does not turn it back on — the Settings switch is the one control.
         self.core.disconnect()
+        self.config.sections["server"]["auto_connect_startup"] = False
+        self.bridge.broadcast("app.settings", self._app_settings())
+        self._persist_config()
         return {}
+
+    def _user_lists(self):
+        server = self.config.sections["server"]
+        return {
+            "ignored": list(server.get("ignorelist") or []),
+            "banned": list(server.get("banlist") or []),
+        }
+
+    def _on_user_lists_changed(self, _username):
+        self.bridge.broadcast("users.lists", self._user_lists())
+
+    def _cmd_users_lists(self, _params):
+        return self._user_lists()
+
+    def _cmd_users_away(self, params):
+        on, remember = bool(params["on"]), bool(params["remember"])
+        if self.core.users.login_status == self.UserStatus.OFFLINE:
+            # Nothing to tell the server yet; login restores the saved value.
+            if remember:
+                self.config.sections["server"]["away"] = on
+                self._persist_config()
+            return {}
+        # Saved first: a save that fails must leave the status as it was, or
+        # the reply says "didn't work" about an away that already happened.
+        if remember:
+            self.config.sections["server"]["away"] = on
+            self._persist_config()
+        self.core.users.set_away_mode(on, save_state=False)
+        return {}
+
+    def _cmd_users_ignore(self, params):
+        username = params["username"].strip()
+        if not username:
+            raise CommandError("bad_request", "a username is required")
+        if params["on"]:
+            self.core.network_filter.ignore_user(username)
+        else:
+            self.core.network_filter.unignore_user(username)
+        # Upstream writes the config itself and logs a failure; check it.
+        self._persist_config()
+        return self._user_lists()
+
+    def _cmd_users_ban(self, params):
+        username = params["username"].strip()
+        if not username:
+            raise CommandError("bad_request", "a username is required")
+        if params["on"]:
+            self.core.network_filter.ban_user(username)
+        else:
+            self.core.network_filter.unban_user(username)
+        self._persist_config()
+        return self._user_lists()
 
     def _cmd_search_start(self, params):
         self._require_online()
         mode = params.get("mode") or "global"
+        # Upstream quietly substitutes when these are missing — its default
+        # auto-join room, or your own username — so a search would go somewhere
+        # nobody chose. And 'wishlist' is upstream's own timer, not a request.
+        if mode == "wishlist":
+            raise CommandError("bad_request", "wishlist searches are run by the wishlist")
+        if mode == "rooms" and not (params.get("room") or "").strip():
+            raise CommandError("bad_request", "choose a room to search")
+        if mode == "user" and not [u for u in params.get("users") or [] if u.strip()]:
+            raise CommandError("bad_request", "name a user to search")
+        if mode == "buddies" and not self.core.buddies.users:
+            raise CommandError("bad_request", "you have no buddies to search yet")
         before = set(self.core.search.searches)
         self.core.search.do_search(
             params["query"], mode,
@@ -4058,6 +4244,42 @@ class CoreHost:
         if items["upload"] and self.core.uploads is not None:
             self.core.uploads.clear_uploads(items["upload"])
         return {}
+
+    @staticmethod
+    def _on_missing_volume(folder):
+        """True when `folder` is gone because its drive is: the nearest part of
+        the path that still exists is the root or /Volumes itself."""
+        parent = folder
+        while parent and not os.path.exists(parent):
+            parent = os.path.dirname(parent)
+        return parent in ("", os.sep, "/Volumes")
+
+    def _download_present(self, download, folder):
+        """By NAME. Upstream saves a clashing name as `name (1).ext`
+        (`avoid_conflict`), so those are tried too; never by size, which Seek's
+        own tag writing changes."""
+        name = self.core.downloads.get_download_basename(download.virtual_path, folder)
+        stem, ext = os.path.splitext(name)
+        candidates = [name] + [f"{stem} ({n}){ext}" for n in range(1, 10)]
+        return any(
+            os.path.isfile(self._follow_move(os.path.join(folder, c))) for c in candidates
+        )
+
+    def _cmd_transfer_findMissing(self, _params):
+        root = self._download_root()
+        missing = []
+        for download in list(self.core.downloads.transfers.values()):
+            if translate.transfer_state(download.status) != "finished":
+                continue
+            folder = self._resolve_path(download.folder_path) or root
+            if not folder or self._on_missing_volume(folder):
+                continue
+            if not self._download_present(download, folder):
+                record = self.transfers.record_for(
+                    "download", download.username, download.virtual_path
+                )
+                missing.append(record.id)
+        return {"transferIds": missing}
 
     def _cmd_transfer_list(self, _params):
         return {"transfers": self._transfer_snapshot()}
@@ -4340,8 +4562,8 @@ class CoreHost:
         # obvious fix at exactly the wrong thing: making `target` nullable would
         # start rendering messages from people you have ignored.
         #
-        # `_on_user_status` and `_on_room_user_change` already do this; these
-        # two handlers were simply missed.
+        # `_on_user_status` and the room join/leave handlers already do this;
+        # these two handlers were simply missed.
         if msg.user is None:
             return
 
@@ -4362,26 +4584,48 @@ class CoreHost:
     def _on_private_echo(self, user, text, message_type):
         self.bridge.broadcast("chat.message", self._echo_line("private", user, text, message_type))
 
+    def _member(self, username):
+        """What upstream knows about someone in a room: it records status and
+        share counts from the server's room data (chatrooms._update_room_user)."""
+        watched = self.core.users.watched.get(username)
+        files = getattr(watched, "files", None)
+        return {
+            "username": username,
+            "status": translate.user_status(self.core.users.statuses.get(username)),
+            "files": int(files) if files is not None else None,
+        }
+
     def _on_join_room(self, msg):
-        self._emit_members(msg.room, [u.username for u in (msg.users or [])])
+        # The server can send a join we never asked for; upstream refuses it
+        # (chatrooms._join_room) without nulling the room, so check here.
+        if msg.room not in (self.core.chatrooms.joined_rooms or {}):
+            return
+        self.bridge.broadcast("chat.members", {
+            "room": msg.room,
+            "members": [self._member(u.username) for u in (msg.users or [])],
+        })
         self._emit_rooms()
 
     def _on_leave_room(self, msg):
         self._emit_rooms()
 
-    def _on_room_user_change(self, msg):
-        room = getattr(msg, "room", None)
-        if not room:
+    def _on_user_joined_room(self, msg):
+        # Upstream nulls `room` for a room we are not in.
+        if not getattr(msg, "room", None) or msg.userdata is None:
             return
-        users = self.core.chatrooms.joined_rooms.get(room)
-        names = sorted(users.users) if users and getattr(users, "users", None) else []
-        self._emit_members(room, names)
+        self.bridge.broadcast("chat.member", {
+            "room": msg.room, "member": self._member(msg.userdata.username), "present": True,
+        })
+
+    def _on_user_left_room(self, msg):
+        if not getattr(msg, "room", None) or not msg.username:
+            return
+        self.bridge.broadcast("chat.member", {
+            "room": msg.room, "member": self._member(msg.username), "present": False,
+        })
 
     def _on_room_list(self, msg):
         self._emit_rooms(msg)
-
-    def _emit_members(self, room, names):
-        self.bridge.broadcast("chat.members", {"room": room, "users": list(names)})
 
     def _emit_rooms(self, msg=None):
         joined = set(getattr(self.core.chatrooms, "joined_rooms", {}) or {})
@@ -4490,6 +4734,19 @@ class CoreHost:
     def _cmd_chat_open(self, params):
         self._require_online()
         self.core.privatechat.show_user(params["username"], switch_page=False)
+        return {}
+
+    def _cmd_chat_close(self, params):
+        username = params["username"]
+        privatechat = self.core.privatechat
+        # `remove_user` raises for a name it does not hold, and the app opens
+        # a conversation locally even when chat.open failed.
+        if username in privatechat.users:
+            privatechat.remove_user(username)
+        return {}
+
+    def _cmd_chat_closeAll(self, _params):
+        self.core.privatechat.remove_all_users()
         return {}
 
     def _cmd_chat_history(self, params):
@@ -4693,18 +4950,38 @@ class CoreHost:
                 transfers[limit_key] = max(1, value // KIB)
 
         if patch.get("stallSeconds") is not None:
+            # Applied now; saved below, after the config, so a failed save of
+            # this one value cannot strand the rest of the patch.
             self.transfers.stall_seconds = max(1, int(patch["stallSeconds"]))
-            # Saved, not just set: it lived only on the registry, so every
-            # restart quietly put it back to 45 s.
-            self._save_state(stall_seconds=self.transfers.stall_seconds)
 
         mapping = patch.get("portMapping")
         if mapping is not None:
             server["upnp"] = bool(mapping)
 
+        # Upload policy. Upstream reads every one of these at the moment it
+        # decides, so they need no restart.
+        for wire_key, config_key in (
+            ("preferBuddies", "preferfriends"),
+            ("fifoQueue", "fifoqueue"),
+            ("buddiesUnlimited", "friendsnolimits"),
+        ):
+            if patch.get(wire_key) is not None:
+                transfers[config_key] = bool(patch[wire_key])
+        for wire_key, config_key in (
+            ("queueLimitFiles", "filelimit"),
+            ("queueLimitMb", "queuelimit"),
+        ):
+            if patch.get(wire_key) is not None:
+                transfers[config_key] = max(0, int(patch[wire_key]))
+
+        if patch.get("autoAwayMinutes") is not None:
+            server["autoaway"] = max(0, int(patch["autoAwayMinutes"]))
+        if patch.get("autoReply") is not None:
+            server["autoreply"] = str(patch["autoReply"]).strip()
+
         self.core.downloads.update_transfer_limits()
         self.core.uploads.update_transfer_limits()
-        self.config.write_configuration()
+        self._persist_config()
 
         # Apply now rather than at the next login. Both calls hand the work to a
         # thread of upstream's own, so a slow router never stalls this loop, and
@@ -4715,6 +4992,10 @@ class CoreHost:
                 portmapper.add_port_mapping()
             else:
                 portmapper.remove_port_mapping()
+        if patch.get("stallSeconds") is not None:
+            # Saved, not just set: it lived only on the registry, so every
+            # restart quietly put it back to 45 s.
+            self._store(stall_seconds=self.transfers.stall_seconds)
         return {"settings": self._read_settings()}
 
     def _read_settings(self):
@@ -4742,6 +5023,13 @@ class CoreHost:
             "autoConnect": bool(server.get("auto_connect_startup")),
             "stallSeconds": int(self.transfers.stall_seconds),
             "portMapping": bool(server.get("upnp")),
+            "autoAwayMinutes": int(server.get("autoaway") or 0),
+            "autoReply": str(server.get("autoreply") or ""),
+            "preferBuddies": bool(transfers.get("preferfriends")),
+            "fifoQueue": bool(transfers.get("fifoqueue")),
+            "queueLimitFiles": int(transfers.get("filelimit") or 0),
+            "queueLimitMb": int(transfers.get("queuelimit") or 0),
+            "buddiesUnlimited": bool(transfers.get("friendsnolimits")),
         }
 
 

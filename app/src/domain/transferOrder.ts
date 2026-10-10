@@ -27,10 +27,20 @@ import type { TransferGroup } from '../data/transferStore.ts';
  * on screen. Caught by driving it.
  */
 export function displayName(g: TransferGroup): string {
+  const known = names.get(g);
+  if (known !== undefined) return known;
   const first = g.transfers[0];
-  if (!first) return g.title;
-  return parsePath(first.path).release?.value || g.title;
+  const name = first ? parsePath(first.path).release?.value || g.title : g.title;
+  names.set(g, name);
+  return name;
 }
+
+/* Parsed once per group object. The store keeps a group's object while nothing
+ * in it changes, so a sort of 700 releases stopped re-parsing two paths per
+ * comparison, every render. */
+const names = new WeakMap<TransferGroup, string>();
+/* One collator: a bare localeCompare builds a fresh one on every call. */
+const collate = new Intl.Collator().compare;
 
 export type SortKey = 'default' | 'name' | 'peer' | 'size' | 'progress' | 'recent';
 
@@ -89,14 +99,14 @@ function finishedAt(g: TransferGroup): number {
 
 function compare(a: TransferGroup, b: TransferGroup, key: SortKey): number {
   switch (key) {
-    case 'name': return displayName(a).localeCompare(displayName(b));
-    case 'peer': return a.username.localeCompare(b.username)
-      || displayName(a).localeCompare(displayName(b));
+    case 'name': return collate(displayName(a), displayName(b));
+    case 'peer': return collate(a.username, b.username)
+      || collate(displayName(a), displayName(b));
     case 'size': return a.size - b.size;
     case 'progress': return completion(a) - completion(b);
     case 'recent': return finishedAt(a) - finishedAt(b);
     default: return ATTENTION[a.state] - ATTENTION[b.state]
-      || displayName(a).localeCompare(displayName(b));
+      || collate(displayName(a), displayName(b));
   }
 }
 
@@ -114,7 +124,7 @@ export function sortGroups(
   const out = [...groups];
   out.sort((a, b) => {
     const n = compare(a, b, key);
-    const tied = n === 0 ? displayName(a).localeCompare(displayName(b)) : n;
+    const tied = n === 0 ? collate(displayName(a), displayName(b)) : n;
     return descending ? -tied : tied;
   });
   return out;

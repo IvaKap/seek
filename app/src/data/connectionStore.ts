@@ -20,7 +20,7 @@
  * the single search field did before tabs existed.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createMockSidecar } from './mockSidecar.ts';
 import {
   createSidecarClient, isTauri, requestTauriEndpoint, resolveSidecarEndpoint,
@@ -28,6 +28,10 @@ import {
 } from './sidecarClient.ts';
 import type { ConnectionPhase, SidecarClient } from './sidecarClient.ts';
 import type { Sidecar } from './mockSidecar.ts';
+import { showNotice } from './failures.ts';
+
+/** The shortest time between two rebuilds of the client after reconnects. */
+const REBUILD_GAP_MS = 10_000;
 
 export interface SidecarConnection {
   /** Socket state. 'closed' with a null client means deliberate offline/mock. */
@@ -67,6 +71,32 @@ export function useSidecarConnection(): SidecarConnection {
     return () => { cancelled = true; };
   }, [endpoint]);
 
+  /* The shell restarts a sidecar that crashed (`supervise` in lib.rs) and
+   * announces the new port and token with a DOM event. A new endpoint is a new
+   * client, and every store that reads on `client` reads again. */
+  useEffect(() => {
+    const restarted = () => {
+      const next = window.__SEEK_SIDECAR__;
+      if (!next?.host || !next.port || !next.token) return;
+      setEndpoint({ ...next });
+      setStartupError(null);
+      showNotice('The engine stopped unexpectedly. Seek restarted it.');
+    };
+    const failed = (e: Event) => {
+      const why = String((e as CustomEvent).detail ?? '');
+      setStartupError(why);
+      showNotice(why);
+    };
+    window.addEventListener('seek-sidecar-restarted', restarted);
+    window.addEventListener('seek-sidecar-failed', failed);
+    return () => {
+      window.removeEventListener('seek-sidecar-restarted', restarted);
+      window.removeEventListener('seek-sidecar-failed', failed);
+    };
+  }, []);
+
+  const lastRebuild = useRef(0);
+
   const [client, sidecar] = useMemo(() => {
     if (!endpoint) return [null, createMockSidecar()] as const;
     const real = createSidecarClient(endpoint);
@@ -78,7 +108,28 @@ export function useSidecarConnection(): SidecarConnection {
 
   useEffect(() => {
     if (!client) return;
-    const offPhase = client.onPhase(setPhase);
+    /* A socket that drops and comes back reconnects on its own, but the stores
+     * read once per client: transfers, settings and claims would stay as they
+     * were before the drop. Re-opening as a NEW client makes every one of them
+     * read again, with no list of stores here to keep in step. */
+    let wasOpen = false;
+    let timer = 0;
+    const offPhase = client.onPhase((p) => {
+      setPhase(p);
+      if (p !== 'open') return;
+      if (wasOpen) {
+        // At most one rebuild per REBUILD_GAP_MS: a socket that keeps dropping
+        // would otherwise re-read everything, the library index included, on
+        // every flap.
+        const wait = Math.max(0, lastRebuild.current + REBUILD_GAP_MS - Date.now());
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => {
+          lastRebuild.current = Date.now();
+          setEndpoint((e) => (e ? { ...e } : e));
+        }, wait);
+      }
+      wasOpen = true;
+    });
     // The socket being open says nothing about whether we are logged in to
     // Soulseek — that is a separate state, and searching before it is ready
     // returns `not_connected`. Track it so the UI can be honest.
@@ -92,6 +143,7 @@ export function useSidecarConnection(): SidecarConnection {
     return () => {
       offPhase();
       offState();
+      window.clearTimeout(timer);
     };
   }, [client]);
 

@@ -28,6 +28,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
+import { readUntilAnswered } from './failures.ts';
 import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchResultData } from './adapt.ts';
 import { createGrouper } from '../domain/group.ts';
@@ -35,8 +36,11 @@ import { reliabilityFrom } from '../domain/score.ts';
 import { idsOf, splitSeen } from '../domain/wishSeen.ts';
 import type { Release, SourceFile } from '../domain/types.ts';
 
-/** Per wish, so one popular query cannot crowd out the rest. */
-const PER_WISH_CAP = 400;
+/** Per wish, so one popular query cannot crowd out the rest. It is first come,
+ *  first kept — the quickest peers, not the best copies — so it is set well
+ *  above what a wish normally finds (it was 400, which big wishes reached), and
+ *  matched by the sidecar's memory of what you have seen (`WISH_SEEN_CAP`). */
+const PER_WISH_CAP = 1000;
 
 export interface WishHit {
   query: string;
@@ -92,10 +96,8 @@ export function useWishHits(client: SidecarClient | null): WishHits {
     /* Asked for once, not carried on `wishlist.state`: that event fires
        whenever the list or the interval changes, and this is a few thousand
        hashes. The app is the only writer, so one read is enough. */
-    let live = true;
-    void client.request<{ items: { query: string; ids: string[] }[] }>('wishlist.seenList')
-      .then((r) => {
-        if (!live) return;
+    const stopSeen = readUntilAnswered<{ items: { query: string; ids: string[] }[] }>(
+      client, 'wishlist.seenList', undefined, (r) => {
         for (const item of r.items) {
           // MERGE, never replace: a run that landed before this reply came
           // back has already recorded what it marked.
@@ -103,8 +105,28 @@ export function useWishHits(client: SidecarClient | null): WishHits {
           for (const id of item.ids) set.add(id);
           seen.current.set(item.query, set);
         }
-      })
-      .catch(() => { /* An unreadable seen-set means everything reads as new. */ });
+      },
+    );
+
+    /* A removed wish takes its results and its badge with it. Watching the
+       list, rather than each place that removes one (the Wishlist screen,
+       approving an auto-download), covers them all. */
+    const offList = client.on('wishlist.state', (d) => {
+      const kept = new Set((d as { items: { query: string }[] }).items.map((w) => w.query));
+      for (const query of [...groupers.current.keys()]) {
+        if (kept.has(query)) continue;
+        groupers.current.delete(query);
+        seen.current.delete(query);
+        seenAtRunStart.current.delete(query);
+      }
+      setByQuery((prev) => {
+        const gone = Object.keys(prev).filter((q) => !kept.has(q));
+        if (gone.length === 0) return prev;
+        const next = { ...prev };
+        for (const q of gone) delete next[q];
+        return next;
+      });
+    });
 
     const offStarted = client.on('search.started', (d) => {
       const ev = d as StartedEvent;
@@ -169,7 +191,7 @@ export function useWishHits(client: SidecarClient | null): WishHits {
       }));
     });
 
-    return () => { live = false; offStarted(); offResult(); };
+    return () => { stopSeen(); offList(); offStarted(); offResult(); };
   }, [client]);
 
   /* You looked, so none of this is news any more — including the repeats,

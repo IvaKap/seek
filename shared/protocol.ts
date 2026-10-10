@@ -896,6 +896,12 @@ export interface LibraryGaps {
 
   /** The full official track list, marked. */
   tracks: LibraryGap[];
+
+  /**
+   * MusicBrainz could not be reached. Not the same as no match: an outage is
+   * worth retrying, an unknown release is not.
+   */
+  lookupFailed: boolean;
 }
 
 export interface LibraryOwned {
@@ -1015,6 +1021,18 @@ export interface MetadataProposal {
 
   /** Only fields that would actually change. */
   changes: TagChange[];
+
+  /**
+   * MusicBrainz could not be reached, so `matched: false` means nothing about
+   * the release.
+   */
+  lookupFailed: boolean;
+
+  /**
+   * The release came with an `.md5`, which covers the whole file: any tag
+   * change breaks it. (An `.ffp` hashes the audio alone and survives.)
+   */
+  md5Sibling: boolean;
 }
 
 export interface MetadataApplyParams {
@@ -1022,6 +1040,12 @@ export interface MetadataApplyParams {
 
   /** The subset the user accepted. */
   fields: TagChange[];
+
+  /**
+   * Fields to remove outright. Only Undo uses it, to empty a field that was
+   * empty before. Null clears nothing.
+   */
+  clear: string[] | null;
 
   /** Also write the cover into the file. */
   embedArtwork: boolean;
@@ -1037,6 +1061,13 @@ export interface MetadataApplyResult {
   path: string;
   written: number;
   artworkEmbedded: boolean;
+
+  /**
+   * What each written field held before, as `proposed` with `current` the
+   * value just written — so applying them back is Undo. Text tags only:
+   * replaced artwork is not kept.
+   */
+  previous: TagChange[];
 }
 
 /** One track in a release's expected tracklist, as the source gives it. */
@@ -2611,6 +2642,49 @@ export interface Settings {
    * peer who is also behind a router cannot reach us at all.
    */
   portMapping: boolean | null;
+
+  /**
+   * Minutes without input before the app sets away. 0 = never. Upstream's
+   * `server.autoaway`; the frontend does the timing, because only it can see
+   * input.
+   */
+  autoAwayMinutes: number | null;
+
+  /**
+   * Sent once to each user who messages you while you are away. Empty = none.
+   * Upstream's `server.autoreply`.
+   */
+  autoReply: string | null;
+
+  /**
+   * Buddies go to the front of the upload queue. Upstream's
+   * `transfers.preferfriends`.
+   */
+  preferBuddies: boolean | null;
+
+  /**
+   * Serve uploads first come, first served instead of one file per user in
+   * turn. Upstream's `transfers.fifoqueue`.
+   */
+  fifoQueue: boolean | null;
+
+  /**
+   * Most files one user may queue from you. 0 = no limit. Upstream's
+   * `transfers.filelimit`.
+   */
+  queueLimitFiles: number | null;
+
+  /**
+   * Most megabytes one user may queue from you. 0 = no limit. Upstream's
+   * `transfers.queuelimit`.
+   */
+  queueLimitMb: number | null;
+
+  /**
+   * The two limits above do not apply to buddies. Upstream's
+   * `transfers.friendsnolimits`.
+   */
+  buddiesUnlimited: boolean | null;
 }
 
 /** Current server connection. */
@@ -3190,12 +3264,37 @@ export interface ChatRoomList {
   rooms: ChatRoom[];
 }
 
-/** Who is in a room. Emitted on join and as people come and go. */
+/** One person in a room, with what the server told us about them. */
+export interface ChatRoomMember {
+  username: string;
+  status: UserStatus;
+
+  /** How many files they share. Null when unknown. */
+  files: number | null;
+}
+
+/**
+ * Who is in a room, sent once when we join. Comings and goings follow as
+ * `chat.member`, so a busy room does not resend everyone each time.
+ */
 export interface ChatRoomMembers {
   room: string;
 
-  /** Usernames, unsorted — ordering is the UI's job. */
-  users: string[];
+  /** Unsorted — ordering is the UI's job. */
+  members: ChatRoomMember[];
+}
+
+/** Someone joined or left a room we are in. */
+export interface ChatMemberChange {
+  room: string;
+  member: ChatRoomMember;
+
+  /** True on join, false on leave. */
+  present: boolean;
+}
+
+export interface ChatCloseParams {
+  username: string;
 }
 
 export interface ChatJoinParams {
@@ -3312,6 +3411,34 @@ export interface ShareSetParams {
 export interface ShareRescanParams {
   /** Rescan even if upstream believes the index is current. */
   force: boolean | null;
+}
+
+/**
+ * Who you ignore and who you ban. Ignored users' chat and private messages are
+ * dropped; banned users cannot download from you. Upstream's
+ * `server.ignorelist` and `server.banlist`.
+ */
+export interface UserLists {
+  ignored: string[];
+  banned: string[];
+}
+
+/** Show as away, or back. The current status arrives on `connection.state`. */
+export interface AwayParams {
+  on: boolean;
+
+  /**
+   * Keep it across restarts (upstream's `server.away`). True when the user
+   * chose it; false for auto-away, which must not outlive the idle spell that
+   * caused it.
+   */
+  remember: boolean;
+}
+
+/** Turn ignore or ban on or off for one user. */
+export interface UserFlagParams {
+  username: string;
+  on: boolean;
 }
 
 /**
@@ -3522,6 +3649,14 @@ export interface CommandParams {
   'transfer.retry': TransferIdsParams;
   /** Forget downloads entirely (does not delete files). */
   'transfer.clear': TransferIdsParams;
+  /**
+   * Finished downloads whose file is no longer on disk. A read: the app clears
+   * them with transfer.clear, leaving out anything awaiting review. Matched by
+   * name — upstream's own check matches the size too, and Seek's tag writing
+   * changes it. A file on a drive that is not mounted is never reported: an
+   * unplugged drive is not a deleted file.
+   */
+  'transfer.findMissing': Record<string, never>;
   /** Snapshot of every known transfer, both directions. */
   'transfer.list': Record<string, never>;
   /** Queue a post-download spectral analysis. Returns immediately. */
@@ -3545,6 +3680,13 @@ export interface CommandParams {
   'chat.say': ChatSayParams;
   /** Open a private conversation without sending anything. */
   'chat.open': ChatOpenParams;
+  /**
+   * Close a private conversation. Not a block: their next message opens it
+   * again, with its history.
+   */
+  'chat.close': ChatCloseParams;
+  /** Close every private conversation. */
+  'chat.closeAll': Record<string, never>;
   /**
    * Earlier lines of a conversation, read from the log Nicotine+ keeps on
    * disk, so a restart does not wipe every conversation.
@@ -3642,6 +3784,8 @@ export interface CommandParams {
   'peers.stats': Record<string, never>;
   /** Index size and when it was last built. */
   'library.state': Record<string, never>;
+  /** Stop a library scan at the next folder. The index from before stands. */
+  'library.cancel': Record<string, never>;
   /**
    * Rebuild the index by walking the download folder and any extra roots. Runs
    * on a worker; progress arrives as `library.state` events.
@@ -3874,6 +4018,14 @@ export interface CommandParams {
    * anything else on a client's word.
    */
   'fs.open': RevealParams;
+  /** Who you ignore and ban. */
+  'users.lists': Record<string, never>;
+  /** Set or clear away. */
+  'users.away': AwayParams;
+  /** Ignore a user, or stop. Replies with both lists. */
+  'users.ignore': UserFlagParams;
+  /** Ban a user, or lift it. Replies with both lists. */
+  'users.ban': UserFlagParams;
 }
 
 export interface CommandResult {
@@ -3892,6 +4044,7 @@ export interface CommandResult {
   'transfer.cancel': Record<string, never>;
   'transfer.retry': Record<string, never>;
   'transfer.clear': Record<string, never>;
+  'transfer.findMissing': TransferIdsParams;
   'transfer.list': TransferListResult;
   'analysis.spectral': SpectralRequestResult;
   'analysis.checksums': ChecksumRequestResult;
@@ -3900,6 +4053,8 @@ export interface CommandResult {
   'chat.leave': Record<string, never>;
   'chat.say': Record<string, never>;
   'chat.open': Record<string, never>;
+  'chat.close': Record<string, never>;
+  'chat.closeAll': Record<string, never>;
   'chat.history': ChatHistory;
   'wishlist.add': WishlistState;
   'wishlist.remove': WishlistState;
@@ -3924,6 +4079,7 @@ export interface CommandResult {
   'app.settings.patch': AppSettings;
   'peers.stats': PeerHistory;
   'library.state': LibraryState;
+  'library.cancel': LibraryState;
   'library.scan': LibraryState;
   'library.releases': LibraryReleases;
   'library.gaps': RequestAccepted;
@@ -3985,6 +4141,10 @@ export interface CommandResult {
   'fs.ensureFolder': PathCheck;
   'fs.reveal': Record<string, never>;
   'fs.open': Record<string, never>;
+  'users.lists': UserLists;
+  'users.away': Record<string, never>;
+  'users.ignore': UserLists;
+  'users.ban': UserLists;
 }
 
 export type CommandName = keyof CommandParams;
@@ -4005,6 +4165,7 @@ export const COMMAND_NAMES = [
   'transfer.cancel',
   'transfer.retry',
   'transfer.clear',
+  'transfer.findMissing',
   'transfer.list',
   'analysis.spectral',
   'analysis.checksums',
@@ -4013,6 +4174,8 @@ export const COMMAND_NAMES = [
   'chat.leave',
   'chat.say',
   'chat.open',
+  'chat.close',
+  'chat.closeAll',
   'chat.history',
   'wishlist.add',
   'wishlist.remove',
@@ -4037,6 +4200,7 @@ export const COMMAND_NAMES = [
   'app.settings.patch',
   'peers.stats',
   'library.state',
+  'library.cancel',
   'library.scan',
   'library.releases',
   'library.gaps',
@@ -4098,6 +4262,10 @@ export const COMMAND_NAMES = [
   'fs.ensureFolder',
   'fs.reveal',
   'fs.open',
+  'users.lists',
+  'users.away',
+  'users.ignore',
+  'users.ban',
 ] as const satisfies readonly CommandName[];
 
 /* --------------------------------------------------------- event tables */
@@ -4119,6 +4287,8 @@ export interface EventPayload {
   'user.stats': PeerStats;
   /** A peer's presence changed. */
   'user.status': UserStatusEvent;
+  /** The ignore or ban list changed, from Seek or a slash command. */
+  'users.lists': UserLists;
   /** A peer's share list arrived. */
   'user.browse.result': UserBrowseResultEvent;
   /** A share list request failed. */
@@ -4161,8 +4331,10 @@ export interface EventPayload {
   'chat.message': ChatMessage;
   /** The room list changed. */
   'chat.rooms': ChatRoomList;
-  /** A room's membership changed. */
+  /** Who was in a room when we joined it. */
   'chat.members': ChatRoomMembers;
+  /** Someone joined or left a room. */
+  'chat.member': ChatMemberChange;
   /** Share configuration or scan state changed. */
   'shares.state': ShareState;
   /** The wishlist or its interval changed. */
@@ -4260,6 +4432,7 @@ export const EVENT_NAMES = [
   'search.failed',
   'user.stats',
   'user.status',
+  'users.lists',
   'user.browse.result',
   'user.browse.failed',
   'user.info.result',
@@ -4277,6 +4450,7 @@ export const EVENT_NAMES = [
   'chat.message',
   'chat.rooms',
   'chat.members',
+  'chat.member',
   'shares.state',
   'wishlist.state',
   'buddies.state',

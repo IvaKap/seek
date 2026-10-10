@@ -12,7 +12,7 @@
  * thing the brief says destroys the calm.
  */
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed, isTerminal } from '../data/transferStore.ts';
 import { ContextMenu } from './ContextMenu.tsx';
@@ -558,10 +558,7 @@ function TableRow({
   );
 }
 
-function Group({
-  g, session, analysis, checksums, client, preview, density, filter, discovery,
-  open, onOpenChange, selected, onFileSelect, onFileContext, pictures,
-}: {
+interface GroupProps {
   g: TransferGroup;
   session: TransferSession;
   analysis: AnalysisSession;
@@ -575,14 +572,33 @@ function Group({
      exist while every row owns its own secret — one control has to be able to
      speak for all of them. */
   open: boolean;
-  onOpenChange(next: boolean): void;
+  onOpenChange(key: string, next: boolean): void;
   /** The whole view's file selection, and the two gestures that change it. */
   selected: ReadonlySet<string>;
   onFileSelect(id: string, order: string[], mods: Mods): void;
   onFileContext(t: Transfer, e: React.MouseEvent): void;
   pictures: PeerPictureCache;
-}) {
-  const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(fn(open));
+}
+
+/* A release row redraws when something it shows changed: its own group (the
+ * store keeps the object while nothing in it moves), its open state, ITS part
+ * of the selection, or one of the stores it reads. The session is left out on
+ * purpose — it is a new object per render, and the only things a row takes
+ * from it are actions, which do not change behaviour between renders. */
+function sameRow(a: GroupProps, b: GroupProps): boolean {
+  for (const key of Object.keys(b) as (keyof GroupProps)[]) {
+    if (key === 'session' || key === 'selected') continue;
+    if (a[key] !== b[key]) return false;
+  }
+  return a.selected === b.selected
+    || b.g.transfers.every((t) => a.selected.has(t.id) === b.selected.has(t.id));
+}
+
+const Group = memo(function Group({
+  g, session, analysis, checksums, client, preview, density, filter, discovery,
+  open, onOpenChange, selected, onFileSelect, onFileContext, pictures,
+}: GroupProps) {
+  const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(g.key, fn(open));
   /** Whether the Related shelf is showing for this release. */
   const [related, setRelated] = useState(false);
   /** Whether the checksum report is showing. Separate from Related: they are
@@ -761,7 +777,7 @@ function Group({
       {relatedPanel && <div className="dl__detail">{relatedPanel}</div>}
     </div>
   );
-}
+}, sameRow);
 
 /**
  * The cover and the real name, for a row you are REVIEWING rather than watching.
@@ -989,8 +1005,13 @@ export function DownloadsView({
     [session],
   );
 
+  /* Read through a ref so the callback keeps one identity: every release row
+     receives it, and a new one per selection change redrew all of them. */
+  const latest = useRef({ selected, allById, buildFileMenu });
+  latest.current = { selected, allById, buildFileMenu };
   const onFileContext = useCallback((t: Transfer, e: React.MouseEvent) => {
     e.preventDefault();
+    const { selected, allById, buildFileMenu } = latest.current;
     // Right-click inside a multi-selection acts on the whole selection; elsewhere
     // it selects just that row first, so the menu always matches what is lit.
     let ids: string[];
@@ -1006,7 +1027,7 @@ export function DownloadsView({
     if (items.length === 0) return;
     const title = targets.length > 1 ? `${targets.length} files` : fileName(targets[0].path);
     setMenu({ x: e.clientX, y: e.clientY, title, items });
-  }, [selected, allById, buildFileMenu]);
+  }, []);
 
   /* Grid is for picking through a pile of records you already have or already
      lost. While a download is running the useful information is progress and
@@ -1049,7 +1070,16 @@ export function DownloadsView({
     }
   }, [awaiting, analysis]);
 
-  const lens = session.groups.filter((g) => (
+  /* A coarse clock for the Completed date windows and sections: with the
+     lists memoised, nothing else would move a release from "This week" to
+     "Older" in an app left open for days. */
+  const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const t = window.setInterval(() => setMinute(Math.floor(Date.now() / 60_000)), 60_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const lens = useMemo(() => session.groups.filter((g) => (
     /* A given-up group is excluded from 'active' by having its own state, and
      * joins Failed below. It is not a failure — nothing refused it and nothing
      * errored — but Failed is where you go to deal with downloads that are not
@@ -1060,7 +1090,7 @@ export function DownloadsView({
       : filter === 'finished' ? g.state === 'finished' && !g.transfers.every((t) => awaitingIds.has(t.id))
         // Cancelled sits with Failed: it did not complete, and it can be retried.
         : g.state === 'failed' || g.state === 'cancelled' || g.state === 'stalled'
-  ));
+  )), [session.groups, filter, awaitingIds]);
 
   const groups = useMemo(
     () => sortGroups(
@@ -1070,7 +1100,7 @@ export function DownloadsView({
       sort, descending,
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lens, query, sort, descending, finishedWindow, filter],
+    [lens, query, sort, descending, finishedWindow, filter, minute],
   );
 
   /* Completed splits into labelled sections (date / who / format); every other
@@ -1079,7 +1109,8 @@ export function DownloadsView({
     () => (filter === 'finished'
       ? completedSections(groups, completedGroupBy, Date.now())
       : [{ key: '_all', label: '', groups }]),
-    [filter, groups, completedGroupBy],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filter, groups, completedGroupBy, minute],
   );
 
   /* Counted off the FILTERED list, so the subtitle describes what is on screen.
@@ -1093,6 +1124,12 @@ export function DownloadsView({
      section, not one release. */
   const failedIds = filter === 'failed'
     ? groups.flatMap((g) => g.transfers.map((t) => t.id))
+    : [];
+  /* The same for Completed, minus anything an auto-download is holding for
+     review: clearing that transfer would leave its review card pointing at
+     nothing. */
+  const finishedIds = filter === 'finished'
+    ? groups.flatMap((g) => g.transfers.filter((t) => !awaitingIds.has(t.id)).map((t) => t.id))
     : [];
 
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);
@@ -1165,6 +1202,26 @@ export function DownloadsView({
             onClick={() => session.clear(failedIds)}
           >
             Clear {integer(failedIds.length)} failed
+          </button>
+        )}
+        {filter === 'finished' && finishedIds.length > 0 && (
+          <button
+            type="button"
+            className="btn pressable"
+            title="Remove these finished downloads from the list. The files stay where they are."
+            onClick={() => session.clear(finishedIds)}
+          >
+            Clear {integer(finishedIds.length)} finished
+          </button>
+        )}
+        {filter === 'finished' && lens.length > 0 && (
+          <button
+            type="button"
+            className="btn pressable"
+            title="Forget finished downloads whose files have been moved or deleted. Nothing on disk is touched, and files on an unplugged drive are left alone."
+            onClick={() => session.forgetMissing(awaitingIds)}
+          >
+            Forget missing files
           </button>
         )}
         {lens.length > 0 && (
@@ -1317,7 +1374,7 @@ export function DownloadsView({
                   filter={filter}
                   discovery={discovery}
                   open={openKeys.has(g.key)}
-                  onOpenChange={(next) => setOpenFor(g.key, next)}
+                  onOpenChange={setOpenFor}
                   selected={selected}
                   onFileSelect={onFileSelect}
                   onFileContext={onFileContext}

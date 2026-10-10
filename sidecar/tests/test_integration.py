@@ -35,6 +35,13 @@ TOKEN = "integration-token"
 USER_NICOTINE_CONFIG = os.path.expanduser("~/.config/nicotine/config")
 
 
+# Every Settings key must be present in a patch; null leaves it alone.
+POLICY_UNSET = {
+    "autoAwayMinutes": None, "autoReply": None, "preferBuddies": None,
+    "fifoQueue": None, "queueLimitFiles": None, "queueLimitMb": None,
+    "buddiesUnlimited": None,
+}
+
 @pytest.fixture(scope="module")
 def app_folder():
     folder = tempfile.mkdtemp(prefix="seek-itest-")
@@ -180,7 +187,7 @@ async def test_settings_round_trip_through_real_config(host, client):
     patch = {"uploadSlots": 7, "maxDownloadSpeed": 2_097_152,
              "stallSeconds": 90, "downloadFolder": None,
              "incompleteFolder": None, "listenPort": None,
-             "maxUploadSpeed": None, "autoConnect": None, "portMapping": None}
+             "maxUploadSpeed": None, "autoConnect": None, "portMapping": None, **POLICY_UNSET}
     reply = await call(host, client, "settings.patch", {"settings": patch})
     assert reply["ok"] is True
     after = reply["result"]["settings"]
@@ -192,6 +199,26 @@ async def test_settings_round_trip_through_real_config(host, client):
     assert host.config.sections["transfers"]["downloadlimit"] == 2048
     assert host.config.sections["transfers"]["use_download_speed_limit"] == "primary"
     assert after["maxDownloadSpeed"] == 2_097_152
+
+
+async def test_upload_policy_and_away_settings_round_trip(host, client):
+    blank = {"downloadFolder": None, "incompleteFolder": None, "listenPort": None,
+             "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
+             "autoConnect": None, "stallSeconds": None, "portMapping": None, **POLICY_UNSET}
+    patch = {**blank, "preferBuddies": True, "fifoQueue": True, "queueLimitFiles": 0,
+             "queueLimitMb": 500, "buddiesUnlimited": True, "autoAwayMinutes": 20,
+             "autoReply": "  back soon  "}
+    reply = await call(host, client, "settings.patch", {"settings": patch})
+    assert reply["ok"] is True, reply
+    got = reply["result"]["settings"]
+    assert (got["preferBuddies"], got["fifoQueue"], got["queueLimitFiles"],
+            got["queueLimitMb"], got["buddiesUnlimited"]) == (True, True, 0, 500, True)
+    assert (got["autoAwayMinutes"], got["autoReply"]) == (20, "back soon")
+    transfers = host.config.sections["transfers"]
+    assert (transfers["preferfriends"], transfers["fifoqueue"], transfers["queuelimit"]) == (True, True, 500)
+    # Null leaves every one of them alone.
+    reply = await call(host, client, "settings.patch", {"settings": blank})
+    assert reply["result"]["settings"]["queueLimitMb"] == 500
 
 
 async def test_port_mapping_is_a_setting_and_applies_at_once(host, client, monkeypatch):
@@ -212,7 +239,7 @@ async def test_port_mapping_is_a_setting_and_applies_at_once(host, client, monke
     monkeypatch.setattr(host.core, "portmapper", Mapper())
     blank = {"downloadFolder": None, "incompleteFolder": None, "listenPort": None,
              "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
-             "autoConnect": None, "stallSeconds": None}
+             "autoConnect": None, "stallSeconds": None, **POLICY_UNSET}
 
     reply = await call(host, client, "settings.patch",
                        {"settings": {**blank, "portMapping": False}})
@@ -226,7 +253,7 @@ async def test_port_mapping_is_a_setting_and_applies_at_once(host, client, monke
 
     # Leaving it alone leaves the router alone.
     await call(host, client, "settings.patch",
-               {"settings": {**blank, "portMapping": None}})
+               {"settings": {**blank, "portMapping": None, **POLICY_UNSET}})
     assert calls == ["remove", "add"]
 
 
@@ -241,7 +268,7 @@ async def test_a_bad_download_folder_is_refused_over_the_wire(host, client, tmp_
     reply = await call(host, client, "settings.patch", {"settings": {
         "downloadFolder": missing, "incompleteFolder": None, "listenPort": None,
         "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
-        "autoConnect": None, "stallSeconds": None, "portMapping": None,
+        "autoConnect": None, "stallSeconds": None, "portMapping": None, **POLICY_UNSET,
     }})
 
     assert reply["ok"] is False
@@ -258,7 +285,7 @@ async def test_a_good_download_folder_is_stored_expanded(host, client, tmp_path)
         "downloadFolder": f"{folder}/", "incompleteFolder": None,
         "listenPort": None, "maxDownloadSpeed": None, "maxUploadSpeed": None,
         "uploadSlots": None, "autoConnect": None, "stallSeconds": None,
-        "portMapping": None,
+        "portMapping": None, **POLICY_UNSET,
     }})
 
     assert reply["ok"] is True

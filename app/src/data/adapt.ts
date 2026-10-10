@@ -56,7 +56,8 @@ export type SearchCloseReason = 'timeout' | 'result_cap' | 'stopped' | 'disconne
 
 export interface WireSearchClosedData {
   searchId: number;
-  reason: SearchCloseReason;
+  /** 'failed' is the client's own: the search was refused or never sent. */
+  reason: SearchCloseReason | 'failed';
   resultCount: number;
   peerCount: number;
 }

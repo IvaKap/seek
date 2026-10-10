@@ -33,12 +33,13 @@ import { UPLOAD_SORT_LABELS, matchesQuery, sortGroups } from '../domain/transfer
 import type { SortKey } from '../domain/transferOrder.ts';
 
 function Row({
-  group, peers, onCancel, onClear,
+  group, peers, onCancel, onClear, onUserMenu,
 }: {
   group: TransferGroup;
   peers?: PeerLookup;
   onCancel(ids: string[]): void;
   onClear(ids: string[]): void;
+  onUserMenu?(username: string, x: number, y: number): void;
 }) {
   const { artist, release } = releaseOf(group);
   const running = group.transfers.filter((t) => isActive(t.state));
@@ -54,7 +55,18 @@ function Row({
               downloading from you may never have appeared in one of your
               searches, so it would be blank for most rows and present for a
               few, which reads as a bug rather than as missing data. */}
-          <span className="up__user">{group.username}</span>
+          {onUserMenu ? (
+            /* Ban is here: someone taking everything you have is exactly
+               who it is for. */
+            <button
+              type="button"
+              className="up__user up__user--link"
+              aria-haspopup="menu"
+              onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onUserMenu(group.username, r.left, r.bottom); }}
+            >
+              {group.username}
+            </button>
+          ) : <span className="up__user">{group.username}</span>}
           <PeerHistory username={group.username} peers={peers} compact />
         </span>
         <span className="up__title">
@@ -124,10 +136,11 @@ function Row({
 }
 
 export function UploadsView({
-  session, peers, sharing,
+  session, peers, sharing, onUserMenu,
 }: {
   session: TransferSession;
   peers?: PeerLookup;
+  onUserMenu?(username: string, x: number, y: number): void;
   /**
    * Whether anything is shared — or NULL when the engine has not said.
    *
@@ -274,6 +287,7 @@ export function UploadsView({
               peers={peers}
               onCancel={session.cancel}
               onClear={session.clear}
+              onUserMenu={onUserMenu}
             />
           ))}
         </div>

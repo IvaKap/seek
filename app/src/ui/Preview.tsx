@@ -12,7 +12,7 @@
  * nothing tells you nothing.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 
 interface PreviewResult {
@@ -113,7 +113,10 @@ export function usePreview(client: SidecarClient | null): PreviewSession {
     }).catch((e: Error) => { setError(e.message); setState('failed'); });
   }, [client, activeId, state, stop]);
 
-  return { activeId, state, error, toggle, stop, available: Boolean(client) };
+  return useMemo(
+    () => ({ activeId, state, error, toggle, stop, available: Boolean(client) }),
+    [activeId, state, error, toggle, stop, client],
+  );
 }
 
 /** The per-file control. */

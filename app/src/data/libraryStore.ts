@@ -16,9 +16,9 @@
  * would be thousands of round trips for a membership test.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
-import { readUntilAnswered } from './failures.ts';
+import { readUntilAnswered, reportFailure } from './failures.ts';
 
 export interface LibraryState {
   scannedAt: number;
@@ -105,6 +105,8 @@ export interface LibraryGaps {
   releaseArtist: string;
   score: number;
   tracks: LibraryGap[];
+  /** MusicBrainz did not answer; worth asking again, unlike a miss. */
+  lookupFailed: boolean;
 }
 
 export interface LibrarySession {
@@ -116,6 +118,8 @@ export interface LibrarySession {
   ownedReleases: Set<string>;
   hasTrack(artist: string | null, title: string): boolean;
   scan(roots?: string[], readTags?: boolean): void;
+  /** Stop a scan at the next folder; the index from before stands. */
+  cancelScan(): void;
   /** Ask which tracks of one release are missing. Result arrives via `gaps`. */
   findGaps(key: string, artist: string, release: string): void;
   gaps: Map<string, LibraryGaps | 'looking'>;
@@ -182,6 +186,13 @@ export function useLibrary(client: SidecarClient | null): LibrarySession {
       .catch(() => {});
   }, [client]);
 
+  const cancelScan = useCallback(() => {
+    if (!client) return;
+    void client.request<LibraryState>('library.cancel')
+      .then(setState)
+      .catch((e) => reportFailure('Stop the scan', e));
+  }, [client]);
+
   const scan = useCallback((roots: string[] = [], readTags = true) => {
     if (!client) return;
     setState((s) => ({ ...s, scanning: true }));
@@ -190,16 +201,17 @@ export function useLibrary(client: SidecarClient | null): LibrarySession {
       .catch(() => setState((s) => ({ ...s, scanning: false })));
   }, [client]);
 
-  return {
+  return useMemo(() => ({
     state,
     releases,
-    hasRelease: (artist, release) => owned.releases.has(releaseKey(artist, release)),
+    hasRelease: (artist: string | null, release: string) => owned.releases.has(releaseKey(artist, release)),
     ownedReleases: owned.releases,
-    hasTrack: (artist, title) => owned.tracks.has(trackKey(artist, title)),
+    hasTrack: (artist: string | null, title: string) => owned.tracks.has(trackKey(artist, title)),
     scan,
+    cancelScan,
     findGaps,
     gaps,
     loadReleases,
     available: Boolean(client),
-  };
+  }), [state, releases, owned, scan, cancelScan, findGaps, gaps, loadReleases, client]);
 }

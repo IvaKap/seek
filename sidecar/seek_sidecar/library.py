@@ -149,7 +149,13 @@ def _year_from(value):
     return int(found.group(1)) if found else 0
 
 
+# The tag fields the index uses, in the order the scan cache stores them.
+_CACHED_TAGS = ("albumartist", "artist", "album", "title", "date", "genre")
+
+
 def _read_tags(path):
+    """The file's tags, {} when it has none, or None when it could not be
+    read at all — a read that failed must not be remembered as "no tags"."""
     try:
         import mutagen
         audio = mutagen.File(path, easy=True)
@@ -162,7 +168,7 @@ def _read_tags(path):
             out[field] = (value[0] if isinstance(value, list) and value else value) or ""
         return out
     except Exception:                                  # noqa: BLE001 - per file
-        return {}
+        return None
 
 
 def _from_path(path, roots=()):
@@ -223,6 +229,7 @@ class Library:
         self._lock = threading.RLock()
         self._cancel = threading.Event()
         self._data = {"scannedAt": 0, "roots": [], "releases": {}, "tracks": {}}
+        self._titles = {}
         self._scanning = False
         self.load()
 
@@ -234,8 +241,25 @@ class Library:
                 data = json.load(handle)
             if isinstance(data, dict) and "releases" in data:
                 self._data = data
+                self._titles = self._titles_of(data.get("tracks", {}))
         except (OSError, ValueError):
             pass
+
+    @staticmethod
+    def _titles_of(tracks):
+        """Release key -> the titles on it. From the stored title; for an index
+        saved before titles were stored, from the key (`normalise` removes "|",
+        so the title is what follows the first one)."""
+        out = {}
+        for key, entry in tracks.items():
+            if not isinstance(entry, dict):
+                continue
+            title = entry.get("title")
+            if title is None:
+                title = key.split("|", 1)[-1]
+            if title:
+                out.setdefault(entry.get("release", ""), set()).add(title)
+        return out
 
     def save(self):
         # ATOMIC, like `_save_state`: a temp file, fsync, then rename over the
@@ -287,7 +311,7 @@ class Library:
                 "tracks": list(self._data.get("tracks", {}).keys()),
             }
 
-    def has_track(self, artist, title):
+    def has_track(self, artist, title, release_key=""):
         """Is this track on disk?
 
         Tries artist+title first, then title alone. MusicBrainz credits a track
@@ -297,11 +321,16 @@ class Library:
         """
         with self._lock:
             tracks = self._data.get("tracks", {})
+            titles = self._titles
         if not title:
             return False
         if track_key(artist, title) in tracks:
             return True
-        return track_key("", title) in tracks
+        # Title alone, but only on the release being checked: every track is
+        # stored under artist AND title, so the old title-as-key lookup never
+        # matched a tagged track, and a collection-wide title match would call
+        # any "Intro" owned.
+        return bool(release_key) and normalise(title) in titles.get(release_key, ())
 
     # -- scanning ----------------------------------------------------------
 
@@ -319,6 +348,7 @@ class Library:
 
         releases = {}
         tracks = {}
+        tag_cache = {}
         seen = 0
         completed = False
         # Everything inside the try, so nothing can leave `_scanning` stuck on
@@ -330,6 +360,17 @@ class Library:
             offline = offline_roots(roots, present)
             with self._lock:
                 previous = self._data
+            # Tags of every file at its last scan, keyed by path, with the
+            # modification time and size they were read at. A rescan reads only
+            # what changed: re-reading every tag of a 53,000-track collection
+            # was most of what made a rescan slow.
+            # ponytail: mtime + size; FAT/exFAT keep 2 s times, so a same-size
+            # edit inside that window reads stale tags until the next change.
+            known = previous.get("files") or {}
+            if not read_tags:
+                # Nothing read this time, so nothing new to remember; never
+                # store "no tags" as though they had been read.
+                tag_cache = dict(known)
 
             for root in present:
                 for folder, _dirs, files in os.walk(root):
@@ -343,7 +384,25 @@ class Library:
                         if progress and seen % 250 == 0:
                             progress(seen)
 
-                        tags = _read_tags(path) if read_tags else {}
+                        try:
+                            stat = os.stat(path)
+                        except OSError:
+                            continue
+                        tags = {}
+                        if read_tags:
+                            cached = known.get(path)
+                            if (isinstance(cached, list) and len(cached) == 3
+                                    and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size):
+                                tags = dict(zip(_CACHED_TAGS, cached[2]))
+                                tag_cache[path] = cached
+                            else:
+                                read = _read_tags(path)
+                                tags = read or {}
+                                # A failed read (a network volume's hiccup) is
+                                # asked again next time, not cached as blank.
+                                if read is not None:
+                                    tag_cache[path] = [stat.st_mtime_ns, stat.st_size,
+                                                       [str(read.get(f) or "") for f in _CACHED_TAGS]]
                         # The walked (resolved) roots: the raw ones may be a
                         # symlink's spelling, which a walked path never matches.
                         p_artist, p_release, p_title = _from_path(path, present)
@@ -360,10 +419,7 @@ class Library:
                                 "formats": {}, "year": 0, "genre": "",
                             })
                             entry["trackCount"] += 1
-                            try:
-                                entry["bytes"] += os.path.getsize(path)
-                            except OSError:
-                                pass
+                            entry["bytes"] += stat.st_size
 
                             extension = os.path.splitext(name)[1].lower().lstrip(".")
                             entry["formats"][extension] = (
@@ -381,7 +437,7 @@ class Library:
 
                         tkey = track_key(artist, title)
                         if tkey:
-                            tracks[tkey] = {"path": path, "release": rkey}
+                            tracks[tkey] = {"path": path, "release": rkey, "title": normalise(title)}
             # Pulled out DURING the walk: os.walk swallows the errors and just
             # stops, so a drive ejected half way read as a smaller collection.
             # What this scan found under it is partial; the last full picture
@@ -392,6 +448,8 @@ class Library:
                             if not any(_under(e.get("folder", ""), r) for r in vanished)}
                 tracks = {k: e for k, e in tracks.items()
                           if not any(_under(e.get("path", ""), r) for r in vanished)}
+                tag_cache = {k: e for k, e in tag_cache.items()
+                             if not any(_under(k, r) for r in vanished)}
                 present = [r for r in present if r not in vanished]
                 offline = sorted(set(offline) | set(vanished))
 
@@ -405,9 +463,17 @@ class Library:
             for key, entry in (previous.get("tracks") or {}).items():
                 if any(_under(entry.get("path", ""), r) for r in offline):
                     tracks.setdefault(key, entry)
+            for path, entry in known.items():
+                if any(_under(path, r) for r in offline):
+                    tag_cache.setdefault(path, entry)
             completed = True
         except _Cancelled:
-            pass
+            # The tags read so far are still good: keep them, so the next scan
+            # does not start again from nothing. The releases stand as before.
+            if read_tags and tag_cache:
+                with self._lock:
+                    self._data = {**self._data, "files": {**known, **tag_cache}}
+                self.save()
         finally:
             # Only a scan that FINISHED replaces the index. One that died half
             # way used to save its partial result over the whole collection.
@@ -420,7 +486,9 @@ class Library:
                         "downloadRoot": os.path.realpath(download_root) if download_root else "",
                         "releases": releases,
                         "tracks": tracks,
+                        "files": tag_cache,
                     }
+                    self._titles = self._titles_of(tracks)
                 self._scanning = False
             if completed:
                 self.save()

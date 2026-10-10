@@ -20,7 +20,8 @@
  * app earns its keep, so the UI must be able to tell them apart.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lostInTransit } from './sidecarClient.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
 export type SpectralAssessment =
@@ -161,18 +162,30 @@ export function useAnalysis(client: SidecarClient | null): AnalysisSession {
     void client.request<{ requestId: string }>('analysis.spectral', params)
       .then((r) => pending.current.set(r.requestId, params))
       .catch((e: Error) => {
+        /* Never answered (a dropped connection): put the button back rather
+           than a "could not analyse" that stays for the session. */
+        const drop = <K,>(prev: Map<K, AnalysisEntry>, k: K) => {
+          const next = new Map(prev);
+          next.delete(k);
+          return next;
+        };
         const entry: AnalysisEntry = { state: 'failed', reason: e.message };
-        if (params.path) setByPath((prev) => new Map(prev).set(params.path!, entry));
+        const lost = lostInTransit(e);
+        if (params.path) {
+          setByPath((prev) => (lost ? drop(prev, params.path!) : new Map(prev).set(params.path!, entry)));
+        }
         if (params.transferId) {
-          setByTransfer((prev) => new Map(prev).set(params.transferId!, entry));
+          setByTransfer((prev) => (lost ? drop(prev, params.transferId!) : new Map(prev).set(params.transferId!, entry)));
         }
       });
   }, [client]);
 
-  return {
+  // Memoised: every Downloads row reads this, and a fresh object per render
+  // made each of them redraw on every tick.
+  return useMemo(() => ({
     byPath, byTransfer,
-    analyse: (path) => start({ path, transferId: null }),
-    analyseTransfer: (transferId) => start({ path: null, transferId }),
+    analyse: (path: string) => start({ path, transferId: null }),
+    analyseTransfer: (transferId: string) => start({ path: null, transferId }),
     available: Boolean(client),
-  };
+  }), [byPath, byTransfer, start, client]);
 }

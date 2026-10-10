@@ -324,7 +324,9 @@ describe('useAutoDownloads', () => {
     vi.useFakeTimers();
     const awaiting = { query: 'q', user: 'u', transferId: 't1', path: 'p', status: 'awaiting-review' };
     const { client, sent } = fakeClient({
-      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      // The claim's own wish is on the list too: a claim whose wish was
+      // removed is dropped, by design.
+      wishes: [{ query: 'drexciya', filters: null, auto: true }, { query: 'q', filters: null, auto: true }],
       claims: [awaiting],
       // Two: StrictMode mounts the effect twice, and each mount reads once.
       failClaimsReads: 2,

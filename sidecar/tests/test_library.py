@@ -255,3 +255,66 @@ class TestAScanThatIsInterrupted:
         state = index.scan([str(tmp_path)], read_tags=False)
         assert {r["release"] for r in index.releases()} == {"Untrue"}
         assert state["scanning"] is False
+
+
+class TestARescanReadsOnlyWhatChanged:
+    """Every rescan re-read every tag; on a 53,000-track collection that was
+    most of the wait. Tags are now kept with the file's time and size."""
+
+    def test_unchanged_files_are_not_read_again(self, tmp_path, monkeypatch):
+        import seek_sidecar.library as lib
+        reads = []
+        monkeypatch.setattr(lib, "_read_tags", lambda p: reads.append(p) or {"title": "T"})
+        path = _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)])
+        assert len(reads) == 1
+        index.scan([str(tmp_path)])
+        assert len(reads) == 1
+        with open(path, "ab") as handle:              # a retag changes the size
+            handle.write(b"more")
+        index.scan([str(tmp_path)])
+        assert len(reads) == 2
+
+    def test_a_scan_without_tags_never_poisons_the_cache(self, tmp_path, monkeypatch):
+        import seek_sidecar.library as lib
+        reads = []
+        monkeypatch.setattr(lib, "_read_tags", lambda p: reads.append(p) or {})
+        _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)], read_tags=False)
+        index.scan([str(tmp_path)])
+        assert len(reads) == 1
+
+
+class TestCompleteness:
+    def test_a_title_matches_when_the_credited_artist_differs(self, tmp_path):
+        """The title-only fallback looked up a key no tagged track is ever
+        stored under, so featured artists always read as missing."""
+        _track(str(tmp_path / "Foo - Album"), "01 - Bar Baz.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)], read_tags=False)
+        assert index.has_track("Foo", "Bar Baz")
+        assert index.has_track("Foo feat. Someone", "Bar Baz", "foo|album")
+        assert not index.has_track("Foo", "Nothing Like It", "foo|album")
+
+    def test_a_common_title_on_another_release_does_not_count(self, tmp_path):
+        _track(str(tmp_path / "Artist X - Album Y"), "01 - Intro.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)], read_tags=False)
+        assert not index.has_track("Artist Z", "Intro", "artist z|album w")
+
+
+class TestAFailedReadIsNotRemembered:
+    def test_a_read_that_failed_is_asked_again(self, tmp_path, monkeypatch):
+        """A network volume's hiccup used to be cached as blank tags, and the
+        file stayed tagless until it changed."""
+        import seek_sidecar.library as lib
+        answers = iter([None, {"title": "Archangel"}])
+        reads = []
+        monkeypatch.setattr(lib, "_read_tags", lambda p: reads.append(p) or next(answers))
+        _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)])
+        index.scan([str(tmp_path)])
+        assert len(reads) == 2

@@ -37,6 +37,20 @@ class _Search:
     def __init__(self):
         self.searches = {}
 
+    # Upstream files every wish in both maps (wishlist[term] = searches[token]);
+    # derived here unless a test sets it outright.
+    _wishlist = None
+
+    @property
+    def wishlist(self):
+        if self._wishlist is not None:
+            return self._wishlist
+        return {s.term: s for s in self.searches.values() if s.mode == "wishlist"}
+
+    @wishlist.setter
+    def wishlist(self, value):
+        self._wishlist = value
+
 
 class _Core:
     def __init__(self):
@@ -185,6 +199,8 @@ class _WishHost:
                                      for i, w in enumerate(wishes)}
         self.core.search.wishlist_interval = 720
         self.core.search.remove_wish = self.core.search.wishlist.pop
+        self.removed_tokens = []
+        self.core.search.remove_search = self.removed_tokens.append
 
     def broadcast(self, name, payload):
         self.broadcasts.append((name, payload))
@@ -207,6 +223,7 @@ class _WishHost:
     _wishlist_state = CoreHost._wishlist_state
     _cmd_wishlist_list = CoreHost._cmd_wishlist_list
     _cmd_wishlist_filters = CoreHost._cmd_wishlist_filters
+    _store = CoreHost._store
     _cmd_wishlist_remove = CoreHost._cmd_wishlist_remove
 
 
@@ -407,6 +424,15 @@ def test_removing_one_wish_leaves_the_others_alone():
     h._cmd_wishlist_seen({"query": "shackleton", "ids": ["b2"]})
     h._cmd_wishlist_remove({"query": "shackleton"})
     assert h.state["wish_seen"] == {"drexciya": ["a1"]}
+
+
+def test_removing_a_wish_stops_peers_answering_it():
+    """`remove_wish` keeps the search once it has run, and with it the token
+    late answers arrive on, which brought the removed wish back on screen."""
+    h = _SeenHost(["drexciya", "shackleton"])
+    token = h.core.search.wishlist["shackleton"].token
+    h._cmd_wishlist_remove({"query": "shackleton"})
+    assert h.removed_tokens == [token]
 
 
 def test_a_corrupt_state_file_does_not_take_the_wishlist_down():

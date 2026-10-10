@@ -18,7 +18,7 @@ afterEach(cleanup);
 beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 const conv = (scope: ChatScope, target: string): Conversation => ({
-  scope, target, messages: [], members: [], unread: 0,
+  scope, target, messages: [], members: [], unread: 0, mentions: 0,
 });
 
 function session(active: string, send: ChatSession['send'] = () => Promise.resolve()) {
@@ -30,6 +30,8 @@ function session(active: string, send: ChatSession['send'] = () => Promise.resol
     join: vi.fn(),
     leave: vi.fn(),
     openPrivate: vi.fn(),
+    closePrivate: vi.fn(),
+    closeAllPrivate: vi.fn(),
     send: vi.fn(send),
     refreshRooms: vi.fn(),
     available: true,
@@ -104,5 +106,68 @@ describe('history', () => {
     expect(getByText('still got the test press?')).toBeTruthy();
     expect(getByText('Earlier messages above')).toBeTruthy();
     expect(queryByText('Nothing said yet.')).toBeNull();
+  });
+});
+
+describe('0.3.0 chat', () => {
+  const line = (username: string, outgoing = false) => ({
+    scope: 'room' as const, target: 'techno', username, message: 'hi', outgoing,
+    kind: 'message' as const, mentioned: false, timestamp: 1,
+  });
+
+  it('opens a person\'s menu from their name, but not from ours or the server\'s', () => {
+    const chat = session('room:techno');
+    chat.conversations[0] = {
+      ...chat.conversations[0],
+      messages: [line('ana'), line('me', true), line('server')],
+    };
+    const onUserMenu = vi.fn();
+    const { getAllByRole } = render(
+      <StrictMode><ChatView chat={chat} signedIn scope="room" onUserMenu={onUserMenu} self="me" /></StrictMode>,
+    );
+    const names = getAllByRole('button').filter((b) => b.classList.contains('chat__who--link'));
+    expect(names.map((b) => b.textContent)).toEqual(['ana']);
+    fireEvent.click(names[0]);
+    expect(onUserMenu).toHaveBeenCalledWith('ana', expect.any(Number), expect.any(Number));
+  });
+
+  it('lists who is in the room, online first', () => {
+    const chat = session('room:techno');
+    chat.conversations[0] = {
+      ...chat.conversations[0],
+      members: [
+        { username: 'zed', status: 'away', files: null },
+        { username: 'ana', status: 'online', files: 1200 },
+      ],
+    };
+    const { getByRole, getByLabelText } = render(view(chat, 'room'));
+    fireEvent.click(getByRole('button', { name: '2 here' }));
+    const list = getByLabelText('People in #techno');
+    expect([...list.querySelectorAll('.chat__who')].map((n) => n.textContent)).toEqual(['ana', 'zed']);
+  });
+
+  it('asks once before leaving a room with lines on screen', () => {
+    const chat = session('room:techno');
+    chat.conversations[0] = { ...chat.conversations[0], messages: [line('ana')] };
+    const { getByRole } = render(view(chat, 'room'));
+    fireEvent.click(getByRole('button', { name: 'Leave' }));
+    expect(chat.leave).not.toHaveBeenCalled();
+    fireEvent.click(getByRole('button', { name: 'Leave and clear?' }));
+    expect(chat.leave).toHaveBeenCalledWith('techno');
+  });
+
+  it('closes a private chat', () => {
+    const chat = session('private:bob');
+    const { getByRole } = render(view(chat, 'private'));
+    fireEvent.click(getByRole('button', { name: 'Close' }));
+    expect(chat.closePrivate).toHaveBeenCalledWith('bob');
+  });
+
+  it('says "Joining…" until the server sends the room', () => {
+    const chat = session('room:techno');
+    chat.conversations[0] = { ...chat.conversations[0], joining: true };
+    const { queryByRole, getAllByText } = render(view(chat, 'room'));
+    expect(queryByRole('button', { name: 'Leave' })).toBeNull();
+    expect(getAllByText(/Joining/).length).toBeGreaterThan(0);
   });
 });

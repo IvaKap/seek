@@ -399,7 +399,13 @@ def _event_samples():
                  "private": False},
             ],
         },
-        "chat.members": {"room": "electronic", "users": ["someone", "another"]},
+        "chat.members": {"room": "electronic", "members": [
+            {"username": "someone", "status": "online", "files": 120},
+            {"username": "another", "status": "away", "files": None},
+        ]},
+        "chat.member": {"room": "electronic", "present": True,
+                        "member": {"username": "someone", "status": "online", "files": 120}},
+        "users.lists": {"ignored": ["troll"], "banned": []},
         "wishlist.state": {
             "items": [
                 {"query": "burial untrue", "filters": None, "auto": False},
@@ -424,6 +430,7 @@ def _event_samples():
             "key": "burial|untrue", "matched": True, "releaseTitle": "Untrue",
             "releaseArtist": "Burial", "score": 100,
             "tracks": [{"position": 1, "title": "Archangel", "artist": "Burial", "have": True}],
+            "lookupFailed": False,
         },
         "app.settings": {
             "autoConnect": True, "hasCredentials": True, "username": "iva",
@@ -469,6 +476,7 @@ def _event_samples():
             "date": "2007-11-05", "label": "Hyperdub",
             "mbid": "d84892a9-0000-0000-0000-000000000000",
             "changes": [{"field": "album", "current": "untrue", "proposed": "Untrue"}],
+            "lookupFailed": False, "md5Sibling": False,
         },
         "shares.state": {
             "consent": "declined", "folders": [], "scanning": False,

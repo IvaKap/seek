@@ -146,6 +146,18 @@ export function filterShelves(shelves: Shelf[], query: string): Shelf[] {
   ));
 }
 
+/**
+ * Every file a folder Get will fetch: the folder's own, and with `recurse` its
+ * subfolders' too. Audio AND the rest — the engine queues covers, cues and
+ * checksums with the music, so counts and rules see the same set it fetches.
+ */
+export function filesUnder(folders: BrowseFolder[], path: string, recurse: boolean): BrowseFile[] {
+  const prefix = path ? `${path}\\` : '';
+  return folders
+    .filter((f) => f.path === path || (recurse && (path === '' || f.path.startsWith(prefix))))
+    .flatMap((f) => f.files);
+}
+
 export function toShelves(folders: BrowseFolder[]): Shelf[] {
   const out: Shelf[] = [];
   for (const f of folders) {

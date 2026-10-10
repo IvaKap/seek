@@ -40,7 +40,7 @@ describe('fileMenuItems', () => {
   it('a running file can be paused or cancelled, and its details copied', () => {
     const a = spies();
     const items = fileMenuItems([t('x', 'transferring')], a);
-    expect(ids(items)).toEqual(['pause', 'cancel', 'copypath', 'copyname', 'copyuser']);
+    expect(ids(items)).toEqual(['pause', 'cancel', 'copypath', 'copyname', 'copylink', 'copyuser']);
 
     run(items, 'cancel');
     expect(a.calls.cancel).toEqual([['x']]);
@@ -48,17 +48,17 @@ describe('fileMenuItems', () => {
 
   it('a finished file offers Clear, never Cancel or Retry', () => {
     const items = fileMenuItems([t('x', 'finished')], spies());
-    expect(ids(items)).toEqual(['clear', 'reveal', 'open', 'copypath', 'copyname', 'copyuser']);
+    expect(ids(items)).toEqual(['clear', 'reveal', 'open', 'copypath', 'copyname', 'copylink', 'copyuser']);
   });
 
   it('a failed file offers Retry and Clear but not Cancel (it is already terminal)', () => {
     const items = fileMenuItems([t('x', 'user_logged_off')], spies());
-    expect(ids(items)).toEqual(['retry', 'clear', 'copypath', 'copyname', 'copyuser']);
+    expect(ids(items)).toEqual(['retry', 'clear', 'copypath', 'copyname', 'copylink', 'copyuser']);
   });
 
   it('a paused file offers Resume and Cancel', () => {
     const items = fileMenuItems([t('x', 'paused')], spies());
-    expect(ids(items)).toEqual(['resume', 'cancel', 'copypath', 'copyname', 'copyuser']);
+    expect(ids(items)).toEqual(['resume', 'cancel', 'copypath', 'copyname', 'copylink', 'copyuser']);
   });
 
   it('over a MIXED selection each action touches only the files it fits', () => {

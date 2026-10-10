@@ -13,7 +13,7 @@
  * a downloads list has as many expanded rows as the user cares to open.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { CatalogEntry } from './catalogStore.ts';
 
@@ -44,6 +44,13 @@ export function useRelated(client: SidecarClient | null): RelatedSession {
 
   useEffect(() => {
     if (!client) return;
+    // A reconnect loses every lookup in flight; only answers are kept, so the
+    // rest are asked again on this connection instead of staying empty.
+    pending.clear();
+    setMap((prev) => {
+      const kept = new Map([...prev].filter(([, r]) => r.state === 'ready'));
+      return kept.size === prev.size ? prev : kept;
+    });
 
     const offResults = client.on('discover.relatedResults', (data) => {
       const d = data as {
@@ -97,9 +104,9 @@ export function useRelated(client: SidecarClient | null): RelatedSession {
       });
   }, [client, pending]);
 
-  return {
-    get: (key) => map.get(key),
+  return useMemo(() => ({
+    get: (key: string) => map.get(key),
     want,
     enabled: Boolean(client),
-  };
+  }), [map, want, client]);
 }

@@ -18,16 +18,29 @@ import type { WishHits } from '../data/wishHits.ts';
 import type { Filters, WishFilters } from '../domain/types.ts';
 import { describeFilters } from '../domain/wishFilters.ts';
 import { IconClose, IconEmpty, IconSearch } from '../icons/index.tsx';
-import { readUntilAnswered } from '../data/failures.ts';
+import { readUntilAnswered, reportFailure } from '../data/failures.ts';
 
 interface Wish { query: string; filters: WishFilters | null; auto: boolean }
 interface WishlistState { items: Wish[]; intervalSeconds: number }
 
-function interval(seconds: number): string {
-  if (seconds <= 0) return 'once the server says how often';
-  if (seconds < 120) return `every ${seconds} seconds`;
+function span(seconds: number): string {
+  if (seconds < 120) return `${seconds} seconds`;
   const m = Math.round(seconds / 60);
-  return m < 60 ? `every ${m} minutes` : `every ${Math.round(m / 60)} hours`;
+  if (m < 120) return `${m} minutes`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h} hours` : `${Math.round(h / 24)} days`;
+}
+
+/**
+ * How often a wish actually runs. Upstream searches ONE wish per interval, in
+ * turn (search.py `_do_next_wishlist_search`), so with 35 wishes each one comes
+ * round every 35 intervals — saying "every 12 minutes" promised far more.
+ */
+export function wishCadence(intervalSeconds: number, count: number): string {
+  if (intervalSeconds <= 0) return 'Searched automatically once the server says how often, whenever Seek is running.';
+  if (count <= 1) return `Searched automatically every ${span(intervalSeconds)}, whenever Seek is running.`;
+  return `One wish is searched every ${span(intervalSeconds)}, in turn, so each comes round about every `
+    + `${span(intervalSeconds * count)} while Seek is running.`;
 }
 
 export function WishlistView({
@@ -72,7 +85,7 @@ export function WishlistView({
     if (!client) return;
     void client.request<WishlistState>('wishlist.remove', { query })
       .then(setState)
-      .catch((e: Error) => setError(e.message));
+      .catch((e) => reportFailure(`Remove "${query}"`, e));
   }, [client]);
 
   const setFilters = useCallback((query: string, filters: WishFilters | null) => {
@@ -95,7 +108,7 @@ export function WishlistView({
         <h1 className="pane__title">Wishlist</h1>
         <p className="pane__subtitle">
           {signedIn
-            ? `Searched automatically ${interval(state.intervalSeconds)}, whenever Seek is running.`
+            ? wishCadence(state.intervalSeconds, state.items.length)
             : 'Sign in and these run automatically in the background.'}
         </p>
         <form

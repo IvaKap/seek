@@ -32,7 +32,11 @@ interface ImportResult {
   importedDownloadFolder: boolean;
 }
 
-export function ImportPanel({ client }: { client: SidecarClient | null }) {
+export function ImportPanel({ client, onApplied }: {
+  client: SidecarClient | null;
+  /** The import changed settings underneath the screen; read them again. */
+  onApplied?(): void;
+}) {
   const [source, setSource] = useState<ImportSource | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -74,6 +78,7 @@ export function ImportPanel({ client }: { client: SidecarClient | null }) {
           downloadFolder: wantFolder,
         }),
       );
+      onApplied?.();
       await inspect();
     } catch (e) {
       setError((e as Error).message);

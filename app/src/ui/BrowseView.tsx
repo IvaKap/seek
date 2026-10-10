@@ -14,9 +14,14 @@
  * share — and, now, what they say about themselves when asked directly.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { OverlapSheet } from './OverlapSheet.tsx';
-import type { BrowseSession, Shelf } from '../data/browseStore.ts';
+import type { BrowseFile, BrowseSession, Shelf } from '../data/browseStore.ts';
+import { filesUnder } from '../data/browseStore.ts';
+import { judge, judgeRelease } from '../domain/preferences.ts';
+import type { DownloadPrefs } from '../domain/preferences.ts';
+import { showNotice } from '../data/failures.ts';
+import { canChooseFolder, chooseFolder } from '../data/choose.ts';
 import type { TransferSession } from '../data/transferStore.ts';
 import { fileSize } from '../domain/format.ts';
 import { fileName } from '../data/transferStore.ts';
@@ -51,13 +56,14 @@ const MODES: Segment<BrowseMode>[] = [
  * or still loading without blocking the other two, or the share list below.
  */
 function PeerHeader({
-  username, facts, profile, isBuddy, peers,
+  username, facts, profile, isBuddy, peers, onUserMenu,
 }: {
   username: string;
   facts: BrowseSession['peerFacts'];
   profile: BrowseSession['peerProfile'];
   isBuddy: boolean;
   peers?: PeerLookup;
+  onUserMenu?(username: string, x: number, y: number): void;
 }) {
   const pictureUri = profile?.state === 'ready' ? profile.pictureUri : null;
   return (
@@ -94,16 +100,26 @@ function PeerHeader({
           <span className="peer__descr">{profile.description}</span>
         )}
       </span>
+      {onUserMenu && (
+        <button
+          type="button"
+          className="btn pressable peer__menu"
+          aria-haspopup="menu"
+          onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); onUserMenu(username, r.left, r.bottom); }}
+        >
+          {username}…
+        </button>
+      )}
     </div>
   );
 }
 
 function ShelfRow({
-  shelf, username, transfers,
+  shelf, username, get,
 }: {
   shelf: Shelf;
   username: string;
-  transfers: TransferSession;
+  get: BrowseGet;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -140,7 +156,7 @@ function ShelfRow({
       <button
         type="button"
         className="btn pressable shelf__get"
-        onClick={() => void transfers.enqueueFolder(username, shelf.path)}
+        onClick={() => get.folder(shelf.path, false)}
         aria-label={`Download the folder ${shelf.name} from ${username}`}
       >
         <IconDownload size={13} painted={1.5} /> Get folder
@@ -155,7 +171,7 @@ function ShelfRow({
               <button
                 type="button"
                 className="verify pressable"
-                onClick={() => void transfers.enqueue(username, f.path, f.size)}
+                onClick={() => get.file(f)}
               >
                 Get
               </button>
@@ -167,18 +183,57 @@ function ShelfRow({
   );
 }
 
+/**
+ * Every Get in Browse, through one place, so each applies the download rules
+ * (minimum bitrate, reject suspected transcodes) the way Search does. Browse
+ * applied none of them: a folder Get fetched the transcode the rules exist
+ * to refuse.
+ */
+export interface BrowseGet {
+  file(f: BrowseFile, destination?: string | null): void;
+  folder(path: string, recurse: boolean, destination?: string | null): void;
+  /** Pick a folder, then run `then` with it. Absent without a folder panel. */
+  pickDestination?(then: (dest: string) => void): void;
+}
+
+const NO_RULES: DownloadPrefs = { preferLossless: false, minBitrate: 0, rejectTranscodes: false };
+
 export function BrowseView({
-  browse, transfers, signedIn, peers,
+  browse, transfers, signedIn, peers, rules = NO_RULES, onUserMenu,
 }: {
   browse: BrowseSession;
   transfers: TransferSession;
   signedIn: boolean;
   peers?: PeerLookup;
+  rules?: DownloadPrefs;
+  /** The person's menu: follow, ignore, ban, message. */
+  onUserMenu?(username: string, x: number, y: number): void;
 }) {
   const [who, setWho] = useState('');
   const [mode, setMode] = useState<BrowseMode>('tree');
   const [overlapOpen, setOverlapOpen] = useState(false);
   const cur = browse.current;
+
+  const get = useMemo<BrowseGet | null>(() => {
+    if (!cur || cur.state !== 'ready') return null;
+    const username = cur.username;
+    return {
+      file: (f, destination = null) => {
+        const verdict = judge(f, rules);
+        if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+        void transfers.enqueue(username, f.path, f.size, destination);
+      },
+      folder: (path, recurse, destination = null) => {
+        const files = filesUnder(cur.folders, path, recurse);
+        const verdict = judgeRelease(files, rules, 'folder');
+        if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+        void transfers.enqueueFolder(username, path, recurse, { destination, count: files.length });
+      },
+      pickDestination: canChooseFolder()
+        ? (then) => { void chooseFolder('Download to').then((dest) => { if (dest) then(dest); }); }
+        : undefined,
+    };
+  }, [cur, rules, transfers]);
 
   return (
     <>
@@ -245,6 +300,7 @@ export function BrowseView({
               profile={browse.peerProfile}
               isBuddy={browse.isBuddy}
               peers={peers}
+              onUserMenu={onUserMenu}
             />
 
             <div className="browse__bar">
@@ -291,13 +347,19 @@ export function BrowseView({
                   ? 'This user shares nothing.'
                   : 'Nothing here matches that filter.'}
               </p>
-            ) : mode === 'tree' ? (
-              <BrowseTreeView shelves={browse.shelves} username={cur.username} transfers={transfers} />
+            ) : !get ? null : mode === 'tree' ? (
+              <BrowseTreeView
+                shelves={browse.shelves}
+                folders={cur.folders}
+                username={cur.username}
+                transfers={transfers}
+                get={get}
+              />
             ) : mode === 'map' ? (
               <Treemap
                 shelves={browse.shelves}
                 onOpen={(s) => { browse.setFilter(s.name); setMode('list'); }}
-                onGet={(s) => void transfers.enqueueFolder(cur.username, s.path)}
+                onGet={(s) => get.folder(s.path, false)}
               />
             ) : mode === 'folders' ? (
               <FolderView
@@ -305,12 +367,12 @@ export function BrowseView({
                 // Recursive: this view's "Get this folder — 2,412 files" counts
                 // every file under it, and asked for the top level only, which
                 // for a folder of album folders queued nothing at all.
-                onGetFolder={(p) => void transfers.enqueueFolder(cur.username, p, true)}
-                onGetFile={(f) => void transfers.enqueue(cur.username, f.path, f.size)}
+                onGetFolder={(p) => get.folder(p, true)}
+                onGetFile={(f) => get.file(f)}
               />
             ) : (
               browse.shelves.map((s) => (
-                <ShelfRow key={s.path} shelf={s} username={cur.username} transfers={transfers} />
+                <ShelfRow key={s.path} shelf={s} username={cur.username} get={get} />
               ))
             )}
           </div>

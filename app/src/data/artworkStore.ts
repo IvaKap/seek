@@ -17,7 +17,7 @@
  * client is simply a slow one.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 
 export type ArtState =
@@ -54,6 +54,16 @@ export function useArtwork(client: SidecarClient | null, enabled = true): Artwor
 
   useEffect(() => {
     if (!client) return;
+    /* A new client is a reconnect: anything not yet answered was lost with the
+       old one, and `known` would stop it ever being asked again. Covers that
+       arrived stay; the rest are asked afresh. */
+    window.clearTimeout(timer.current);
+    queue.current.clear();
+    setMap((prev) => {
+      const kept = new Map([...prev].filter(([, a]) => a.state === 'ready'));
+      known.current = new Set(kept.keys());
+      return kept.size === prev.size ? prev : kept;
+    });
     const offResult = client.on('artwork.result', (d) => {
       const r = d as {
         key: string; dataUri: string; source: string;
@@ -102,9 +112,9 @@ export function useArtwork(client: SidecarClient | null, enabled = true): Artwor
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
 
-  return {
-    get: (key) => map.get(key),
+  return useMemo(() => ({
+    get: (key: string) => map.get(key),
     want,
     enabled: Boolean(client) && enabled,
-  };
+  }), [map, want, client, enabled]);
 }

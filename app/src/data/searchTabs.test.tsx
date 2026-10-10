@@ -45,7 +45,7 @@ function useFakeSession(): SearchSession {
   const [sort, setSort] = useState<SortKey>('best');
 
   const snapshot = useCallback((): SearchSnapshot => ({
-    query, files, peers: [], filters, groupBy, sort,
+    query, scope: { mode: 'global' }, files, peers: [], filters, groupBy, sort,
     expanded: new Set(), closedReason: null, tick: 0,
   }), [query, files, filters, groupBy, sort]);
 

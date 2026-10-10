@@ -47,4 +47,48 @@ describe('useChatSession', () => {
     ]);
     expect(conv.unread).toBe(5);                                // your own line is not unread
   });
+
+  it('keeps the room list current from comings, goings and status changes', () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const { result } = renderHook(() => useChatSession(client, true));
+    act(() => {
+      emit('chat.members', { room: 'techno', members: [
+        { username: 'ana', status: 'online', files: 10 },
+        { username: 'bo', status: 'online', files: null },
+      ] });
+      emit('chat.member', { room: 'techno', present: true, member: { username: 'cy', status: 'away', files: 3 } });
+      emit('chat.member', { room: 'techno', present: false, member: { username: 'ana', status: 'online', files: 10 } });
+      emit('user.status', { username: 'bo', status: 'away' });
+    });
+    act(() => { vi.advanceTimersByTime(200); });
+    const members = result.current.conversations[0].members;
+    expect(members.map((m) => `${m.username}:${m.status}`)).toEqual(['bo:away', 'cy:away']);
+  });
+
+  it('counts mentions apart from the rest', () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const { result } = renderHook(() => useChatSession(client, true));
+    act(() => {
+      emit('chat.message', line({ message: 'hey me', mentioned: true }));
+      emit('chat.message', line({ message: 'small talk' }));
+    });
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(result.current.conversations[0].unread).toBe(2);
+    expect(result.current.conversations[0].mentions).toBe(1);
+  });
+
+  it('a refused join says so and leaves no empty room behind', () => {
+    vi.useFakeTimers();
+    const { client, emit } = fakeClient();
+    const { result } = renderHook(() => useChatSession(client, true));
+    act(() => { result.current.join('closed-room'); });
+    expect(result.current.conversations[0].joining).toBe(true);
+    act(() => {
+      emit('chat.message', line({ target: 'closed-room', username: 'server', message: 'The room is private' }));
+    });
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(result.current.conversations).toHaveLength(0);
+  });
 });

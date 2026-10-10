@@ -105,6 +105,8 @@ export function useAutoDownloads(
   online = true,
 ): AutoDownloads {
   const [wishes, setWishes] = useState<Wish[]>([]);
+  /** The wishes as last reported, or null before the first report. */
+  const wishQueries = useRef<Set<string> | null>(null);
   const [claims, setClaims] = useState<AutoClaim[]>([]);
   /* Until the ledger has loaded, acting would re-download everything already
      awaiting review from a previous session. State, not a ref, so the effects
@@ -122,10 +124,19 @@ export function useAutoDownloads(
   // controller works with that screen closed.
   useEffect(() => {
     if (!client) return undefined;
-    const off = client.on('wishlist.state', (d) => setWishes((d as WishlistState).items));
-    const stop = readUntilAnswered<WishlistState>(
-      client, 'wishlist.list', undefined, (s) => setWishes(s.items),
-    );
+    /* A removed wish's claim goes with it. The engine drops it from the
+       ledger on remove, but this hook holds its own copy and writes the whole
+       list back, which used to bring the claim straight back. */
+    const apply = (items: Wish[]) => {
+      setWishes(items);
+      wishQueries.current = new Set(items.map((w) => w.query));
+      setClaims((prev) => {
+        const kept = prev.filter((c) => wishQueries.current!.has(c.query));
+        return kept.length === prev.length ? prev : kept;
+      });
+    };
+    const off = client.on('wishlist.state', (d) => apply((d as WishlistState).items));
+    const stop = readUntilAnswered<WishlistState>(client, 'wishlist.list', undefined, (s) => apply(s.items));
     return () => { off(); stop(); };
   }, [client]);
 
@@ -135,6 +146,10 @@ export function useAutoDownloads(
   // erased everything awaiting review and downloaded it all again.
   useEffect(() => {
     if (!client) return undefined;
+    // A new client is a reconnect or a restarted engine: nothing may act on
+    // the claims held from before until the ledger has been read again, or a
+    // write-back of the old copy replaces the newer one on disk.
+    setLoaded(false);
     let live = true;
     let timer = 0;
     const load = () => {
@@ -151,8 +166,13 @@ export function useAutoDownloads(
   }, [client]);
 
   const persist = useCallback((next: AutoClaim[]) => {
-    setClaims(next);
-    void client?.request('wishlist.claims', { items: next }).catch(() => {});
+    const known = wishQueries.current;
+    const items = known ? next.filter((c) => known.has(c.query)) : next;
+    setClaims(items);
+    // Said, not swallowed: a ledger that did not save means a file awaiting
+    // review can vanish at the next launch, and be downloaded again.
+    void client?.request('wishlist.claims', { items })
+      .catch((e) => reportFailure('Save the auto-download list', e));
   }, [client]);
 
   // The reaction: start downloads for eligible wishes as results arrive.

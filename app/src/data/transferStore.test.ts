@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { autoRetry, group, MAX_AUTO_RETRIES, silenceSeconds } from './transferStore.ts';
+import { autoRetry, group, keepUnchanged, MAX_AUTO_RETRIES, silenceSeconds } from './transferStore.ts';
 import type { Transfer } from './transferStore.ts';
 
 const NOW = 1_800_000_000_000;
@@ -202,5 +202,30 @@ describe('autoRetry — re-asking a peer that did not answer in time', () => {
   it('forgets tallies for transfers that are gone', () => {
     const counts = new Map([['gone', 2]]);
     expect(autoRetry([timedOut('here')], counts).counts.has('gone')).toBe(false);
+  });
+});
+
+describe('keepUnchanged', () => {
+  const done = (path: string) => t({ path, state: 'finished', bytesDone: 100 });
+  const a1 = done('@@x\\A\\1.flac');
+  const b1 = t({ path: '@@x\\B\\1.flac' });
+
+  it('keeps a finished release object while a different one moves', () => {
+    const first = group([a1, b1], 0, NOW);
+    const moved = { ...b1, bytesDone: 50 };
+    const next = keepUnchanged(first, group([a1, moved], 0, NOW));
+    const key = (path: string) => first.find((g) => g.transfers[0].path === path)!.key;
+    expect(next.find((g) => g.key === key(a1.path))).toBe(first.find((g) => g.key === key(a1.path)));
+    expect(next.find((g) => g.key === key(b1.path))).not.toBe(first.find((g) => g.key === key(b1.path)));
+  });
+
+  it('hands back the same array when nothing changed', () => {
+    const first = group([a1], 0, NOW);
+    expect(keepUnchanged(first, group([a1], 0, NOW))).toBe(first);
+  });
+
+  it('notices a release that left', () => {
+    const first = group([a1, b1], 0, NOW);
+    expect(keepUnchanged(first, group([a1], 0, NOW))).toHaveLength(1);
   });
 });

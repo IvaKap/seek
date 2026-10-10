@@ -26,7 +26,10 @@ export interface Verdict {
   reason?: string;
 }
 
-export function judge(file: SourceFile, prefs: DownloadPrefs): Verdict {
+/** What the rules read — a search result and a browsed file both have it. */
+export type Judgeable = Pick<SourceFile, 'bitrate' | 'parsed' | 'quality' | 'transcode'>;
+
+export function judge(file: Judgeable, prefs: DownloadPrefs): Verdict {
   if (prefs.rejectTranscodes && file.transcode.suspect) {
     return {
       allowed: false,
@@ -60,19 +63,23 @@ export function judge(file: SourceFile, prefs: DownloadPrefs): Verdict {
  * rules refuse is refused, and says how many, so the good ones can still be
  * taken one by one from the expanded card.
  */
-export function judgeRelease(files: SourceFile[], prefs: DownloadPrefs): Verdict {
+export function judgeRelease(
+  files: Judgeable[], prefs: DownloadPrefs, kind: 'release' | 'folder' = 'release',
+): Verdict {
   const failing = files
     .map((f) => judge(f, prefs))
     .filter((v) => !v.allowed);
   if (failing.length === 0) return { allowed: true };
   const first = failing[0].reason ?? '';
   if (failing.length === files.length) {
-    return { allowed: false, reason: `Every file in this release fails your download rules. ${first}` };
+    return { allowed: false, reason: `Every file in this ${kind} fails your download rules. ${first}` };
   }
   return {
     allowed: false,
     reason: `${failing.length} of ${files.length} files fail your download rules (${first}) `
-      + 'A folder downloads whole, so open the release and take the others one by one.',
+      + (kind === 'release'
+        ? 'A folder downloads whole, so open the release and take the others one by one.'
+        : 'A folder downloads whole, so take the others one by one from its file list.'),
   };
 }
 

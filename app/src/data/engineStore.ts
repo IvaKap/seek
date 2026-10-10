@@ -41,6 +41,20 @@ export interface EngineSettings {
   autoConnect: boolean;
   stallSeconds: number;
   portMapping: boolean;
+  /** Minutes without input before showing as away. 0 = never. */
+  autoAwayMinutes: number;
+  /** Sent once to each person who messages you while away. '' = none. */
+  autoReply: string;
+  /** Buddies go to the front of the upload queue. */
+  preferBuddies: boolean;
+  /** First come, first served, instead of one file per person in turn. */
+  fifoQueue: boolean;
+  /** Most files one person may queue from you. 0 = no limit. */
+  queueLimitFiles: number;
+  /** Most megabytes one person may queue from you. 0 = no limit. */
+  queueLimitMb: number;
+  /** The two limits above do not apply to buddies. */
+  buddiesUnlimited: boolean;
 }
 
 export type EngineSettingsPatch = Partial<EngineSettings>;
@@ -74,6 +88,8 @@ export interface EngineSession {
   shares: ShareState | null;
   /** Resolves on success; rejects with a sentence fit for display. */
   save(patch: EngineSettingsPatch): Promise<EngineSettings>;
+  /** Read the settings again — after an import has changed them underneath. */
+  reload(): void;
   setShares(consent: ShareConsent, folders: SharedFolder[]): Promise<ShareState>;
   rescan(force?: boolean): Promise<void>;
   check(path: string): Promise<PathFacts>;
@@ -99,6 +115,13 @@ const NOTHING: Record<keyof EngineSettings, null> = {
   autoConnect: null,
   stallSeconds: null,
   portMapping: null,
+  autoAwayMinutes: null,
+  autoReply: null,
+  preferBuddies: null,
+  fifoQueue: null,
+  queueLimitFiles: null,
+  queueLimitMb: null,
+  buddiesUnlimited: null,
 };
 
 export function useEngine(client: SidecarClient | null): EngineSession {
@@ -154,6 +177,13 @@ export function useEngine(client: SidecarClient | null): EngineSession {
     }
   }, [client]);
 
+  const reload = useCallback(() => {
+    if (!client) return;
+    void client.request<{ settings: EngineSettings }>('settings.get')
+      .then((r) => setSettings(r.settings))
+      .catch(() => { /* the next read on reconnect will catch up */ });
+  }, [client]);
+
   const applyShares = useCallback(async (consent: ShareConsent, folders: SharedFolder[]) => {
     if (!client) throw new Error('Not connected to the engine.');
     setSaving(true);
@@ -195,6 +225,7 @@ export function useEngine(client: SidecarClient | null): EngineSession {
     settings,
     shares,
     save,
+    reload,
     setShares: applyShares,
     rescan,
     check,

@@ -16,6 +16,7 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -32,6 +33,28 @@ pub struct Endpoint {
 /// Kept so the child can be killed on exit. `Drop` is not enough — the app can
 /// be terminated in ways that never unwind — so `RunEvent::Exit` kills it too.
 struct Sidecar(Mutex<Option<Child>>);
+
+/// Where the sidecar is NOW. A restarted sidecar has a new port and token, and
+/// a page that reloads after that asks `sidecar_endpoint` for it.
+struct CurrentEndpoint(Mutex<Option<Endpoint>>);
+
+/// Why there is no sidecar, when there is none.
+struct StartupError(Mutex<Option<String>>);
+
+/// Set once the app is quitting, so the supervisor never restarts a sidecar
+/// that `stop_sidecar` is deliberately stopping.
+static QUITTING: AtomicBool = AtomicBool::new(false);
+
+/// The pid of a sidecar that has been spawned but not yet handed to `Sidecar`
+/// (it is still printing its endpoint). Quitting in that window would otherwise
+/// leave it running, holding the Soulseek login, after the app is gone.
+static STARTING: AtomicU32 = AtomicU32::new(0);
+
+/// At most this many restarts inside `RESTART_WINDOW`. A sidecar that dies on
+/// every start (a corrupt state file, a broken build) would otherwise be
+/// restarted for ever, each time signing in to Soulseek again.
+const RESTART_LIMIT: usize = 3;
+const RESTART_WINDOW: Duration = Duration::from_secs(300);
 
 /// The frozen sidecar carried inside the bundle, if there is one.
 ///
@@ -141,29 +164,51 @@ fn spawn_sidecar() -> Result<(Child, Endpoint), String> {
     let mut child = command
         .spawn()
         .map_err(|e| format!("could not start the sidecar: {e}"))?;
+    STARTING.store(child.id(), Ordering::SeqCst);
+    // Quit began between the supervisor's check and the store above: the
+    // exit handler may already have looked for a starting pid and found none.
+    if QUITTING.load(Ordering::SeqCst) {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err("Seek is quitting".into());
+    }
 
+    match read_endpoint(&mut child) {
+        Ok(endpoint) => Ok((child, endpoint)),
+        Err(message) => {
+            // Child does not stop on drop: without this a sidecar that printed
+            // something unexpected kept running with nothing watching it.
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(message)
+        }
+    }
+}
+
+/// `--print-endpoint` writes exactly one line and then goes quiet, so a
+/// blocking read of the first line is the whole handshake.
+fn read_endpoint(child: &mut Child) -> Result<Endpoint, String> {
     let stdout = child
         .stdout
         .take()
         .ok_or_else(|| "sidecar produced no stdout".to_string())?;
-
-    // `--print-endpoint` writes exactly one line and then goes quiet, so a
-    // blocking read of the first line is the whole handshake.
     let mut line = String::new();
-    let mut reader = BufReader::new(stdout);
-    reader
+    BufReader::new(stdout)
         .read_line(&mut line)
         .map_err(|e| format!("could not read the sidecar endpoint: {e}"))?;
-
     if line.trim().is_empty() {
-        let _ = child.kill();
         return Err("the sidecar exited before reporting an endpoint".into());
     }
+    serde_json::from_str(line.trim())
+        .map_err(|e| format!("could not parse the sidecar endpoint {line:?}: {e}"))
+}
 
-    let endpoint: Endpoint = serde_json::from_str(line.trim())
-        .map_err(|e| format!("could not parse the sidecar endpoint {line:?}: {e}"))?;
-
-    Ok((child, endpoint))
+/// Start the sidecar, then forget it was starting — whoever called this now
+/// owns the child and stops it on exit.
+fn start_sidecar() -> Result<(Child, Endpoint), String> {
+    let result = spawn_sidecar();
+    STARTING.store(0, Ordering::SeqCst);
+    result
 }
 
 /// How long a quitting sidecar gets to save before it is killed. Its own
@@ -202,8 +247,8 @@ fn stop_sidecar(child: &mut Child) {
 /// The frontend asks for this on mount. Returning `Ok(None)` means "no sidecar,
 /// stay on recorded data" — a normal state, not an error.
 #[tauri::command]
-fn sidecar_endpoint(state: tauri::State<'_, Option<Endpoint>>) -> Option<Endpoint> {
-    let value = state.inner().clone();
+fn sidecar_endpoint(state: tauri::State<'_, CurrentEndpoint>) -> Option<Endpoint> {
+    let value = state.0.lock().ok().and_then(|guard| guard.clone());
     eprintln!("seek: sidecar_endpoint invoked -> {}",
               if value.is_some() { "Some" } else { "None" });
     value
@@ -212,21 +257,138 @@ fn sidecar_endpoint(state: tauri::State<'_, Option<Endpoint>>) -> Option<Endpoin
 /// Surfaced in the UI when the sidecar could not be started, so the failure is
 /// explained rather than appearing as a silently offline app.
 #[tauri::command]
-fn sidecar_error(state: tauri::State<'_, Option<String>>) -> Option<String> {
-    state.inner().clone()
+fn sidecar_error(state: tauri::State<'_, StartupError>) -> Option<String> {
+    state.0.lock().ok().and_then(|guard| guard.clone())
+}
+
+/// Tell the page about a new sidecar, the same way the first one was: a window
+/// global, plus a DOM event so a page that is already running swaps over.
+fn announce_endpoint(app: &tauri::AppHandle, endpoint: &Endpoint) {
+    if let (Ok(json), Some(window)) =
+        (serde_json::to_string(endpoint), app.get_webview_window("main"))
+    {
+        let _ = window.eval(&format!(
+            "window.__SEEK_SIDECAR__={json};\
+             window.dispatchEvent(new CustomEvent('seek-sidecar-restarted'));"
+        ));
+    }
+}
+
+fn announce_failure(app: &tauri::AppHandle, message: &str) {
+    eprintln!("seek: {message}");
+    if let Ok(mut guard) = app.state::<StartupError>().0.lock() {
+        *guard = Some(message.to_string());
+    }
+    // A page that reloads now must not be handed the dead sidecar's address.
+    if let Ok(mut guard) = app.state::<CurrentEndpoint>().0.lock() {
+        *guard = None;
+    }
+    if let (Ok(json), Some(window)) =
+        (serde_json::to_string(message), app.get_webview_window("main"))
+    {
+        let _ = window.eval(&format!(
+            "window.dispatchEvent(new CustomEvent('seek-sidecar-failed',{{detail:{json}}}));"
+        ));
+    }
+}
+
+/// Restart the sidecar when it dies.
+///
+/// Before this, a crashed sidecar left the app retrying a port nobody was
+/// listening on, every 8 s, until it was quit and reopened.
+///
+/// Only an ABNORMAL exit is restarted. A sidecar exits 0 when it is asked to —
+/// SIGTERM runs its shutdown — and the one thing that asks, besides this file,
+/// is a second sidecar taking over (`singleton.py`). Restarting that one would
+/// evict the newcomer, which would restart and evict this one, for ever.
+fn supervise(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let mut restarts: Vec<Instant> = Vec::new();
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            if QUITTING.load(Ordering::SeqCst) {
+                return;
+            }
+            let sidecar = app.state::<Sidecar>();
+            let status = {
+                let Ok(mut guard) = sidecar.0.lock() else { return };
+                match guard.as_mut().map(|child| child.try_wait()) {
+                    Some(Ok(None)) => continue,
+                    Some(Ok(Some(status))) => {
+                        *guard = None;
+                        status
+                    }
+                    // No child, or the OS will not say: nothing to watch.
+                    _ => return,
+                }
+            };
+            if QUITTING.load(Ordering::SeqCst) {
+                return;
+            }
+            if status.success() {
+                announce_failure(
+                    &app,
+                    "The engine was stopped from outside Seek. Quit and reopen Seek to start it again.",
+                );
+                return;
+            }
+            restarts.retain(|at| at.elapsed() < RESTART_WINDOW);
+            if restarts.len() >= RESTART_LIMIT {
+                announce_failure(
+                    &app,
+                    &format!("The engine keeps stopping ({status}). Quit and reopen Seek."),
+                );
+                return;
+            }
+            restarts.push(Instant::now());
+            eprintln!("seek: the sidecar exited ({status}); restarting it");
+            match start_sidecar() {
+                Ok((mut child, endpoint)) => {
+                    let Ok(mut guard) = sidecar.0.lock() else { return };
+                    // Quit began while it was starting: stop it here, or it
+                    // outlives the app holding the Soulseek login.
+                    if QUITTING.load(Ordering::SeqCst) {
+                        stop_sidecar(&mut child);
+                        return;
+                    }
+                    *guard = Some(child);
+                    drop(guard);
+                    if let Ok(mut current) = app.state::<CurrentEndpoint>().0.lock() {
+                        *current = Some(endpoint.clone());
+                    }
+                    announce_endpoint(&app, &endpoint);
+                }
+                Err(message) => {
+                    announce_failure(&app, &message);
+                    return;
+                }
+            }
+        }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let (child, endpoint, error) = match spawn_sidecar() {
-        Ok((child, endpoint)) => (Some(child), Some(endpoint), None),
-        Err(message) => {
-            eprintln!("seek: {message}");
-            (None, None, Some(message))
-        }
-    };
+    let builder = tauri::Builder::default();
 
-    tauri::Builder::default()
+    // One Seek at a time: a second launch focuses this window and exits.
+    // Registered first, and the sidecar is started in `setup` rather than
+    // before the builder, so a second copy quits before it starts an engine —
+    // whose singleton guard would otherwise evict this one's.
+    //
+    // Release builds only. `tauri dev` shares the bundle's identifier, so with
+    // Seek.app open a dev build would find its socket and exit at once, with
+    // no window and no error.
+    #[cfg(not(debug_assertions))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }));
+
+    builder
         // ⌘W has to reach the WEBVIEW, and by default it never does.
         //
         // Tauri installs the standard macOS menu, whose Window → Close owns
@@ -294,11 +456,19 @@ pub fn run() {
         // diagnostics awaits the engine before writing. Both problems belong to
         // the webview; this plugin writes from Rust and has neither.
         .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(endpoint.clone())
-        .manage(error)
-        .manage(Sidecar(Mutex::new(child)))
         .invoke_handler(tauri::generate_handler![sidecar_endpoint, sidecar_error])
-        .setup(move |app| {
+        .setup(|app| {
+            let (child, endpoint, error) = match start_sidecar() {
+                Ok((child, endpoint)) => (Some(child), Some(endpoint), None),
+                Err(message) => {
+                    eprintln!("seek: {message}");
+                    (None, None, Some(message))
+                }
+            };
+            app.manage(CurrentEndpoint(Mutex::new(endpoint.clone())));
+            app.manage(StartupError(Mutex::new(error)));
+            app.manage(Sidecar(Mutex::new(child)));
+
             // Inject the endpoint straight into the page.
             //
             // This is deliberately NOT done over IPC. `invoke` depends on the
@@ -310,13 +480,14 @@ pub fn run() {
             //
             // `sidecar_endpoint` remains as a fallback for a window created
             // after startup.
-            if let Some(endpoint) = endpoint.clone() {
+            if let Some(endpoint) = endpoint {
                 if let Ok(json) = serde_json::to_string(&endpoint) {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.eval(&format!("window.__SEEK_SIDECAR__={json};"));
                     }
                 }
                 let _ = app.emit("sidecar-ready", endpoint);
+                supervise(app.handle().clone());
             }
             Ok(())
         })
@@ -324,6 +495,17 @@ pub fn run() {
         .expect("error while building Seek")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
+                QUITTING.store(true, Ordering::SeqCst);
+                #[cfg(unix)]
+                {
+                    let starting = STARTING.swap(0, Ordering::SeqCst);
+                    if starting != 0 {
+                        // SAFETY: a pid we spawned and have not waited on.
+                        unsafe {
+                            libc::kill(starting as libc::pid_t, libc::SIGTERM);
+                        }
+                    }
+                }
                 if let Some(state) = app.try_state::<Sidecar>() {
                     if let Ok(mut guard) = state.0.lock() {
                         if let Some(child) = guard.as_mut() {

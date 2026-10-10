@@ -9,7 +9,7 @@
  * too, so a peer with no picture is not re-requested on every render.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 
 export interface PeerPictureCache {
@@ -25,6 +25,9 @@ export function usePeerPictures(client: SidecarClient | null): PeerPictureCache 
 
   useEffect(() => {
     if (!client) return;
+    // A request that died with the old connection is asked again on this one,
+    // rather than leaving that peer without a picture for the session.
+    requested.current = new Set();
     const offResult = client.on('user.info.result', (data) => {
       const d = data as { username: string; pictureUri: string | null };
       setPictures((prev) => (
@@ -41,6 +44,8 @@ export function usePeerPictures(client: SidecarClient | null): PeerPictureCache 
   const request = useCallback((username: string) => {
     if (!client || requested.current.has(username)) return;
     requested.current.add(username);
+    // Cached as "no picture" until the next connection clears `requested`:
+    // un-asking here would re-ask on every render while the socket is down.
     void client.request('user.info.get', { username }).catch(() => {
       setPictures((prev) => (prev.has(username) ? prev : new Map(prev).set(username, null)));
     });
@@ -48,5 +53,5 @@ export function usePeerPictures(client: SidecarClient | null): PeerPictureCache 
 
   const get = useCallback((username: string) => pictures.get(username), [pictures]);
 
-  return { get, request };
+  return useMemo(() => ({ get, request }), [get, request]);
 }

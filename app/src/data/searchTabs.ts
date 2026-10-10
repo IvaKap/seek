@@ -26,6 +26,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchSession, SearchSnapshot } from './searchStore.ts';
 import type { SourceFile } from '../domain/types.ts';
+import { GLOBAL_SCOPE } from './mockSidecar.ts';
+import type { SearchScope } from './mockSidecar.ts';
+import { showNotice } from './failures.ts';
 
 export interface SearchTab {
   id: string;
@@ -49,8 +52,10 @@ export interface SearchTabs {
    * destroyed. The exception matters as much as the rule: searching in a tab
    * you just opened must not open a second one beside it and leave the first
    * blank forever.
+   *
+   * `scope` defaults to everyone: only the search field has a scope picker.
    */
-  openWith(query: string): void;
+  openWith(query: string, scope?: SearchScope): void;
   /**
    * Show results that were ALREADY found — a wish's — in a tab, without
    * searching again. Same tab rules as `openWith`.
@@ -87,7 +92,7 @@ const SWEEP_MS = 60 * 1000;
  *  anything about a particular query. */
 function blank(session: SearchSession): SearchSnapshot {
   return {
-    query: '', files: [], peers: [], filters: session.filters,
+    query: '', scope: GLOBAL_SCOPE, files: [], peers: [], filters: session.filters,
     groupBy: session.groupBy, sort: session.sort,
     expanded: new Set(), closedReason: null, tick: 0,
   };
@@ -95,6 +100,10 @@ function blank(session: SearchSession): SearchSnapshot {
 
 /** The `closedReason` of a tab showing a wish's results rather than a search. */
 export const WISHLIST_REASON = 'wishlist';
+
+/** Tabs are searches put away, each holding its results in memory. Past this,
+ *  a new search reuses the tab you are on instead of opening another. */
+export const MAX_TABS = 12;
 
 /** The label a tab shows before anything has been searched in it. */
 const BLANK = 'New search';
@@ -114,6 +123,9 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
   /* What each tab last searched for. Absent means it has never run one, which
      is what makes a brand-new tab searchable in place. */
   const ranQuery = useRef<Map<string, string>>(new Map());
+  /** And where each tab searched: the same words somewhere else are a
+   *  different search, and must not replace this tab's results. */
+  const ranScope = useRef<Map<string, string>>(new Map());
 
   /* The sweep runs on an interval and must see the CURRENT list, not the one
    * that existed when the effect was created. Reading refs rather than adding
@@ -158,6 +170,10 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
   }, [activeId, session]);
 
   const open = useCallback(() => {
+    if (ids.length >= MAX_TABS) {
+      showNotice(`${MAX_TABS} searches are open, so this tab is reused. Close one to keep searches side by side.`);
+      return activeId;
+    }
     const id = nextId();
     parked.current.set(activeId, session.snapshot());
     labels.current.set(activeId, nameOf(activeId));
@@ -166,7 +182,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     setIds((prev) => [...prev, id]);
     setActiveId(id);
     return id;
-  }, [activeId, session, nameOf]);
+  }, [ids.length, activeId, session, nameOf]);
 
   const close = useCallback((id: string) => {
     /* Everything happens OUT HERE, and the updater below only computes a list.
@@ -183,6 +199,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     labels.current.delete(id);
     usedAt.current.delete(id);
     ranQuery.current.delete(id);
+    ranScope.current.delete(id);
 
     if (id === activeId) {
       // Focus the neighbour, the way every tab strip does: the one to the
@@ -196,7 +213,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     setIds(next);
   }, [ids, activeId, session]);
 
-  const openWith = useCallback((query: string) => {
+  const openWith = useCallback((query: string, scope: SearchScope = GLOBAL_SCOPE) => {
     const text = query.trim();
     if (!text) return;
 
@@ -213,12 +230,12 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
      * this is called. What matters is whether this tab has run anything BEFORE,
      * which is what the map records. */
     const ran = ranQuery.current.get(activeRef.current);
-    if (ran !== undefined && ran !== text) {
-      ranQuery.current.set(open(), text);
-    } else {
-      ranQuery.current.set(activeRef.current, text);
-    }
-    session.run(text);
+    const where = JSON.stringify(scope);
+    let id = activeRef.current;
+    if (ran !== undefined && (ran !== text || ranScope.current.get(id) !== where)) id = open();
+    ranQuery.current.set(id, text);
+    ranScope.current.set(id, where);
+    session.run(text, scope);
   }, [open, session]);
 
   const showResults = useCallback((query: string, files: SourceFile[]) => {
@@ -228,8 +245,10 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     const ran = ranQuery.current.get(activeRef.current);
     const id = ran !== undefined && ran !== text ? open() : activeRef.current;
     ranQuery.current.set(id, text);
+    ranScope.current.set(id, JSON.stringify(GLOBAL_SCOPE));
     session.restore({
       query: text,
+      scope: GLOBAL_SCOPE,
       files,
       peers: [...new Set(files.map((f) => f.user))],
       filters: session.filters,
@@ -271,6 +290,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
         labels.current.delete(id);
         usedAt.current.delete(id);
         ranQuery.current.delete(id);
+    ranScope.current.delete(id);
       }
       setIds(next);
     }, SWEEP_MS);

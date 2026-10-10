@@ -18,6 +18,7 @@ import {
   fileName, isActive, isCancelled, isFailed, isTerminal,
 } from '../data/transferStore.ts';
 import type { MenuItem } from './ContextMenu.tsx';
+import { soulseekUrl } from '../domain/soulseekUrl.ts';
 
 const AUDIO = /\.(flac|mp3|m4a|aac|ogg|opus|wav|aiff?|wv|ape|alac)$/i;
 
@@ -88,6 +89,7 @@ export function fileMenuItems(targets: Transfer[], a: FileMenuActions): MenuItem
     items.push(
       { id: 'copypath', separated: true, label: 'Copy file path', run: () => a.copy(t.path) },
       { id: 'copyname', label: 'Copy file name', run: () => a.copy(fileName(t.path)) },
+      { id: 'copylink', label: 'Copy Soulseek link', run: () => a.copy(soulseekUrl(t.username, t.path)) },
       { id: 'copyuser', label: 'Copy username', run: () => a.copy(t.username) },
     );
   }

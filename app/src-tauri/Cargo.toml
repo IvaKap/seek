@@ -24,6 +24,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-clipboard-manager = "2.1.0-beta.7"
+tauri-plugin-single-instance = "2"
 
 # SIGTERM for the sidecar on quit, so it can save before it exits. Already in
 # the dependency tree; named here because it is now used directly.

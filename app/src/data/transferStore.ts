@@ -28,7 +28,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
-import { reportFailure, showNotice } from './failures.ts';
+import { readUntilAnswered, reportFailure, showNotice } from './failures.ts';
 
 export type TransferState =
   | 'queued' | 'rejected' | 'getting_status' | 'transferring' | 'paused' | 'cancelled'
@@ -281,6 +281,32 @@ export function group(transfers: Transfer[], quietSeconds = 0, now = Date.now())
   return out.sort((a, b) => rank[a.state] - rank[b.state] || a.title.localeCompare(b.title));
 }
 
+/**
+ * The previous objects wherever nothing changed, so React can skip them. A
+ * group is the same when its files are the very same objects (the store
+ * replaces a transfer's object on every update) and its time-dependent bits
+ * agree. Without this every one of 700 finished releases was a new object on
+ * every progress tick, and the whole list redrew 2.5 times a second.
+ */
+export function keepUnchanged(prev: TransferGroup[], next: TransferGroup[]): TransferGroup[] {
+  const before = new Map(prev.map((g) => [g.key, g]));
+  let same = prev.length === next.length;
+  const out = next.map((n, i) => {
+    const p = before.get(n.key);
+    const kept = p && p.state === n.state && p.quietFor === n.quietFor
+      && sameItems(p.transfers, n.transfers) ? p : n;
+    if (kept !== prev[i]) same = false;
+    return kept;
+  });
+  return same ? prev : out;
+}
+
+function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 const PUBLISH_MS = 400;
 /* How often to re-derive when a give-up threshold is set. A minute is far finer
  * than any threshold worth setting (the smallest offered is 5 minutes), and the
@@ -354,10 +380,21 @@ export interface TransferSession {
   uploadGroups: TransferGroup[];
   /** Uploads actually running or queued right now. */
   uploadCount: number;
-  enqueue(username: string, path: string, size: number): Promise<void>;
+  /** `destination` is a folder chosen with Download to…; null is the usual one. */
+  enqueue(username: string, path: string, size: number, destination?: string | null): Promise<void>;
   /** `recurse` takes the subfolders too — what a folder whose label counts
-   *  everything inside it promises. */
-  enqueueFolder(username: string, folderPath: string, recurse?: boolean): Promise<void>;
+   *  everything inside it promises. `count`, when the caller knows it, asks
+   *  first past LARGE_FOLDER_FILES: one click should not queue 3,000 files. */
+  enqueueFolder(
+    username: string, folderPath: string, recurse?: boolean,
+    opts?: { destination?: string | null; count?: number },
+  ): Promise<void>;
+  /** A folder big enough to ask about first, waiting for an answer. */
+  pendingFolder: PendingFolder | null;
+  confirmFolder(): void;
+  dismissFolder(): void;
+  /** Forget finished downloads whose files are gone, except `keep`. */
+  forgetMissing(keep: ReadonlySet<string>): void;
   pause(ids: string[]): void;
   resume(ids: string[]): void;
   cancel(ids: string[]): void;
@@ -376,11 +413,25 @@ export interface TransferSession {
   undoCancel(): void;
 }
 
+/** Folders with more files than this ask before queueing — the number
+ *  Nicotine+ asks at too (userbrowse.py). */
+export const LARGE_FOLDER_FILES = 1000;
+
+export interface PendingFolder {
+  username: string;
+  folderPath: string;
+  recurse: boolean;
+  destination: string | null;
+  count: number;
+}
+
 /** Enough of a cancelled download to queue it again. */
 export interface CancelledFile {
   username: string;
   path: string;
   size: number;
+  /** The folder it was going to, so Undo of a Download to… goes there too. */
+  destination: string | null;
 }
 
 /**
@@ -406,6 +457,9 @@ export function useTransfers(
   quietSeconds = 0,
   /** Forget completed records older than this many days; 0 keeps them. */
   clearCompletedDays = 0,
+  /** Transfers the retention sweep must never clear: auto-downloads held for
+   *  review. A ref, filled in by whoever knows them. */
+  keepRef?: { readonly current: ReadonlySet<string> },
 ): TransferSession {
   const byId = useRef<Map<string, Transfer>>(new Map());
   const [groups, setGroups] = useState<TransferGroup[]>([]);
@@ -433,8 +487,8 @@ export function useTransfers(
     const downloads = list.filter((t) => t.direction !== 'upload');
     const uploads = list.filter((t) => t.direction === 'upload');
     const now = Date.now();
-    setAll(downloads);
-    setGroups(group(downloads, quiet.current, now));
+    setAll((prev) => (sameItems(prev, downloads) ? prev : downloads));
+    setGroups((prev) => keepUnchanged(prev, group(downloads, quiet.current, now)));
     /* Uploads are never reclassified. A peer who stops taking a file from you
      * is their problem, not a download of yours that needs cleaning up, and
      * `uploads.py` has no paused or stalled state to reason about anyway. */
@@ -495,13 +549,19 @@ export function useTransfers(
 
     // Snapshot on connect, so downloads already running in a restarted sidecar
     // appear instead of the list looking empty until something changes.
-    void client.request<{ transfers: Transfer[] }>('transfer.list')
-      .then((r) => {
+    //
+    // REPLACE, not merge. A new client is a reconnect or a restarted engine,
+    // and a transfer removed while this page was not listening would otherwise
+    // stay on screen as a ghost until relaunch. Safe: the engine answers in
+    // order, so the snapshot already reflects every event sent before it.
+    const stopList = readUntilAnswered<{ transfers: Transfer[] }>(
+      client, 'transfer.list', undefined, (r) => {
         const at = Date.now();
+        byId.current.clear();
         for (const t of r.transfers ?? []) byId.current.set(t.id, { ...t, seenAt: at });
         publish();
-      })
-      .catch(() => {});
+      },
+    );
 
     // Progress arrives ~1/sec per transfer. Publishing per packet would rerender
     // the list dozens of times a second for no visible gain.
@@ -554,6 +614,7 @@ export function useTransfers(
             && t.state === 'finished'
             && t.finishedAt !== null
             && t.finishedAt < cutoff
+            && !keepRef?.current.has(t.id)
           ))
           .map((t) => t.id);
         if (stale.length > 0) {
@@ -564,6 +625,7 @@ export function useTransfers(
 
     return () => {
       for (const fn of off) fn();
+      stopList();
       window.clearInterval(timer);
       window.clearInterval(sweep);
     };
@@ -576,7 +638,9 @@ export function useTransfers(
     });
   }, [client]);
 
-  const enqueue = useCallback(async (username: string, path: string, size: number) => {
+  const enqueue = useCallback(async (
+    username: string, path: string, size: number, destination: string | null = null,
+  ) => {
     if (!client) return;
     setError(null);
     try {
@@ -585,7 +649,7 @@ export function useTransfers(
       // unknown keys. This is the same trap that broke search.start.
       const r = await client.request<{ transferId: string; alreadyQueued: boolean }>(
         'transfer.enqueue',
-        { username, path, size, file: null, destination: null, paused: false },
+        { username, path, size, file: null, destination, paused: false },
       );
       // Pressing Get on something already queued is upstream's silent no-op —
       // it returns before emitting anything. The row now appears regardless
@@ -600,18 +664,61 @@ export function useTransfers(
     }
   }, [client]);
 
-  const enqueueFolder = useCallback(async (username: string, folderPath: string, recurse = false) => {
+  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+
+  const sendFolder = useCallback(async (f: Omit<PendingFolder, 'count'>) => {
     if (!client) return;
     setError(null);
     try {
       await client.request('transfer.enqueueFolder', {
-        username, folderPath, recurse, destination: null,
+        username: f.username, folderPath: f.folderPath, recurse: f.recurse,
+        destination: f.destination,
       });
     } catch (e) {
       setError((e as Error).message);
       reportFailure('Download the folder', e);
     }
   }, [client]);
+
+  const enqueueFolder = useCallback(async (
+    username: string, folderPath: string, recurse = false,
+    opts: { destination?: string | null; count?: number } = {},
+  ) => {
+    const f = { username, folderPath, recurse, destination: opts.destination ?? null };
+    if ((opts.count ?? 0) > LARGE_FOLDER_FILES) {
+      setPendingFolder({ ...f, count: opts.count ?? 0 });
+      return;
+    }
+    await sendFolder(f);
+  }, [sendFolder]);
+
+  const confirmFolder = useCallback(() => {
+    if (pendingFolder) void sendFolder(pendingFolder);
+    setPendingFolder(null);
+  }, [pendingFolder, sendFolder]);
+  const dismissFolder = useCallback(() => setPendingFolder(null), []);
+
+  /* A read first, then an ordinary clear, so anything awaiting review is left
+     out: clearing its transfer would leave the review card pointing at nothing. */
+  const forgetMissing = useCallback((keep: ReadonlySet<string>) => {
+    if (!client) return;
+    void client.request<{ transferIds: string[] }>('transfer.findMissing')
+      .then(async (r) => {
+        const found = r.transferIds ?? [];
+        const ids = found.filter((id) => !keep.has(id));
+        if (found.length === 0) {
+          showNotice('Every finished download is still where it was saved.');
+          return;
+        }
+        if (ids.length === 0) {
+          showNotice('The only files missing belong to downloads awaiting your review, so nothing was forgotten.');
+          return;
+        }
+        await client.request('transfer.clear', { transferIds: ids });
+        showNotice(`Forgot ${ids.length} download${ids.length === 1 ? '' : 's'} whose files are gone. Nothing was deleted.`);
+      })
+      .catch((e) => reportFailure('Forget missing files', e));
+  }, [client, cmd]);
 
   // A second Cancel inside the window adds to the batch rather than replacing
   // it, so Undo puts back everything you just took away, not only the last.
@@ -621,7 +728,7 @@ export function useTransfers(
       .filter((t): t is Transfer => (
         t !== undefined && t.direction !== 'upload' && t.state !== 'finished'
       ))
-      .map((t) => ({ username: t.username, path: t.path, size: t.size }));
+      .map((t) => ({ username: t.username, path: t.path, size: t.size, destination: t.localFolder }));
     cmd('transfer.cancel', { transferIds: ids });
     if (files.length > 0) setCancelled((prev) => [...(prev ?? []), ...files]);
   }, [cmd]);
@@ -636,7 +743,7 @@ export function useTransfers(
     const files = cancelled;
     if (!files) return;
     setCancelled(null);
-    for (const f of files) void enqueue(f.username, f.path, f.size);
+    for (const f of files) void enqueue(f.username, f.path, f.size, f.destination);
   }, [cancelled, enqueue]);
 
   const reveal = useCallback((id: string) => {
@@ -657,6 +764,7 @@ export function useTransfers(
      * means running or queued — a finished upload is history, not activity. */
     uploadCount: uploadGroups.reduce((n, g) => n + g.active, 0),
     enqueue, enqueueFolder,
+    pendingFolder, confirmFolder, dismissFolder, forgetMissing,
     pause: (ids) => cmd('transfer.pause', { transferIds: ids }),
     resume: (ids) => cmd('transfer.resume', { transferIds: ids }),
     cancel,
