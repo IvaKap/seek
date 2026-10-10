@@ -133,7 +133,7 @@ function SessionCard({
         type="button"
         className="dig-session__open pressable"
         aria-label={`Open ${sessionName(session)}`}
-        onPointerDown={onOpen}
+        onClick={onOpen}
       >
         Open
         <IconChevronRight size={13} painted={1.5} />
@@ -165,7 +165,7 @@ export function DigSessionsView({
           <button
             type="button"
             className="verify pressable"
-            onPointerDown={() => setOpenId(null)}
+            onClick={() => setOpenId(null)}
           >
             ← All sessions
           </button>
@@ -186,7 +186,7 @@ export function DigSessionsView({
                 type="button"
                 className="btn pressable"
                 title="Stop new entries joining this session"
-                onPointerDown={() => sessions.close(open.id)}
+                onClick={() => sessions.close(open.id)}
               >
                 Close session
               </button>
@@ -195,7 +195,7 @@ export function DigSessionsView({
               type="button"
               className="btn pressable"
               title="Forget the session. Its entries stay on the want list."
-              onPointerDown={() => sessions.remove(open.id)}
+              onClick={() => sessions.remove(open.id)}
             >
               Delete session
             </button>
@@ -239,7 +239,7 @@ export function DigSessionsView({
             type="button"
             className="btn pressable"
             title="Start a session — everything you save next joins it"
-            onPointerDown={() => sessions.create()}
+            onClick={() => sessions.create()}
           >
             Start a session
           </button>

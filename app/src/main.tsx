@@ -2,6 +2,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { ErrorBoundary } from './ui/ErrorBoundary.tsx';
 import './styles/base.css';
 
 /*
@@ -16,6 +17,10 @@ if ('__TAURI_INTERNALS__' in window || '__TAURI__' in window) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* The last line of defence: each pane has its own boundary (App.tsx), so
+        this one only catches a failure in the shell itself. */}
+    <ErrorBoundary label="Seek">
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 );

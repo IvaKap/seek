@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { judge, pickSource } from './preferences.ts';
+import { judge, judgeRelease, pickSource } from './preferences.ts';
 import type { SourceFile } from './types.ts';
 
 /** Only the fields the preference layer reads. */
@@ -51,5 +51,29 @@ describe('download preferences', () => {
   it('falls back rather than queueing nothing when every source is refused', () => {
     const only = file({ bitrate: 128 });
     expect(pickSource([only], { ...OFF, minBitrate: 320 })).toBe(only);
+  });
+});
+
+describe('judgeRelease — Get on a release card', () => {
+  /* The release Get queued the folder without asking, so the rules applied to
+   * a track's Get and not to the default view's. */
+  const rules = { ...OFF, minBitrate: 256 };
+
+  it('lets a release through when every file passes', () => {
+    expect(judgeRelease([file({ bitrate: 320 }), file({ bitrate: 320 })], rules).allowed).toBe(true);
+  });
+
+  it('refuses a release where every file fails, saying why', () => {
+    const v = judgeRelease([file({ bitrate: 128 }), file({ bitrate: 192 })], rules);
+    expect(v.allowed).toBe(false);
+    expect(v.reason).toMatch(/^Every file/);
+    expect(v.reason).toMatch(/256 kbps minimum/);
+  });
+
+  it('refuses a mixed release, and says how to take the good files', () => {
+    const v = judgeRelease([file({ bitrate: 320 }), file({ bitrate: 128 }), file({ bitrate: 320 })], rules);
+    expect(v.allowed).toBe(false);
+    expect(v.reason).toMatch(/^1 of 3 files/);
+    expect(v.reason).toMatch(/one by one/);
   });
 });

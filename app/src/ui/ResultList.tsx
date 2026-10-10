@@ -349,7 +349,7 @@ export function ResultList({
           shifting the list the user is reading. */}
       <div className="pill-zone" aria-live="polite">
         {pendingCount > 0 && (
-          <button type="button" className="pill pressable" onPointerDown={foldIn}>
+          <button type="button" className="pill pressable" onClick={foldIn}>
             <IconArrowUp size={14} painted={1.7} />
             <span className="tnum">{integer(pendingCount)}</span>
             <span>new {pendingCount === 1 ? 'result' : 'results'}</span>

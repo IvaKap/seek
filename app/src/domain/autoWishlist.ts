@@ -23,6 +23,8 @@
 import { matches, terms } from './group.ts';
 import { EMPTY_FILTERS } from './types.ts';
 import type { Filters, SourceFile, WishFilters } from './types.ts';
+import { judge } from './preferences.ts';
+import type { DownloadPrefs } from './preferences.ts';
 
 /**
  * Turn a wish's stored filters (arrays and strings, as they travel on the wire)
@@ -70,6 +72,20 @@ export function pickAutoCandidate(
   return best;
 }
 
+/**
+ * The key a file is skipped under, for one wish.
+ *
+ * Reject used to drop the claim and nothing else, so the planner — reading the
+ * same results — picked the very same file again on the next pass, and a file
+ * that failed to download came straight back the same way. Rejected and failed
+ * files are now remembered per wish (see `autoDownloads.ts`) and passed in as
+ * `skipped`. Per wish, because the same file can be wrong for one wish and
+ * right for another.
+ */
+export function skipKey(query: string, user: string, path: string): string {
+  return `${query}\n${user}\n${path}`;
+}
+
 /** A wish, reduced to what the planner needs to know about it. */
 export interface AutoWish {
   query: string;
@@ -98,12 +114,20 @@ export function planAutoDownloads(
   sourcesByQuery: Record<string, SourceFile[]>,
   claimedQueries: ReadonlySet<string>,
   slotsFree: number,
+  /** `skipKey`s of files already rejected or failed for that wish. */
+  skipped: ReadonlySet<string> = new Set(),
+  /** Settings → Downloads. Auto-download used to apply only the wish's own
+   *  filters, so with "Reject suspected transcodes" on it still grabbed one. */
+  rules?: DownloadPrefs,
 ): AutoPlanItem[] {
   if (slotsFree <= 0) return [];
   const plan: AutoPlanItem[] = [];
   for (const w of wishes) {
     if (!w.auto || claimedQueries.has(w.query)) continue;
-    const source = pickAutoCandidate(sourcesByQuery[w.query] ?? [], w.filters);
+    const candidates = (sourcesByQuery[w.query] ?? [])
+      .filter((s) => !skipped.has(skipKey(w.query, s.user, s.path)))
+      .filter((s) => !rules || judge(s, rules).allowed);
+    const source = pickAutoCandidate(candidates, w.filters);
     if (!source) continue;
     plan.push({ query: w.query, source });
     if (plan.length >= slotsFree) break;

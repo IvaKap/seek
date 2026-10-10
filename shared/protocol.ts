@@ -709,6 +709,13 @@ export interface AppSettings {
   autoDigSessions: boolean;
 
   /**
+   * Look for a new Seek version on GitHub shortly after launch. The one
+   * request Seek makes that is neither Soulseek nor a lookup you switched on,
+   * so it has its own switch.
+   */
+  checkUpdates: boolean;
+
+  /**
    * How many minutes of silence before a download is shown under Failed
    * instead of Downloads. 0 never does it. Seek does NOT touch the transfer:
    * it keeps its place in the peer's queue, which is often hours long and
@@ -770,6 +777,7 @@ export interface AppSettingsPatch {
   /** The client secret, for writing. Empty clears it. */
   youtubeOauthClientSecret: string | null;
   autoDigSessions: boolean | null;
+  checkUpdates: boolean | null;
   stalledFailMinutes: number | null;
   clearCompletedDays: number | null;
   uploadGreetingEnabled: boolean | null;
@@ -809,6 +817,19 @@ export interface LibraryState {
   releaseCount: number;
   trackCount: number;
   scanning: boolean;
+
+  /**
+   * Roots that could not be reached at the last scan, e.g. an unplugged drive.
+   * Their releases are kept from the previous scan rather than dropped. Leave
+   * one out of the next scan's roots to forget it.
+   */
+  offlineRoots: string[];
+
+  /**
+   * The download folder, which every scan includes whatever roots it is given
+   * — so it cannot be forgotten by leaving it out.
+   */
+  downloadRoot: string;
 }
 
 export interface LibraryScanParams {
@@ -2427,8 +2448,9 @@ export interface AutoClaim {
   path: string;
 
   /**
-   * downloading | analysing | awaiting-review. The frontend's vocabulary; the
-   * sidecar does not interpret it.
+   * downloading | analysing | awaiting-review | skipped. The frontend's
+   * vocabulary; the sidecar does not interpret it. `skipped` marks a file
+   * rejected at review or failed, so it is never picked again for that wish.
    */
   status: string;
 }
@@ -2582,6 +2604,13 @@ export interface Settings {
    * (RECON.md §5).
    */
   stallSeconds: number | null;
+
+  /**
+   * Ask the router to forward the listening port (NAT-PMP, then UPnP).
+   * Upstream's `server.upnp`, on by default as in Nicotine+. Without it, a
+   * peer who is also behind a router cannot reach us at all.
+   */
+  portMapping: boolean | null;
 }
 
 /** Current server connection. */
@@ -3197,6 +3226,33 @@ export interface ChatOpenParams {
   username: string;
 }
 
+/** Ask for what was said before, from the engine's own chat log. */
+export interface ChatHistoryParams {
+  scope: ChatScope;
+
+  /** Room name, or the other person's username. */
+  target: string;
+
+  /**
+   * Most recent lines to return. Null uses Nicotine+'s own setting (200 by
+   * default).
+   */
+  limit: number | null;
+}
+
+/** A conversation's log, oldest line first. */
+export interface ChatHistory {
+  scope: ChatScope;
+  target: string;
+
+  /**
+   * Each line exactly as Nicotine+ wrote it — '<timestamp> [<user>] <text>',
+   * the timestamp in the user's locale. Raw on purpose: splitting it is the
+   * frontend's. Empty when there is no log.
+   */
+  lines: string[];
+}
+
 /**
  * Everything the frontend needs to drive sharing and to render the persistent
  * 'you are not sharing' indicator.
@@ -3228,6 +3284,14 @@ export interface ShareState {
    * component. Sharing begins on next launch.
    */
   restartRequired: boolean;
+
+  /**
+   * Shared folders that stopped the last rescan because they could not be read
+   * (an unplugged drive). Upstream refuses to rescan while any share is
+   * missing, so until this is empty the index — what peers see — is the one
+   * from before. Cleared when a rescan actually runs.
+   */
+  unavailable: string[];
 }
 
 /**
@@ -3248,6 +3312,18 @@ export interface ShareSetParams {
 export interface ShareRescanParams {
   /** Rescan even if upstream believes the index is current. */
   force: boolean | null;
+}
+
+/**
+ * A downloaded file to show in Finder or open. Name it by a finished transfer,
+ * or by a local path.
+ */
+export interface RevealParams {
+  /** A finished download. */
+  transferId: string | null;
+
+  /** A local file or folder, e.g. a Library release folder. */
+  path: string | null;
 }
 
 export interface PathCheckParams {
@@ -3469,6 +3545,11 @@ export interface CommandParams {
   'chat.say': ChatSayParams;
   /** Open a private conversation without sending anything. */
   'chat.open': ChatOpenParams;
+  /**
+   * Earlier lines of a conversation, read from the log Nicotine+ keeps on
+   * disk, so a restart does not wipe every conversation.
+   */
+  'chat.history': ChatHistoryParams;
   /**
    * Add a query to the wishlist. Upstream re-runs it automatically on the
    * interval the SERVER dictates — we do not poll, and must not.
@@ -3786,6 +3867,13 @@ export interface CommandParams {
    * silently if it already exists. Never deletes or overwrites.
    */
   'fs.ensureFolder': EnsureFolderParams;
+  /** Show a file or folder in Finder, selected. */
+  'fs.reveal': RevealParams;
+  /**
+   * Open an audio file in its default app. Audio only: Seek never launches
+   * anything else on a client's word.
+   */
+  'fs.open': RevealParams;
 }
 
 export interface CommandResult {
@@ -3812,6 +3900,7 @@ export interface CommandResult {
   'chat.leave': Record<string, never>;
   'chat.say': Record<string, never>;
   'chat.open': Record<string, never>;
+  'chat.history': ChatHistory;
   'wishlist.add': WishlistState;
   'wishlist.remove': WishlistState;
   'wishlist.filters': WishlistState;
@@ -3894,6 +3983,8 @@ export interface CommandResult {
   'settings.patch': SettingsResult;
   'fs.check': PathCheck;
   'fs.ensureFolder': PathCheck;
+  'fs.reveal': Record<string, never>;
+  'fs.open': Record<string, never>;
 }
 
 export type CommandName = keyof CommandParams;
@@ -3922,6 +4013,7 @@ export const COMMAND_NAMES = [
   'chat.leave',
   'chat.say',
   'chat.open',
+  'chat.history',
   'wishlist.add',
   'wishlist.remove',
   'wishlist.filters',
@@ -4004,6 +4096,8 @@ export const COMMAND_NAMES = [
   'settings.patch',
   'fs.check',
   'fs.ensureFolder',
+  'fs.reveal',
+  'fs.open',
 ] as const satisfies readonly CommandName[];
 
 /* --------------------------------------------------------- event tables */

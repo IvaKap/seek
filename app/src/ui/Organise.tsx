@@ -52,7 +52,7 @@ export function OrganiseButton({
       className="verify pressable"
       disabled={!client}
       title="Move this file into Artist/Year - Album/ inside your download folder"
-      onPointerDown={run}
+      onClick={run}
     >
       Organise
     </button>

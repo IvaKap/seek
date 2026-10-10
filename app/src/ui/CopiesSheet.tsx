@@ -108,7 +108,8 @@ function CopyRow({
         <button
           type="button"
           className="action action--primary pressable"
-          onPointerDown={(e) => { e.stopPropagation(); onQueue(); }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onQueue(); }}
           aria-label={`Download this copy from ${copy.user}, ${count(copy.trackCount, 'track')}`}
           title={`Download this copy from ${copy.user}`}
         >
@@ -313,7 +314,7 @@ export function CopiesSheet({
           {/* New copies wait here rather than pushing the list around while it
               is being read. Same idiom as the result list's pill. */}
           {arrived.length > 0 && (
-            <button type="button" className="pill pressable" onPointerDown={foldIn}>
+            <button type="button" className="pill pressable" onClick={foldIn}>
               <span className="tnum">{arrived.length}</span>
               <span>more {arrived.length === 1 ? 'copy' : 'copies'}</span>
             </button>
@@ -321,7 +322,7 @@ export function CopiesSheet({
           <button
             type="button"
             className="sheet__close pressable"
-            onPointerDown={close}
+            onClick={close}
             aria-label="Close"
             title="Close"
           >

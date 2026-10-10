@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChatScope, ChatSession } from '../data/chatStore.ts';
 import { IconUsers } from '../icons/index.tsx';
+import { readableError } from '../domain/folders.ts';
 
 function clock(unix: number): string {
   return new Date(unix * 1000).toLocaleTimeString([], {
@@ -29,7 +30,14 @@ export function ChatView({
 }) {
   const [newTarget, setNewTarget] = useState('');
   const [filter, setFilter] = useState('');
-  const [draft, setDraft] = useState('');
+  /* One draft per conversation. This component serves rooms AND private chats
+     and is never remounted between them, so a single draft followed you: half
+     a line typed in a room, then Message on someone, then Return, sent it to
+     them privately. */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** Conversations with a line on its way, so Return cannot send it twice. */
+  const [sending, setSending] = useState<ReadonlySet<string>>(() => new Set());
+  const [failed, setFailed] = useState<{ key: string; why: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
@@ -38,6 +46,33 @@ export function ChatView({
   const conv = chat.conversations.find(
     (c) => c.scope === scope && `${c.scope}:${c.target}` === chat.active,
   ) ?? null;
+  const convKey = conv ? `${conv.scope}:${conv.target}` : '';
+  const draft = drafts[convKey] ?? '';
+  const setDraft = (text: string) => setDrafts((d) => ({ ...d, [convKey]: text }));
+
+  /* The box is cleared only once the engine has taken the line. It used to be
+     cleared first, with the failure swallowed, so a long message typed during
+     a hiccup was simply gone. */
+  const submit = () => {
+    const key = convKey;
+    const text = draft;
+    if (!key || !text.trim() || sending.has(key)) return;
+    setFailed(null);
+    setSending((s) => new Set(s).add(key));
+    chat.send(text)
+      // Only what was sent is removed: anything typed while it was on its way
+      // stays, and the sent part cannot go a second time.
+      .then(() => setDrafts((d) => {
+        const now = d[key] ?? '';
+        return { ...d, [key]: now.startsWith(text) ? now.slice(text.length).trimStart() : now };
+      }))
+      .catch((e) => setFailed({ key, why: readableError(e) }))
+      .finally(() => setSending((s) => {
+        const next = new Set(s);
+        next.delete(key);
+        return next;
+      }));
+  };
 
   /* Only autoscroll when already at the bottom. Yanking someone back down
    * while they are reading scrollback is the classic chat annoyance. */
@@ -53,7 +88,7 @@ export function ChatView({
 
   useEffect(() => {
     if (pinned.current) endRef.current?.scrollIntoView({ block: 'end' });
-  }, [conv?.messages.length]);
+  }, [conv?.messages.length, conv?.history?.length]);
 
   const visibleRooms = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -99,7 +134,7 @@ export function ChatView({
                       type="button"
                       className="chat__item pressable"
                       data-active={chat.active === k ? 'true' : undefined}
-                      onPointerDown={() => chat.setActive(k)}
+                      onClick={() => chat.setActive(k)}
                     >
                       <span className="chat__name">
                         {c.scope === 'private' ? '@' : '#'}{c.target}
@@ -115,7 +150,7 @@ export function ChatView({
           </>
         )}
 
-        <h3 className="chat__heading">Rooms</h3>
+        <h3 className="chat__heading">{scope === 'private' ? 'New message' : 'Rooms'}</h3>
         <ul className="chat__list">
           {scope === 'private' && (
             <form
@@ -145,7 +180,7 @@ export function ChatView({
                 type="button"
                 className="chat__item pressable"
                 data-joined={r.joined ? 'true' : undefined}
-                onPointerDown={() => (r.joined
+                onClick={() => (r.joined
                   ? chat.setActive(`room:${r.name}`)
                   : chat.join(r.name))}
               >
@@ -183,7 +218,9 @@ export function ChatView({
                   <button
                     type="button"
                     className="btn pressable"
-                    onPointerDown={() => chat.leave(conv.target)}
+                    // Click, not pointer-down: leaving discards the
+                    // transcript, so it must never fire on a right-click.
+                    onClick={() => chat.leave(conv.target)}
                   >
                     Leave
                   </button>
@@ -192,7 +229,19 @@ export function ChatView({
             </header>
 
             <div className="chat__scroll" ref={scrollRef}>
-              {conv.messages.length === 0 && (
+              {/* What was said before this session, from the engine's log —
+                  dimmed, and closed off by a rule, so it never reads as new. */}
+              {(conv.history ?? []).map((h, i) => (
+                <div key={`h${i}`} className="chat__line chat__line--history">
+                  <span className="chat__time tnum">{h.stamp}</span>
+                  {h.username && <span className="chat__who">{h.username}</span>}
+                  <span className="chat__text">{h.message}</span>
+                </div>
+              ))}
+              {(conv.history ?? []).length > 0 && (
+                <p className="chat__divider">Earlier messages above</p>
+              )}
+              {conv.messages.length === 0 && (conv.history ?? []).length === 0 && (
                 <p className="chat__none">Nothing said yet.</p>
               )}
               {conv.messages.map((m, i) => (
@@ -215,8 +264,7 @@ export function ChatView({
               className="chat__composer"
               onSubmit={(e) => {
                 e.preventDefault();
-                chat.send(draft);
-                setDraft('');
+                submit();
               }}
             >
               <input
@@ -226,10 +274,19 @@ export function ChatView({
                 aria-label={`Message ${conv.target}`}
                 onChange={(e) => setDraft(e.target.value)}
               />
-              <button type="submit" className="btn btn--primary pressable" disabled={!draft.trim()}>
+              <button
+                type="submit"
+                className="btn btn--primary pressable"
+                disabled={!draft.trim() || sending.has(convKey)}
+              >
                 Send
               </button>
             </form>
+            {failed && failed.key === convKey && (
+              <p className="chat__failed" role="alert">
+                Not sent — {failed.why} Your message is still in the box.
+              </p>
+            )}
           </>
         )}
       </section>

@@ -18,6 +18,7 @@ import type { WishHits } from '../data/wishHits.ts';
 import type { Filters, WishFilters } from '../domain/types.ts';
 import { describeFilters } from '../domain/wishFilters.ts';
 import { IconClose, IconEmpty, IconSearch } from '../icons/index.tsx';
+import { readUntilAnswered } from '../data/failures.ts';
 
 interface Wish { query: string; filters: WishFilters | null; auto: boolean }
 interface WishlistState { items: Wish[]; intervalSeconds: number }
@@ -30,12 +31,14 @@ function interval(seconds: number): string {
 }
 
 export function WishlistView({
-  client, signedIn, onSearch, hits, currentFilters,
+  client, signedIn, onSearch, onOpenHits, hits, currentFilters,
 }: {
   client: SidecarClient | null;
   signedIn: boolean;
   /** Run one now, by hand, without waiting for the timer. */
   onSearch(query: string): void;
+  /** Show what the wish already found, without searching again. */
+  onOpenHits(query: string): void;
   /** What the automatic runs have turned up, waiting to be looked at. */
   hits?: WishHits;
   /** The filters currently set on the search screen, offered as a starting
@@ -49,8 +52,8 @@ export function WishlistView({
   useEffect(() => {
     if (!client) return;
     const off = client.on('wishlist.state', (d) => setState(d as WishlistState));
-    void client.request<WishlistState>('wishlist.list').then(setState).catch(() => {});
-    return off;
+    const stop = readUntilAnswered<WishlistState>(client, 'wishlist.list', undefined, setState);
+    return () => { off(); stop(); };
   }, [client]);
 
   const add = useCallback(async () => {
@@ -148,10 +151,14 @@ export function WishlistView({
                       className={fresh > 0 ? 'wish__found wish__found--new pressable' : 'wish__found pressable'}
                       title={fresh > 0
                         ? `${fresh} you have not seen, of ${found} files from `
-                          + `${hit?.peerCount ?? 0} people. Opens as a search.`
+                          + `${hit?.peerCount ?? 0} people. Shows them.`
                         : `${found} files from ${hit?.peerCount ?? 0} people, all of which `
-                          + 'this wish has shown you before. Opens as a search.'}
-                      onPointerDown={() => { hits?.markSeen(wish.query); onSearch(wish.query); }}
+                          + 'this wish has shown you before. Shows them.'}
+                      // The wish's OWN results. This used to start a fresh
+                      // search, which could easily miss exactly what the badge
+                      // announced: the person who had it ten minutes ago may
+                      // be offline now. "Now" beside it is the live search.
+                      onClick={() => { hits?.markSeen(wish.query); onOpenHits(wish.query); }}
                     >
                       <span className="tnum">{fresh > 0 ? fresh : found}</span>
                       {fresh > 0 ? ' new' : ' found'}
@@ -185,7 +192,7 @@ export function WishlistView({
                   <button
                     type="button"
                     className="verify pressable"
-                    onPointerDown={() => onSearch(wish.query)}
+                    onClick={() => onSearch(wish.query)}
                     title="Search for this now instead of waiting"
                   >
                     <IconSearch size={12} painted={1.5} /> Now
@@ -198,7 +205,7 @@ export function WishlistView({
                       type="button"
                       className="verify pressable"
                       title="Judge this wish by the filters currently set on the search screen"
-                      onPointerDown={() => setFilters(wish.query, toWire(currentFilters))}
+                      onClick={() => setFilters(wish.query, toWire(currentFilters))}
                     >
                       Use current filters
                     </button>
@@ -208,7 +215,7 @@ export function WishlistView({
                       type="button"
                       className="verify pressable"
                       title="Stop filtering this wish"
-                      onPointerDown={() => setFilters(wish.query, null)}
+                      onClick={() => setFilters(wish.query, null)}
                     >
                       <IconClose size={11} painted={1.7} /> Filters
                     </button>
@@ -217,7 +224,7 @@ export function WishlistView({
                   <button
                     type="button"
                     className="verify pressable"
-                    onPointerDown={() => remove(wish.query)}
+                    onClick={() => remove(wish.query)}
                   >
                     Remove
                   </button>

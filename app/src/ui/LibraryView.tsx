@@ -16,6 +16,7 @@ import { fileSize } from '../domain/format.ts';
 import { canChooseFolder, chooseFolder } from '../data/choose.ts';
 import { IconLibrary, IconSearch } from '../icons/index.tsx';
 import type { LibraryRelease } from '../data/libraryStore.ts';
+import { formatsLabel } from '../data/libraryStore.ts';
 import { StatsView } from './StatsView.tsx';
 import { YoutubeSheetView } from './YoutubeSheetView.tsx';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
@@ -97,7 +98,7 @@ function LibraryTable({
           <span className="libtable__cell">{r.artist || '—'}</span>
           <span className="libtable__cell tnum">{r.trackCount}</span>
           <span className="libtable__cell tnum">{fileSize(r.bytes)}</span>
-          <span className="libtable__cell">{r.formats || '—'}</span>
+          <span className="libtable__cell">{formatsLabel(r.formats) || '—'}</span>
           <span className="libtable__cell tnum">{r.year || '—'}</span>
         </button>
       ))}
@@ -127,7 +128,7 @@ function LibraryGrid({
           <span className="libgrid__artist">{r.artist || '—'}</span>
           <span className="libgrid__facts tnum">
             {r.trackCount} · {fileSize(r.bytes)}
-            {r.formats && <> · {r.formats}</>}
+            {formatsLabel(r.formats) && <> · {formatsLabel(r.formats)}</>}
           </span>
         </button>
       ))}
@@ -190,7 +191,7 @@ function ReleaseRow({
             type="button"
             className="verify pressable"
             title="Ask MusicBrainz what this release should contain"
-            onPointerDown={() => library.findGaps(r.key, r.artist, r.release)}
+            onClick={() => library.findGaps(r.key, r.artist, r.release)}
           >
             Check
           </button>
@@ -199,7 +200,7 @@ function ReleaseRow({
           type="button"
           className="verify pressable"
           title="Look for this release on Soulseek"
-          onPointerDown={() => onSearch(`${r.artist} ${r.release}`.trim())}
+          onClick={() => onSearch(`${r.artist} ${r.release}`.trim())}
         >
           <IconSearch size={12} painted={1.5} /> Find
         </button>
@@ -219,7 +220,7 @@ function ReleaseRow({
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => onSearch(`${t.artist || r.artist} ${t.title}`.trim())}
+                  onClick={() => onSearch(`${t.artist || r.artist} ${t.title}`.trim())}
                 >
                   Search
                 </button>
@@ -326,7 +327,7 @@ export function LibraryView({
                 type="button"
                 className="btn btn--primary pressable"
                 disabled={state.scanning || !library.available}
-                onPointerDown={() => library.scan(state.roots, readTags)}
+                onClick={() => library.scan(state.roots, readTags)}
               >
                 {state.scanning ? 'Scanning…' : state.scannedAt ? 'Rescan' : 'Scan my downloads'}
               </button>
@@ -447,6 +448,41 @@ export function LibraryView({
                 </span>
               )}
             </div>
+
+            {/* An unplugged drive used to be wiped from the index by the next
+                Rescan. Now its releases are kept, and this says so — with a way
+                to let go of a drive that is gone for good, since the index can
+                no longer tell "unplugged" from "deleted" on its own. */}
+            {(state.offlineRoots ?? []).map((root) => {
+              const kept = releases.filter(
+                (r) => r.folder === root || r.folder.startsWith(`${root}/`),
+              ).length;
+              return (
+                <p key={root} className="settings__notice settings__notice--warn lib__offline">
+                  <span>
+                    <strong>{root}</strong> could not be reached at the last scan.
+                    {' '}Its {kept.toLocaleString()} {kept === 1 ? 'release is' : 'releases are'}
+                    {' '}kept from before, and come back up to date when it is plugged in.
+                  </span>
+                  {root === state.downloadRoot ? (
+                    /* Every scan includes the download folder, so Forget could
+                       never stick for it. Say where it is actually changed. */
+                    <span className="settings__hint">
+                      It is your download folder: change it in Settings → Folders.
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn pressable"
+                      disabled={state.scanning || !library.available}
+                      onClick={() => library.scan(state.roots.filter((r) => r !== root), readTags)}
+                    >
+                      Forget this folder
+                    </button>
+                  )}
+                </p>
+              );
+            })}
 
             {density === 'grid' ? (
               <LibraryGrid rows={shown.slice(0, 500)} artwork={artwork} onSearch={onSearch} />

@@ -189,7 +189,10 @@ export function QueueButton({
       data-q={shown}
       aria-label={qbtnTitle(shown, label)}
       title={qbtnTitle(shown, label)}
-      onPointerDown={(e) => { e.stopPropagation(); act(); }}
+      // The row acts on press, so the press is stopped here; the download
+      // itself waits for the click, so a right-click or a drag-off does nothing.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); act(); }}
     >
       {QBTN_ICON[shown]}
       {withText && <span>{QBTN_TEXT[shown]}</span>}
@@ -327,7 +330,12 @@ export function FileRow({
       <div
         className="row__hit"
         {...hitTarget(onQueue)}
-        onPointerDown={(e) => { if (e.button === 0) onQueue(); }}
+        // A download starts on click, not press: a press can be dragged off,
+        // and a click on a button inside the row (Get, quality) is its own.
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          onQueue();
+        }}
         aria-label={`${source.parsed.displayArtist ? `${source.parsed.displayArtist}, ` : ''}${source.parsed.displayTitle}. ${source.user}. ${source.quality.description}. ${source.peer.queueLength} queued.`}
       >
         <span className="row__main">
@@ -457,7 +465,8 @@ export function UserRow({
             className="action pressable"
             aria-label={`Browse everything ${group.user} shares`}
             title={`Browse everything ${group.user} shares`}
-            onPointerDown={(e) => { e.stopPropagation(); onBrowse(group.user); }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onBrowse(group.user); }}
           >
             Browse
           </button>
@@ -502,7 +511,12 @@ export function SourceRow({
       <div
         className="row__hit"
         {...hitTarget(onQueue)}
-        onPointerDown={(e) => { if (e.button === 0) onQueue(); }}
+        // A download starts on click, not press: a press can be dragged off,
+        // and a click on a button inside the row (Get, quality) is its own.
+        onClick={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return;
+          onQueue();
+        }}
         aria-label={`${context === 'files' ? `${source.parsed.displayTitle}. ` : ''}${source.user}. ${source.quality.description}. ${source.peer.freeSlots ? 'Slot free' : 'No free slot'}, ${source.peer.queueLength} queued.`}
       >
         <span className="row__main">

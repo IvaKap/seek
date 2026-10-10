@@ -235,7 +235,7 @@ def verify_folder(folder):
         try:
             pairs, unparsed = _PARSERS[kind](_read_text(path))
         except (OSError, ValueError) as error:
-            log.warning("could not read %s: %s", path, error)
+            log.warning("could not read a file to hash: %s", type(error).__name__)
             sidecars.append({
                 "path": path, "kind": kind, "entryCount": 0,
                 "unparsedLines": 0, "error": str(error),

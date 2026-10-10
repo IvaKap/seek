@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import { EngineBusyError } from './sidecarClient.ts';
 import { reliabilityFrom } from '../domain/score.ts';
+import { readUntilAnswered } from './failures.ts';
 
 export interface AppSettings {
   /** Sign in on launch using the stored account. Upstream's own flag. */
@@ -37,6 +38,8 @@ export interface AppSettings {
   autoOrganise: boolean;
   /** Group a burst of want list additions into a digging session. */
   autoDigSessions: boolean;
+  /** Look for a new version on GitHub after launch. */
+  checkUpdates: boolean;
   /** Minutes of silence before a download shows under Failed. 0 = never. */
   stalledFailMinutes: number;
   /** Forget completed records older than this many days. 0 = keep. */
@@ -69,13 +72,14 @@ const DEFAULTS: AppSettings = {
   externalLookups: true,
   discogsToken: false,
   artworkCacheMb: 500,
-  embedArtwork: true,
+  embedArtwork: false,
   writeCoverFile: false,
   preferLossless: false,
   minBitrate: 0,
   rejectTranscodes: false,
   autoOrganise: false,
   autoDigSessions: true,
+  checkUpdates: true,
   stalledFailMinutes: 0,
   clearCompletedDays: 0,
   uploadGreetingEnabled: false,
@@ -104,6 +108,7 @@ export interface AppSettingsPatch {
   rejectTranscodes?: boolean;
   autoOrganise?: boolean;
   autoDigSessions?: boolean;
+  checkUpdates?: boolean;
   stalledFailMinutes?: number;
   clearCompletedDays?: number;
   uploadGreetingEnabled?: boolean;
@@ -127,6 +132,8 @@ export interface PrefsSession {
   /** The write is queued behind a busy engine — not lost. */
   saveBusy: boolean;
   available: boolean;
+  /** The stored settings have arrived. Until then `settings` is DEFAULTS. */
+  loaded: boolean;
 }
 
 export function usePrefs(client: SidecarClient | null): PrefsSession {
@@ -135,22 +142,31 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!client) return;
 
-    const offSettings = client.on('app.settings', (d) => setSettings(d as AppSettings));
+    const offSettings = client.on('app.settings', (d) => {
+      setSettings(d as AppSettings);
+      setLoaded(true);
+    });
     const offPeers = client.on('peers.stats', (d) => {
       const items = (d as { items: PeerRecord[] }).items ?? [];
       setPeers(new Map(items.map((p) => [p.username, p])));
     });
 
-    void client.request<AppSettings>('app.settings.get').then(setSettings).catch(() => {});
-    void client.request<{ items: PeerRecord[] }>('peers.stats')
-      .then((r) => setPeers(new Map((r.items ?? []).map((p) => [p.username, p]))))
-      .catch(() => {});
+    // Asked until answered: the defaults below (no account, no token) were
+    // otherwise shown as if they were what is stored.
+    const stopSettings = readUntilAnswered<AppSettings>(
+      client, 'app.settings.get', undefined, (s) => { setSettings(s); setLoaded(true); },
+    );
+    const stopPeers = readUntilAnswered<{ items: PeerRecord[] }>(
+      client, 'peers.stats', undefined,
+      (r) => setPeers(new Map((r.items ?? []).map((p) => [p.username, p]))),
+    );
 
-    return () => { offSettings(); offPeers(); };
+    return () => { offSettings(); offPeers(); stopSettings(); stopPeers(); };
   }, [client]);
 
   const patch = useCallback((p: AppSettingsPatch) => {
@@ -197,6 +213,7 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
       rejectTranscodes: null,
       autoOrganise: null,
       autoDigSessions: null,
+      checkUpdates: null,
       stalledFailMinutes: null,
       clearCompletedDays: null,
       uploadGreetingEnabled: null,
@@ -241,5 +258,6 @@ export function usePrefs(client: SidecarClient | null): PrefsSession {
     saveError: error,
     saveBusy: busy,
     available: Boolean(client),
+    loaded,
   };
 }

@@ -98,6 +98,12 @@ function Harness() {
       <button type="button" onClick={() => tabs.openWith('one')}>find:one</button>
       <button type="button" onClick={() => tabs.openWith('two')}>find:two</button>
       <button type="button" onClick={() => tabs.markUsed()}>used</button>
+      <button
+        type="button"
+        onClick={() => tabs.showResults('drexciya', [file('w1'), file('w2')])}
+      >
+        wish
+      </button>
       <p data-testid="count">{tabs.tabs.length}</p>
       {tabs.tabs.map((t) => (
         <span key={t.id}>
@@ -270,5 +276,38 @@ describe('a spent tab expires', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("shows a wish's results in a new tab without searching again", () => {
+    /* "3 new" used to run a fresh search, which could miss what the badge
+       announced. It now shows what the wish found, in its own tab, and the
+       tab you were reading is kept. */
+    mount();
+    click('find:one');                  // this tab has searched something
+    const first = read('active')!;
+    click('wish');
+    expect(read('count')).toBe('2');
+    expect(read('query')).toBe('drexciya');
+    expect(read('files')).toBe('2');
+    expect(read('labels')).toContain('drexciya');
+
+    click(`select:${first}`);
+    expect(read('query')).toBe('one');
+    expect(read('files')).toBe('3');
+  });
+
+  it('opening the same wish twice does not stack copies of its tab', () => {
+    mount();
+    click('find:one');
+    click('wish');
+    click('wish');
+    expect(read('count')).toBe('2');
+  });
+
+  it('reuses a tab that has never searched, as a search would', () => {
+    mount();
+    click('wish');
+    expect(read('count')).toBe('1');
+    expect(read('query')).toBe('drexciya');
   });
 });

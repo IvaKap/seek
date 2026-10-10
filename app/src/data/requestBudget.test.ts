@@ -42,4 +42,9 @@ describe('requestBudget', () => {
     expect(requestBudget('patch.get')).toBe(15_000);
     expect(requestBudget('get.patch')).toBeGreaterThan(15_000);
   });
+
+  it('gives organise.file a write budget — it moves a file after a lookup', () => {
+    expect(requestBudget('organise.file')).toBeGreaterThan(15_000);
+    expect(requestBudget('wishlist.claims')).toBeGreaterThan(15_000);
+  });
 });

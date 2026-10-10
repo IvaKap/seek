@@ -93,7 +93,7 @@ function Card({
               type="button"
               className="verify pressable"
               title="Search Soulseek for this release"
-              onPointerDown={onSearch}
+              onClick={onSearch}
             >
               <IconSearch size={12} painted={1.5} />
               Search
@@ -103,7 +103,7 @@ function Card({
               className="verify pressable"
               disabled={wanted}
               title={wanted ? 'Already on your want list' : 'Keep it for later'}
-              onPointerDown={onWant}
+              onClick={onWant}
             >
               {wanted ? 'Wanted' : 'Want'}
             </button>
@@ -209,7 +209,7 @@ export function LabelBrowserView({
     <>
       <header data-tauri-drag-region="deep" className="header header--plain">
         <div className="cat__header-actions">
-          <button type="button" className="verify pressable" onPointerDown={onClose}>
+          <button type="button" className="verify pressable" onClick={onClose}>
             ← Back
           </button>
           {/* Only once the catalogue has actually loaded: watching something

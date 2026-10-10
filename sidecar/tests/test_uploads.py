@@ -115,6 +115,9 @@ class _Host:
     _peer_history = CoreHost._peer_history
     _emit_transfer = CoreHost._emit_transfer
 
+    def _after_download(self, _upstream):
+        """Post-download file work is not what these tests are about."""
+
 
 class _Upstream:
     def __init__(self, username="peer-alpha", path="@@x\\a.flac", status="Finished"):

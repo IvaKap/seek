@@ -87,7 +87,7 @@ function Row({
           className="btn pressable"
           disabled={busy}
           title={busy ? 'Another want list search is running' : 'Search Soulseek for this'}
-          onPointerDown={() => !busy && onSearch(entry)}
+          onClick={() => !busy && onSearch(entry)}
         >
           {entry.status === 'not_found' ? 'Retry' : 'Search'}
         </button>
@@ -106,7 +106,7 @@ function Row({
           type="button"
           className="want__remove pressable"
           aria-label={`Remove ${entry.title} from the want list`}
-          onPointerDown={() => want.remove([entry.id])}
+          onClick={() => want.remove([entry.id])}
         >
           <IconClose size={13} painted={1.5} />
         </button>
@@ -200,7 +200,7 @@ function DiscogsImport({
 
   if (!wantlist) {
     return (
-      <button type="button" className="btn pressable" onPointerDown={onFetch}>
+      <button type="button" className="btn pressable" onClick={onFetch}>
         <IconDiscogs size={14} painted={1.5} />
         <span>Import your Discogs wantlist</span>
       </button>
@@ -221,11 +221,11 @@ function DiscogsImport({
         </p>
         <div className="wants__import-actions">
           {wantlist.needs === 'discogsToken' && onOpenSettings && (
-            <button type="button" className="btn btn--primary pressable" onPointerDown={onOpenSettings}>
+            <button type="button" className="btn btn--primary pressable" onClick={onOpenSettings}>
               Open Settings
             </button>
           )}
-          <button type="button" className="btn pressable" onPointerDown={onClear}>Dismiss</button>
+          <button type="button" className="btn pressable" onClick={onClear}>Dismiss</button>
         </div>
       </div>
     );
@@ -256,14 +256,14 @@ function DiscogsImport({
           <button
             type="button"
             className="btn btn--primary pressable"
-            onPointerDown={() => { void want.add(mapped); onClear(); }}
+            onClick={() => { void want.add(mapped); onClear(); }}
           >
             Add {fresh} to the want list
           </button>
         ) : (
           <span className="wants__import-note">Nothing new to add.</span>
         )}
-        <button type="button" className="btn pressable" onPointerDown={onClear}>Cancel</button>
+        <button type="button" className="btn pressable" onClick={onClear}>Cancel</button>
       </div>
     </div>
   );

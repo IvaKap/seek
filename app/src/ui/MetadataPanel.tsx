@@ -95,9 +95,12 @@ export function useMetadata(client: SidecarClient | null, transferId: string) {
       release: proposal.releaseTitle,
     })
       .then((r) => {
+        // Fix tags no longer refuses everything when no cover exists — so it
+        // has to say when the cover is the part that did not happen.
         setResult(
           `${r.written} field${r.written === 1 ? '' : 's'} written`
-          + (r.artworkEmbedded ? ', artwork embedded.' : '.'),
+          + (r.artworkEmbedded ? ', artwork embedded.'
+            : embedArt ? '. No cover was found to embed.' : '.'),
         );
         setProposal(null);
       })
@@ -133,7 +136,7 @@ export function MetadataTrigger({ m }: { m: MetadataState }) {
   }
   if (m.state === 'idle') {
     return (
-      <button type="button" className="verify pressable" onPointerDown={m.inspect}>
+      <button type="button" className="verify pressable" onClick={m.inspect}>
         Fix tags
       </button>
     );
@@ -221,7 +224,7 @@ export function MetadataPanel({ m }: { m: MetadataState }) {
           type="button"
           className="btn btn--primary pressable"
           disabled={chosen.size === 0 && !embedArt}
-          onPointerDown={apply}
+          onClick={apply}
         >
           Apply to file
         </button>

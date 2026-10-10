@@ -314,6 +314,7 @@ class _ShareHost:
         self._share_scanning = False
         self._share_last_scan = None
         self._share_restart_required = False
+        self._share_unavailable = []
         self.data_folder = "/tmp"
 
     def _stored_consent(self):

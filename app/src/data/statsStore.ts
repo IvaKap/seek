@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { TransferStats } from '../domain/transferStats.ts';
 import { EMPTY_STATS } from '../domain/transferStats.ts';
+import { readUntilAnswered } from './failures.ts';
 
 export interface StatsSession {
   stats: TransferStats;
@@ -47,11 +48,11 @@ export function useTransferStats(client: SidecarClient | null): StatsSession {
       setAvailable(true);
     });
 
-    void client.request<TransferStats>('stats.get')
-      .then((r) => { setStats(r); setAvailable(true); })
-      .catch(() => {});
+    const stop = readUntilAnswered<TransferStats>(
+      client, 'stats.get', undefined, (r) => { setStats(r); setAvailable(true); },
+    );
 
-    return off;
+    return () => { off(); stop(); };
   }, [client]);
 
   return { stats, available };

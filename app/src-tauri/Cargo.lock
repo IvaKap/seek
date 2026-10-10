@@ -3372,6 +3372,7 @@ dependencies = [
 name = "seek"
 version = "0.2.16"
 dependencies = [
+ "libc",
  "serde",
  "serde_json",
  "tauri",

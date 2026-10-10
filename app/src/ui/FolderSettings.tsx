@@ -176,7 +176,7 @@ export function FolderSetting({
             type="button"
             className="btn pressable"
             disabled={!engine.available}
-            onPointerDown={browse}
+            onClick={browse}
             title={`Choose the ${label.toLowerCase()} folder`}
           >
             <IconFolderOpen size={14} painted={1.5} />
@@ -188,7 +188,7 @@ export function FolderSetting({
             type="button"
             className="btn btn--primary pressable"
             disabled={busy}
-            onPointerDown={() => commit(draft)}
+            onClick={() => commit(draft)}
           >
             Save
           </button>
@@ -198,7 +198,7 @@ export function FolderSetting({
             type="button"
             className="btn pressable"
             disabled={busy}
-            onPointerDown={create}
+            onClick={create}
           >
             {busy ? 'Creating…' : 'Create it'}
           </button>
@@ -305,7 +305,7 @@ export function SharedFolders({ engine }: { engine: EngineSession }) {
               type="button"
               className="btn pressable"
               aria-label={`Stop sharing ${folder.virtualName}`}
-              onPointerDown={() => apply(folders.filter((f) => f.path !== folder.path))}
+              onClick={() => apply(folders.filter((f) => f.path !== folder.path))}
             >
               <IconClose size={13} painted={1.7} />
               <span>Remove</span>
@@ -337,14 +337,14 @@ export function SharedFolders({ engine }: { engine: EngineSession }) {
               type="button"
               className="btn btn--primary pressable"
               disabled={!verdict.usable}
-              onPointerDown={() => add(draft)}
+              onClick={() => add(draft)}
             >
               Share it
             </button>
             <button
               type="button"
               className="btn pressable"
-              onPointerDown={() => { setDraft(''); setAdding(false); }}
+              onClick={() => { setDraft(''); setAdding(false); }}
             >
               Cancel
             </button>
@@ -355,7 +355,7 @@ export function SharedFolders({ engine }: { engine: EngineSession }) {
               type="button"
               className="btn pressable"
               disabled={!engine.available}
-              onPointerDown={() => (canChooseFolder() ? browse() : setAdding(true))}
+              onClick={() => (canChooseFolder() ? browse() : setAdding(true))}
             >
               <IconPlus size={14} painted={1.7} />
               <span>Share a folder…</span>
@@ -365,7 +365,7 @@ export function SharedFolders({ engine }: { engine: EngineSession }) {
                 type="button"
                 className="btn pressable"
                 disabled={!engine.available}
-                onPointerDown={() => setAdding(true)}
+                onClick={() => setAdding(true)}
               >
                 Type a path
               </button>
@@ -383,6 +383,27 @@ export function SharedFolders({ engine }: { engine: EngineSession }) {
         )}
         {failure && (
           <p className="folderset__verdict" data-tone="error" role="alert">{failure}</p>
+        )}
+        {(state?.unavailable ?? []).length > 0 && (
+          <div className="folderset__verdict shares__blocked" data-tone="warn" role="status">
+            <span>
+              Your shares could not be re-indexed because{' '}
+              {state!.unavailable.length === 1
+                ? <strong>{state!.unavailable[0]}</strong>
+                : `${state!.unavailable.length} shared folders`}
+              {' '}{state!.unavailable.length === 1 ? 'is' : 'are'} not reachable, so
+              people still see what you shared before. Plug it back in, or re-index
+              without it.
+            </span>
+            <button
+              type="button"
+              className="btn pressable"
+              disabled={!engine.available || state!.scanning}
+              onClick={() => { void engine.rescan(true).catch((e) => setFailure(readableError(e))); }}
+            >
+              Re-index without it
+            </button>
+          </div>
         )}
         {state?.restartRequired && (
           <p className="folderset__verdict" data-tone="warn">

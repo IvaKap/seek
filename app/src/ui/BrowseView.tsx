@@ -113,7 +113,7 @@ function ShelfRow({
         type="button"
         className="shelf__hit"
         aria-expanded={open}
-        onPointerDown={() => setOpen((v) => !v)}
+        onClick={() => setOpen((v) => !v)}
       >
         <span className="shelf__main">
           <span className="shelf__name">{shelf.name}</span>
@@ -140,7 +140,7 @@ function ShelfRow({
       <button
         type="button"
         className="btn pressable shelf__get"
-        onPointerDown={() => void transfers.enqueueFolder(username, shelf.path)}
+        onClick={() => void transfers.enqueueFolder(username, shelf.path)}
         aria-label={`Download the folder ${shelf.name} from ${username}`}
       >
         <IconDownload size={13} painted={1.5} /> Get folder
@@ -155,7 +155,7 @@ function ShelfRow({
               <button
                 type="button"
                 className="verify pressable"
-                onPointerDown={() => void transfers.enqueue(username, f.path, f.size)}
+                onClick={() => void transfers.enqueue(username, f.path, f.size)}
               >
                 Get
               </button>
@@ -264,7 +264,7 @@ export function BrowseView({
                 <button
                   type="button"
                   className="browse__overlap tnum pressable"
-                  onPointerDown={() => setOverlapOpen(true)}
+                  onClick={() => setOverlapOpen(true)}
                   aria-haspopup="dialog"
                 >
                   {browse.overlap.count} in common with your library
@@ -302,7 +302,10 @@ export function BrowseView({
             ) : mode === 'folders' ? (
               <FolderView
                 shelves={browse.shelves}
-                onGetFolder={(p) => void transfers.enqueueFolder(cur.username, p)}
+                // Recursive: this view's "Get this folder — 2,412 files" counts
+                // every file under it, and asked for the top level only, which
+                // for a folder of album folders queued nothing at all.
+                onGetFolder={(p) => void transfers.enqueueFolder(cur.username, p, true)}
                 onGetFile={(f) => void transfers.enqueue(cur.username, f.path, f.size)}
               />
             ) : (

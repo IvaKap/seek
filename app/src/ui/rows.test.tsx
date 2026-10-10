@@ -62,7 +62,7 @@ describe('FileRow', () => {
     const onQueue = vi.fn();
     render(<StrictMode><FileRow source={s} onQueue={onQueue} /></StrictMode>);
 
-    fireEvent.pointerDown(screen.getByLabelText(/^Queue /), { button: 0 });
+    fireEvent.click(screen.getByLabelText(/^Queue /));
     expect(onQueue).toHaveBeenCalledTimes(1);
   });
 });
@@ -76,7 +76,7 @@ describe('QueueButton — Get that reports state', () => {
     expect(btn().getAttribute('data-q')).toBe('idle');
     expect(btn().getAttribute('title')).toBe('Queue Archangel');
 
-    act(() => { fireEvent.pointerDown(btn()); });
+    act(() => { fireEvent.click(btn()); });
     expect(onQueue).toHaveBeenCalledTimes(1);
     // Optimistic: the store has not ticked yet, but the button already reports it.
     expect(btn().getAttribute('data-q')).toBe('queued');
@@ -93,11 +93,11 @@ describe('QueueButton — Get that reports state', () => {
     expect(btn().getAttribute('data-q')).toBe('done');
   });
 
-  it('a second press while working does not double-queue', () => {
+  it('a second click while working does not double-queue', () => {
     const onQueue = vi.fn();
     render(<StrictMode><QueueButton badge="downloading" onQueue={onQueue} label="x" /></StrictMode>);
-    act(() => { fireEvent.pointerDown(btn()); });
-    act(() => { fireEvent.pointerDown(btn()); });
+    act(() => { fireEvent.click(btn()); });
+    act(() => { fireEvent.click(btn()); });
     expect(onQueue).not.toHaveBeenCalled();
   });
 
@@ -105,7 +105,7 @@ describe('QueueButton — Get that reports state', () => {
     const onQueue = vi.fn();
     render(<StrictMode><QueueButton badge="failed" onQueue={onQueue} label="x" /></StrictMode>);
     expect(btn().getAttribute('title')).toMatch(/failed/i);
-    act(() => { fireEvent.pointerDown(btn()); });
+    act(() => { fireEvent.click(btn()); });
     expect(onQueue).toHaveBeenCalledTimes(1);
   });
 });

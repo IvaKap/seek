@@ -147,7 +147,10 @@ export function ContextMenu({
               data-danger={item.danger ? 'true' : undefined}
               data-active={index >= 0 && index === active ? 'true' : undefined}
               disabled={item.disabled}
-              onPointerDown={(e) => { e.preventDefault(); choose(item); }}
+              // Click, not press: a right-press inside the open menu used to
+              // run whatever it landed on — "Cancel — stop and remove" included.
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => choose(item)}
               onPointerEnter={() => setActive(index)}
             >
               <span className="ctx__label">{item.label}</span>

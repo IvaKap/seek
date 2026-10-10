@@ -44,7 +44,7 @@ export function useThroughput(client: SidecarClient | null): Throughput {
     }
     return client.on('connection.stats', (d) => {
       const s = d as { downloadBandwidth?: number; uploadBandwidth?: number; connections?: number };
-      setState({
+      const next = {
         // Upstream emits this event with NO arguments as a reset (RECON.md §3).
         // The sidecar already normalises that into explicit zeros, so a missing
         // field here would be a real protocol change rather than the known
@@ -54,7 +54,13 @@ export function useThroughput(client: SidecarClient | null): Throughput {
         up: s.uploadBandwidth ?? 0,
         connections: s.connections ?? 0,
         live: true,
-      });
+      };
+      // The same numbers again (an idle engine reports zeros every second) is
+      // not a change, and a new object would still redraw.
+      setState((prev) => (
+        prev.live && prev.down === next.down && prev.up === next.up
+          && prev.connections === next.connections ? prev : next
+      ));
     });
   }, [client]);
 

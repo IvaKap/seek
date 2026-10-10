@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import { readableError } from '../domain/folders.ts';
+import { readUntilAnswered } from './failures.ts';
 
 export interface Profile {
   username: string;
@@ -66,7 +67,7 @@ export function useProfile(client: SidecarClient | null): ProfileSession {
       setProfile(null);
       return;
     }
-    void client.request<Profile>('profile.get').then(setProfile).catch(() => {});
+    return readUntilAnswered<Profile>(client, 'profile.get', undefined, setProfile);
   }, [client]);
 
   const save = useCallback(async (patch: ProfilePatch) => {
@@ -128,10 +129,10 @@ export function useConnections(client: SidecarClient | null): ConnectionsSession
       setSnapshot(d as ConnectionSnapshot);
       setAvailable(true);
     });
-    void client.request<ConnectionSnapshot>('connections.get')
-      .then((r) => { setSnapshot(r); setAvailable(true); })
-      .catch(() => {});
-    return off;
+    const stop = readUntilAnswered<ConnectionSnapshot>(
+      client, 'connections.get', undefined, (r) => { setSnapshot(r); setAvailable(true); },
+    );
+    return () => { off(); stop(); };
   }, [client]);
 
   return { snapshot, available };

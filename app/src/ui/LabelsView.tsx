@@ -112,7 +112,7 @@ function Row({
             <button
               type="button"
               className="verify pressable"
-              onPointerDown={() => { onNote(draft); setEditing(false); }}
+              onClick={() => { onNote(draft); setEditing(false); }}
             >
               Save
             </button>
@@ -122,7 +122,7 @@ function Row({
             type="button"
             className="watch__note pressable"
             title="Edit this note"
-            onPointerDown={() => setEditing(true)}
+            onClick={() => setEditing(true)}
           >
             {label.note}
           </button>
@@ -130,14 +130,14 @@ function Row({
       </span>
 
       <span className="watch__actions">
-        <button type="button" className="btn btn--primary pressable" onPointerDown={onOpen}>
+        <button type="button" className="btn btn--primary pressable" onClick={onOpen}>
           Open
         </button>
         {!label.note && !editing && (
           <button
             type="button"
             className="verify pressable"
-            onPointerDown={() => { setDraft(''); setEditing(true); }}
+            onClick={() => { setDraft(''); setEditing(true); }}
           >
             Add a note
           </button>
@@ -146,7 +146,7 @@ function Row({
           type="button"
           className="verify pressable"
           aria-label={`Stop watching ${label.name}`}
-          onPointerDown={onUnwatch}
+          onClick={onUnwatch}
         >
           <IconClose size={12} painted={1.7} />
           Stop watching
@@ -343,7 +343,7 @@ export function WatchButton({ watched, onToggle }: { watched: boolean; onToggle(
       title={watched
         ? 'Stop keeping this catalogue on the Labels screen'
         : 'Keep this catalogue on the Labels screen to work through over time'}
-      onPointerDown={onToggle}
+      onClick={onToggle}
     >
       <IconRelease size={13} painted={1.4} />
       {watched ? 'Watching' : 'Watch this catalogue'}

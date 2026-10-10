@@ -19,6 +19,8 @@ import {
 } from '../data/transferStore.ts';
 import type { MenuItem } from './ContextMenu.tsx';
 
+const AUDIO = /\.(flac|mp3|m4a|aac|ogg|opus|wav|aiff?|wv|ape|alac)$/i;
+
 export interface FileMenuActions {
   pause(ids: string[]): void;
   resume(ids: string[]): void;
@@ -27,6 +29,10 @@ export interface FileMenuActions {
   cancel(ids: string[]): void;
   clear(ids: string[]): void;
   copy(text: string): void;
+  /** Show a finished file in Finder, selected. */
+  reveal(id: string): void;
+  /** Open a finished file in its default app. */
+  open(id: string): void;
 }
 
 /**
@@ -71,6 +77,14 @@ export function fileMenuItems(targets: Transfer[], a: FileMenuActions): MenuItem
   // Copy targets a single file — three copy rows for a selection is just noise.
   if (targets.length === 1) {
     const t = targets[0];
+    /* The first thing anyone does with a finished download, and Nicotine+ has
+       both. Seek had neither, so a finished file could only be found by hand. */
+    if (t.state === 'finished') {
+      items.push({ id: 'reveal', separated: true, label: 'Show in Finder', run: () => a.reveal(t.id) });
+      // Audio only: the engine refuses to open anything else on a client's
+      // word, so offering Open on a cover or a .ffp only produced an error.
+      if (AUDIO.test(t.path)) items.push({ id: 'open', label: 'Open', run: () => a.open(t.id) });
+    }
     items.push(
       { id: 'copypath', separated: true, label: 'Copy file path', run: () => a.copy(t.path) },
       { id: 'copyname', label: 'Copy file name', run: () => a.copy(fileName(t.path)) },

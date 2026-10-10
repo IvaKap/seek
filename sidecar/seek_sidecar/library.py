@@ -90,6 +90,38 @@ def dedupe_roots(roots):
     return kept
 
 
+def offline_roots(roots, present):
+    """The roots that could not be walked this time — an unplugged drive.
+
+    `dedupe_roots` drops a folder that is not there, which is right for WALKING
+    and was wrong for SAVING: a rescan with an external drive unplugged used to
+    rebuild the index from the surviving folders, so every release on the drive
+    vanished, and the drive itself was dropped from the folder list, so plugging
+    it back in did not bring it back. These are remembered instead, and their
+    entries carried over from the last scan that could see them.
+
+    A root inside one that IS present is not offline: the walk covers it.
+    """
+    out = []
+    for root in roots:
+        if not root:
+            continue
+        try:
+            real = os.path.realpath(root)
+        except OSError:
+            continue
+        if os.path.isdir(real) or real in out:
+            continue
+        if any(real == p or real.startswith(p + os.sep) for p in present):
+            continue
+        out.append(real)
+    return sorted(out)
+
+
+def _under(path, root):
+    return path == root or path.startswith(root + os.sep)
+
+
 def release_key(artist, release):
     """The key search results are matched against. Artist may be empty."""
     return f"{normalise(artist)}|{normalise(release)}".strip("|")
@@ -179,10 +211,17 @@ def _from_path(path, roots=()):
     return artist, release, title
 
 
+class _Cancelled(Exception):
+    """A scan was asked to stop. Not an error: the old index stands."""
+
+
 class Library:
     def __init__(self, index_path):
         self.index_path = index_path
-        self._lock = threading.Lock()
+        # Re-entrant: `scan` returns `self.state()` while holding it, and with
+        # a plain Lock that second acquire deadlocked the worker thread.
+        self._lock = threading.RLock()
+        self._cancel = threading.Event()
         self._data = {"scannedAt": 0, "roots": [], "releases": {}, "tracks": {}}
         self._scanning = False
         self.load()
@@ -199,10 +238,18 @@ class Library:
             pass
 
     def save(self):
+        # ATOMIC, like `_save_state`: a temp file, fsync, then rename over the
+        # real one. Writing in place meant a quit mid-write left truncated JSON,
+        # which `load` reads as no index at all — "Not scanned yet", and a full
+        # rescan of the collection to get back to where it was.
+        tmp = f"{self.index_path}.tmp"
         try:
             os.makedirs(os.path.dirname(self.index_path), exist_ok=True)
-            with open(self.index_path, "w", encoding="utf-8") as handle:
+            with open(tmp, "w", encoding="utf-8") as handle:
                 json.dump(self._data, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self.index_path)
         except OSError:
             log.exception("could not write library index")
 
@@ -216,9 +263,13 @@ class Library:
                 "releaseCount": len(self._data.get("releases", {})),
                 "trackCount": len(self._data.get("tracks", {})),
                 "scanning": self._scanning,
+                "offlineRoots": list(self._data.get("offline", [])),
+                "downloadRoot": str(self._data.get("downloadRoot", "")),
             }
 
-    def releases(self, limit=2000):
+    def releases(self, limit=None):
+        # No cap by default. It was 2,000, and nothing asked for more, so a
+        # collection past that size silently lost its tail of the alphabet.
         with self._lock:
             items = list(self._data.get("releases", {}).values())
         items.sort(key=lambda r: (r.get("artist", ""), r.get("release", "")))
@@ -254,23 +305,36 @@ class Library:
 
     # -- scanning ----------------------------------------------------------
 
-    def scan(self, roots, progress=None, read_tags=True):
+    def cancel(self):
+        """Stop a scan in progress at the next folder. The old index is kept."""
+        self._cancel.set()
+
+    def scan(self, roots, progress=None, read_tags=True, download_root=""):
         """Walk `roots` and rebuild the index. Blocking; call on a worker."""
         with self._lock:
             if self._scanning:
                 return self.state()
             self._scanning = True
-
-        # Before anything is walked: two spellings of one folder, or a folder
-        # nested in another, would each be counted twice.
-        roots = dedupe_roots(roots)
+            self._cancel.clear()
 
         releases = {}
         tracks = {}
         seen = 0
+        completed = False
+        # Everything inside the try, so nothing can leave `_scanning` stuck on
+        # and the library refusing to rescan until a restart.
         try:
-            for root in roots:
+            # Before anything is walked: two spellings of one folder, or a folder
+            # nested in another, would each be counted twice.
+            present = dedupe_roots(roots)
+            offline = offline_roots(roots, present)
+            with self._lock:
+                previous = self._data
+
+            for root in present:
                 for folder, _dirs, files in os.walk(root):
+                    if self._cancel.is_set():
+                        raise _Cancelled()
                     for name in files:
                         if os.path.splitext(name)[1].lower() not in AUDIO_EXTENSIONS:
                             continue
@@ -280,7 +344,9 @@ class Library:
                             progress(seen)
 
                         tags = _read_tags(path) if read_tags else {}
-                        p_artist, p_release, p_title = _from_path(path, roots)
+                        # The walked (resolved) roots: the raw ones may be a
+                        # symlink's spelling, which a walked path never matches.
+                        p_artist, p_release, p_title = _from_path(path, present)
 
                         artist = tags.get("albumartist") or tags.get("artist") or p_artist
                         release = tags.get("album") or p_release
@@ -316,15 +382,47 @@ class Library:
                         tkey = track_key(artist, title)
                         if tkey:
                             tracks[tkey] = {"path": path, "release": rkey}
+            # Pulled out DURING the walk: os.walk swallows the errors and just
+            # stops, so a drive ejected half way read as a smaller collection.
+            # What this scan found under it is partial; the last full picture
+            # is carried instead, exactly as for a drive that was never there.
+            vanished = [r for r in present if not os.path.isdir(r)]
+            if vanished:
+                releases = {k: e for k, e in releases.items()
+                            if not any(_under(e.get("folder", ""), r) for r in vanished)}
+                tracks = {k: e for k, e in tracks.items()
+                          if not any(_under(e.get("path", ""), r) for r in vanished)}
+                present = [r for r in present if r not in vanished]
+                offline = sorted(set(offline) | set(vanished))
+
+            # Carried over from the last scan that could see them, rather than
+            # dropped because the drive is unplugged right now. After the walk,
+            # so a copy that is on disk now wins over the remembered one, and
+            # the two are never added together.
+            for key, entry in (previous.get("releases") or {}).items():
+                if any(_under(entry.get("folder", ""), r) for r in offline):
+                    releases.setdefault(key, entry)
+            for key, entry in (previous.get("tracks") or {}).items():
+                if any(_under(entry.get("path", ""), r) for r in offline):
+                    tracks.setdefault(key, entry)
+            completed = True
+        except _Cancelled:
+            pass
         finally:
+            # Only a scan that FINISHED replaces the index. One that died half
+            # way used to save its partial result over the whole collection.
             with self._lock:
-                self._data = {
-                    "scannedAt": int(time.time()),
-                    "roots": list(roots),
-                    "releases": releases,
-                    "tracks": tracks,
-                }
+                if completed:
+                    self._data = {
+                        "scannedAt": int(time.time()),
+                        "roots": sorted(present + offline),
+                        "offline": offline,
+                        "downloadRoot": os.path.realpath(download_root) if download_root else "",
+                        "releases": releases,
+                        "tracks": tracks,
+                    }
                 self._scanning = False
-            self.save()
+            if completed:
+                self.save()
 
         return self.state()

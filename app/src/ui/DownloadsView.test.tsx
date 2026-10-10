@@ -50,6 +50,8 @@ function mockSession(transfers: Transfer[]) {
     groups: group(transfers, 999_999, Date.now()),
     note: null,
     error: null,
+    cancelled: null,
+    undoCancel: () => {},
     pause: (ids: string[]) => { calls.pause.push(ids); },
     resume: () => {},
     retry: () => {},
@@ -85,7 +87,7 @@ function renderView(session: TransferSession) {
 function openGroup(container: HTMLElement) {
   const hit = container.querySelector('.dl__hit');
   if (!hit) throw new Error('no group header to open');
-  act(() => { fireEvent.pointerDown(hit); });
+  act(() => { fireEvent.click(hit); });
 }
 
 describe('per-track control', () => {
@@ -99,8 +101,39 @@ describe('per-track control', () => {
     );
     // One per in-flight file, and it fires with just that file's id.
     expect(cancels).toHaveLength(2);
-    act(() => { fireEvent.pointerDown(cancels[0]); });
+    act(() => { fireEvent.click(cancels[0]); });
     expect(calls.cancel).toEqual([['01']]);
+  });
+
+  it('Cancel acts on click only — a press or a right-click does nothing', () => {
+    /* It used to fire on pointer-down, so a right-click (which is a
+     * pointer-down) cancelled, and there was no dragging off to back out. */
+    const { session, calls } = mockSession([file('01')]);
+    const { container } = renderView(session);
+    openGroup(container);
+
+    const cancel = container.querySelector<HTMLButtonElement>(
+      'button[title="Stop and remove this file"]',
+    )!;
+    act(() => { fireEvent.pointerDown(cancel, { button: 2 }); });
+    act(() => { fireEvent.contextMenu(cancel); });
+    act(() => { fireEvent.pointerDown(cancel); });
+    expect(calls.cancel).toEqual([]);
+  });
+
+  it('offers Undo after a Cancel, and Undo calls through', () => {
+    const { session } = mockSession([file('01')]);
+    let undone = 0;
+    const withUndo = {
+      ...session,
+      cancelled: [{ username: 'peer', path: 'a', size: 1 }, { username: 'peer', path: 'b', size: 1 }],
+      undoCancel: () => { undone += 1; },
+    } as unknown as TransferSession;
+    const { getByText, getByRole } = renderView(withUndo);
+
+    expect(getByText(/Cancelled 2\s+files\./)).toBeTruthy();
+    act(() => { fireEvent.click(getByRole('button', { name: 'Undo' })); });
+    expect(undone).toBe(1);
   });
 
   it('clicking a file row selects exactly that one', () => {
@@ -142,5 +175,19 @@ describe('per-track control', () => {
     const menu = document.querySelector('[role="menu"]');
     expect(menu).not.toBeNull();
     expect(menu?.textContent).toContain('Cancel');
+  });
+
+  it('still offers Undo when the Cancel emptied the list', () => {
+    /* Cancelling the last download left "Nothing downloading" — and Undo lived
+       only in the non-empty view. */
+    const { session } = mockSession([]);
+    const withUndo = {
+      ...session,
+      groups: [],
+      cancelled: [{ username: 'peer', path: 'a', size: 1 }],
+      undoCancel: () => {},
+    } as unknown as TransferSession;
+    const { getByRole } = renderView(withUndo);
+    expect(getByRole('button', { name: 'Undo' })).toBeTruthy();
   });
 });

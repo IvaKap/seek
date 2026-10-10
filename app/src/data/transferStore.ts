@@ -28,9 +28,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
+import { reportFailure, showNotice } from './failures.ts';
 
 export type TransferState =
-  | 'queued' | 'getting_status' | 'transferring' | 'paused' | 'cancelled'
+  | 'queued' | 'rejected' | 'getting_status' | 'transferring' | 'paused' | 'cancelled'
   | 'filtered' | 'finished' | 'user_logged_off' | 'connection_closed'
   | 'connection_timeout' | 'download_folder_error' | 'local_file_error'
   | 'unknown';
@@ -99,6 +100,9 @@ export interface TransferGroup {
 
 const ACTIVE: TransferState[] = ['queued', 'getting_status', 'transferring'];
 const FAILED: TransferState[] = [
+  // 'rejected' was missing from the type as well as from here, so a download
+  // the peer refused ("File not shared.") sat in no lens's idea of failed.
+  'rejected',
   'user_logged_off', 'connection_closed', 'connection_timeout',
   'download_folder_error', 'local_file_error',
 ];
@@ -351,7 +355,9 @@ export interface TransferSession {
   /** Uploads actually running or queued right now. */
   uploadCount: number;
   enqueue(username: string, path: string, size: number): Promise<void>;
-  enqueueFolder(username: string, folderPath: string): Promise<void>;
+  /** `recurse` takes the subfolders too — what a folder whose label counts
+   *  everything inside it promises. */
+  enqueueFolder(username: string, folderPath: string, recurse?: boolean): Promise<void>;
   pause(ids: string[]): void;
   resume(ids: string[]): void;
   cancel(ids: string[]): void;
@@ -361,7 +367,38 @@ export interface TransferSession {
   error: string | null;
   /** Something worth saying that is not a failure, e.g. "already queued". */
   note: string | null;
+  /** Show a finished download in Finder, selected. */
+  reveal(id: string): void;
+  /** Open a finished download in its default app. */
+  open(id: string): void;
+  /** Downloads cancelled in the last few seconds, which Undo can ask for again. */
+  cancelled: CancelledFile[] | null;
+  undoCancel(): void;
 }
+
+/** Enough of a cancelled download to queue it again. */
+export interface CancelledFile {
+  username: string;
+  path: string;
+  size: number;
+}
+
+/**
+ * How long Undo stays on offer after a Cancel.
+ *
+ * Cancel stops AND forgets (see `_cmd_transfer_cancel` for why it has to), so
+ * one stray press used to throw away a release that had waited hours in a
+ * peer's queue. Undo asks for the same files again. It cannot promise the old
+ * queue place — that is the peer's to give — but many clients keep a request
+ * that comes straight back, and a few seconds is when the mistake is noticed.
+ */
+const UNDO_MS = 10_000;
+
+/** What each transfer command is called when it fails. */
+const ACTION: Record<string, string> = {
+  'transfer.pause': 'Pause', 'transfer.resume': 'Resume', 'transfer.retry': 'Retry',
+  'transfer.cancel': 'Cancel', 'transfer.clear': 'Clear',
+};
 
 export function useTransfers(
   client: SidecarClient | null,
@@ -376,6 +413,7 @@ export function useTransfers(
   const [all, setAll] = useState<Transfer[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [cancelled, setCancelled] = useState<CancelledFile[] | null>(null);
   const dirty = useRef(false);
   /* In a ref, not a dep: `publish` is rebuilt by nothing, and threading the
    * threshold through its deps would tear down the event subscriptions every
@@ -423,10 +461,36 @@ export function useTransfers(
       dirty.current = true;
     };
 
+    // A folder Get is two steps — ask the peer what is in it, then queue — and
+    // the second could fail or find nothing with no word to anyone. Both now
+    // say so, wherever the Get was pressed.
+    const onFolderFailed = (data: unknown) => {
+      const d = data as { username: string; folderPath: string; reason: string };
+      const name = d.folderPath.split('\\').pop() || d.folderPath;
+      reportFailure(
+        `Download “${name}”`,
+        new Error(d.reason === 'offline' ? `${d.username} is offline` : `${d.username} did not send the folder`),
+      );
+    };
+    const onFolder = (data: unknown) => {
+      const d = data as {
+        requestId: string; folderPath: string; enqueued: number;
+        folders?: { path: string; files: unknown[] }[];
+      };
+      if (!d.requestId || d.enqueued !== 0) return;
+      const name = d.folderPath.split('\\').pop() || d.folderPath;
+      const inSubfolders = (d.folders ?? []).some((f) => f.path !== d.folderPath && f.files.length > 0);
+      showNotice(inSubfolders
+        ? `Nothing was queued from “${name}” — its files are in subfolders. Browse it and use “Get this folder” to take them too.`
+        : `Nothing was queued from “${name}” — the folder came back empty.`);
+    };
+
     const off = [
       client.on('transfer.added', onAdded),
       client.on('transfer.updated', onUpdated),
       client.on('transfer.removed', onRemoved),
+      client.on('folder.contents.failed', onFolderFailed),
+      client.on('folder.contents', onFolder),
     ];
 
     // Snapshot on connect, so downloads already running in a restarted sidecar
@@ -506,7 +570,10 @@ export function useTransfers(
   }, [client, publish]);
 
   const cmd = useCallback((name: string, params: Record<string, unknown>) => {
-    void client?.request(name, params).catch((e: Error) => setError(e.message));
+    void client?.request(name, params).catch((e: Error) => {
+      setError(e.message);
+      reportFailure(ACTION[name] ?? 'That', e);
+    });
   }, [client]);
 
   const enqueue = useCallback(async (username: string, path: string, size: number) => {
@@ -527,19 +594,59 @@ export function useTransfers(
       if (r.alreadyQueued) setNote('Already in your downloads.');
     } catch (e) {
       setError((e as Error).message);
+      // Get is pressed in Search and Browse, where the Downloads screen's own
+      // error line cannot be seen — so it says so where you are.
+      reportFailure('Download', e);
     }
   }, [client]);
 
-  const enqueueFolder = useCallback(async (username: string, folderPath: string) => {
+  const enqueueFolder = useCallback(async (username: string, folderPath: string, recurse = false) => {
     if (!client) return;
     setError(null);
     try {
       await client.request('transfer.enqueueFolder', {
-        username, folderPath, recurse: false, destination: null,
+        username, folderPath, recurse, destination: null,
       });
     } catch (e) {
       setError((e as Error).message);
+      reportFailure('Download the folder', e);
     }
+  }, [client]);
+
+  // A second Cancel inside the window adds to the batch rather than replacing
+  // it, so Undo puts back everything you just took away, not only the last.
+  const cancel = useCallback((ids: string[]) => {
+    const files = ids
+      .map((id) => byId.current.get(id))
+      .filter((t): t is Transfer => (
+        t !== undefined && t.direction !== 'upload' && t.state !== 'finished'
+      ))
+      .map((t) => ({ username: t.username, path: t.path, size: t.size }));
+    cmd('transfer.cancel', { transferIds: ids });
+    if (files.length > 0) setCancelled((prev) => [...(prev ?? []), ...files]);
+  }, [cmd]);
+
+  useEffect(() => {
+    if (!cancelled) return undefined;
+    const timer = window.setTimeout(() => setCancelled(null), UNDO_MS);
+    return () => window.clearTimeout(timer);
+  }, [cancelled]);
+
+  const undoCancel = useCallback(() => {
+    const files = cancelled;
+    if (!files) return;
+    setCancelled(null);
+    for (const f of files) void enqueue(f.username, f.path, f.size);
+  }, [cancelled, enqueue]);
+
+  const reveal = useCallback((id: string) => {
+    void client?.request('fs.reveal', { transferId: id, path: null })
+      .catch((e) => reportFailure('Show in Finder', e));
+  }, [client]);
+
+  const open = useCallback((id: string) => {
+    void client?.request('fs.open', { transferId: id, path: null })
+      .catch((e) => reportFailure('Open the file', e));
   }, [client]);
 
   return {
@@ -552,10 +659,14 @@ export function useTransfers(
     enqueue, enqueueFolder,
     pause: (ids) => cmd('transfer.pause', { transferIds: ids }),
     resume: (ids) => cmd('transfer.resume', { transferIds: ids }),
-    cancel: (ids) => cmd('transfer.cancel', { transferIds: ids }),
+    cancel,
     retry: (ids) => cmd('transfer.retry', { transferIds: ids }),
     clear: (ids) => cmd('transfer.clear', { transferIds: ids }),
     error,
     note,
+    cancelled,
+    undoCancel,
+    reveal,
+    open,
   };
 }

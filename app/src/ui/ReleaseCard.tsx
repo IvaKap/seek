@@ -107,13 +107,14 @@ export function ReleaseCard({
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
         onCompare();
       }}
       onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        e.stopPropagation();
-        onCompare();
+        // The native click opens it; the row underneath must not see the key.
+        if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
       }}
       aria-label={`Compare ${copyCount} copies of ${release.title}`}
       title={`${copyCount} people have this record — compare the copies`}

@@ -14,7 +14,7 @@ function t(id: string, state: TransferState, over: Partial<Transfer> = {}): Tran
 
 function spies(): FileMenuActions & { calls: Record<string, string[][]> } {
   const calls: Record<string, string[][]> = {
-    pause: [], resume: [], retry: [], cancel: [], clear: [], copy: [],
+    pause: [], resume: [], retry: [], cancel: [], clear: [], copy: [], reveal: [], open: [],
   };
   return {
     calls,
@@ -24,6 +24,8 @@ function spies(): FileMenuActions & { calls: Record<string, string[][]> } {
     cancel: (ids) => { calls.cancel.push(ids); },
     clear: (ids) => { calls.clear.push(ids); },
     copy: (text) => { calls.copy.push([text]); },
+    reveal: (id) => { calls.reveal.push([id]); },
+    open: (id) => { calls.open.push([id]); },
   };
 }
 
@@ -46,7 +48,7 @@ describe('fileMenuItems', () => {
 
   it('a finished file offers Clear, never Cancel or Retry', () => {
     const items = fileMenuItems([t('x', 'finished')], spies());
-    expect(ids(items)).toEqual(['clear', 'copypath', 'copyname', 'copyuser']);
+    expect(ids(items)).toEqual(['clear', 'reveal', 'open', 'copypath', 'copyname', 'copyuser']);
   });
 
   it('a failed file offers Retry and Clear but not Cancel (it is already terminal)', () => {
@@ -112,5 +114,21 @@ describe('fileMenuItems', () => {
   it('marks Cancel as the dangerous item', () => {
     const items = fileMenuItems([t('x', 'transferring')], spies());
     expect(items.find((i) => i.id === 'cancel')?.danger).toBe(true);
+  });
+
+  it('a finished file can be shown in Finder or opened; an unfinished one cannot', () => {
+    const a = spies();
+    const done = fileMenuItems([t('x', 'finished')], a);
+    run(done, 'reveal');
+    run(done, 'open');
+    expect(a.calls.reveal).toEqual([['x']]);
+    expect(a.calls.open).toEqual([['x']]);
+    expect(ids(fileMenuItems([t('y', 'transferring')], a))).not.toContain('reveal');
+  });
+
+  it('offers Open only for audio — the engine refuses anything else', () => {
+    const items = fileMenuItems([t('cover', 'finished', { path: 'music\\Album\\cover.jpg' })], spies());
+    expect(ids(items)).toContain('reveal');
+    expect(ids(items)).not.toContain('open');
   });
 });

@@ -112,6 +112,10 @@ const WRITE_VERBS = new Set([
   'connect', 'disconnect', 'patch', 'set', 'apply', 'add', 'remove', 'update',
   'rescan', 'start', 'stop', 'cancel', 'retry', 'clear', 'pause', 'resume',
   'enqueue', 'enqueueFolder', 'organise', 'save', 'delete', 'reset', 'import',
+  // Writes whose verb is a noun. `organise.file` moves a file after a
+  // MusicBrainz lookup and was being given up on after 15 s mid-move; the
+  // rest change stored state.
+  'file', 'claims', 'seen', 'filters', 'auto', 'sent', 'record',
 ]);
 
 export function requestBudget(cmd: string): number {

@@ -645,6 +645,13 @@ STRUCTS = {
                 "On by default — it only ever adds a grouping, never changes "
                 "or hides an entry, and it can be switched off here.",
             ),
+            (
+                "checkUpdates",
+                "bool",
+                "Look for a new Seek version on GitHub shortly after launch. "
+                "The one request Seek makes that is neither Soulseek nor a "
+                "lookup you switched on, so it has its own switch.",
+            ),
             ("stalledFailMinutes", "int", "How many minutes of silence before a download is shown under Failed instead of Downloads. 0 never does it. Seek does NOT touch the transfer: it keeps its place in the peer's queue, which is often hours long and frequently does come good, and the row returns to Downloads by itself the moment a byte moves. This is a lens on the same list, not an action."),
             ("clearCompletedDays", "int", "Forget completed downloads older than this many days. 0 keeps them forever. Forgets the RECORD only — the files on disk are never touched — and off by default, because it is the one preference here that destroys something the user did not ask to lose."),
             (
@@ -682,6 +689,7 @@ STRUCTS = {
             ("youtubeOauthClientId", "str?", "The client id, for writing. Empty clears it."),
             ("youtubeOauthClientSecret", "str?", "The client secret, for writing. Empty clears it."),
             ("autoDigSessions", "bool?", ""),
+            ("checkUpdates", "bool?", ""),
             ("stalledFailMinutes", "int?", ""),
             ("clearCompletedDays", "int?", ""),
             ("uploadGreetingEnabled", "bool?", ""),
@@ -707,6 +715,20 @@ STRUCTS = {
             ("releaseCount", "int", ""),
             ("trackCount", "int", ""),
             ("scanning", "bool", ""),
+            (
+                "offlineRoots",
+                "str[]",
+                "Roots that could not be reached at the last scan, e.g. an "
+                "unplugged drive. Their releases are kept from the previous scan "
+                "rather than dropped. Leave one out of the next scan's roots to "
+                "forget it.",
+            ),
+            (
+                "downloadRoot",
+                "str",
+                "The download folder, which every scan includes whatever roots "
+                "it is given — so it cannot be forgotten by leaving it out.",
+            ),
         ],
     ),
     "LibraryScanParams": (
@@ -2002,8 +2024,10 @@ STRUCTS = {
             (
                 "status",
                 "str",
-                "downloading | analysing | awaiting-review. The frontend's "
-                "vocabulary; the sidecar does not interpret it.",
+                "downloading | analysing | awaiting-review | skipped. The "
+                "frontend's vocabulary; the sidecar does not interpret it. "
+                "`skipped` marks a file rejected at review or failed, so it is "
+                "never picked again for that wish.",
             ),
         ],
     ),
@@ -2115,6 +2139,14 @@ STRUCTS = {
                 "How long a 'transferring' download may make zero progress before "
                 "`Transfer.stalled` is set. Seek-specific; upstream has no such "
                 "concept (RECON.md §5).",
+            ),
+            (
+                "portMapping",
+                "bool?",
+                "Ask the router to forward the listening port (NAT-PMP, then "
+                "UPnP). Upstream's `server.upnp`, on by default as in Nicotine+. "
+                "Without it, a peer who is also behind a router cannot reach us "
+                "at all.",
             ),
         ],
     ),
@@ -2658,6 +2690,34 @@ STRUCTS = {
         "Open a private conversation without sending anything.",
         [("username", "str", "")],
     ),
+    "ChatHistoryParams": (
+        "Ask for what was said before, from the engine's own chat log.",
+        [
+            ("scope", "ChatScope", ""),
+            ("target", "str", "Room name, or the other person's username."),
+            (
+                "limit",
+                "int?",
+                "Most recent lines to return. Null uses Nicotine+'s own "
+                "setting (200 by default).",
+            ),
+        ],
+    ),
+    "ChatHistory": (
+        "A conversation's log, oldest line first.",
+        [
+            ("scope", "ChatScope", ""),
+            ("target", "str", ""),
+            (
+                "lines",
+                "str[]",
+                "Each line exactly as Nicotine+ wrote it — "
+                "'<timestamp> [<user>] <text>', the timestamp in the user's "
+                "locale. Raw on purpose: splitting it is the frontend's. Empty "
+                "when there is no log.",
+            ),
+        ],
+    ),
     "ShareState": (
         "Everything the frontend needs to drive sharing and to render the "
         "persistent 'you are not sharing' indicator.",
@@ -2684,6 +2744,15 @@ STRUCTS = {
                 "Consent was granted after the sidecar started without the "
                 "shares component. Sharing begins on next launch.",
             ),
+            (
+                "unavailable",
+                "str[]",
+                "Shared folders that stopped the last rescan because they could "
+                "not be read (an unplugged drive). Upstream refuses to rescan "
+                "while any share is missing, so until this is empty the index — "
+                "what peers see — is the one from before. Cleared when a rescan "
+                "actually runs.",
+            ),
         ],
     ),
     "ShareSetParams": (
@@ -2708,6 +2777,14 @@ STRUCTS = {
                 "bool?",
                 "Rescan even if upstream believes the index is current.",
             )
+        ],
+    ),
+    "RevealParams": (
+        "A downloaded file to show in Finder or open. Name it by a finished "
+        "transfer, or by a local path.",
+        [
+            ("transferId", "str?", "A finished download."),
+            ("path", "str?", "A local file or folder, e.g. a Library release folder."),
         ],
     ),
     "PathCheckParams": (
@@ -2921,6 +2998,12 @@ COMMANDS = {
         "Open a private conversation without sending anything.",
         "ChatOpenParams",
         None,
+    ),
+    "chat.history": (
+        "Earlier lines of a conversation, read from the log Nicotine+ keeps on "
+        "disk, so a restart does not wipe every conversation.",
+        "ChatHistoryParams",
+        "ChatHistory",
     ),
     "wishlist.add": (
         "Add a query to the wishlist. Upstream re-runs it automatically on the "
@@ -3277,6 +3360,17 @@ COMMANDS = {
         "Succeeds silently if it already exists. Never deletes or overwrites.",
         "EnsureFolderParams",
         "PathCheck",
+    ),
+    "fs.reveal": (
+        "Show a file or folder in Finder, selected.",
+        "RevealParams",
+        None,
+    ),
+    "fs.open": (
+        "Open an audio file in its default app. Audio only: Seek never launches "
+        "anything else on a client's word.",
+        "RevealParams",
+        None,
     ),
 }
 

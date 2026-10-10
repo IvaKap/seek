@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
+import { readUntilAnswered } from './failures.ts';
 
 export interface LibraryState {
   scannedAt: number;
@@ -25,6 +26,11 @@ export interface LibraryState {
   releaseCount: number;
   trackCount: number;
   scanning: boolean;
+  /** Roots that could not be reached at the last scan — an unplugged drive.
+   * Their releases are kept from the previous scan, not dropped. */
+  offlineRoots: string[];
+  /** Always scanned, so it cannot be forgotten by leaving it out. */
+  downloadRoot: string;
 }
 
 export interface LibraryRelease {
@@ -38,6 +44,26 @@ export interface LibraryRelease {
   formats: string;
   year: number;
   genre: string;
+}
+
+/** A release's `formats` field: extension counts, as JSON because the wire
+ *  schema has no map type. Unreadable reads as none. */
+export function parseFormats(json: string): Record<string, number> {
+  try {
+    const value = JSON.parse(json || '{}') as Record<string, number>;
+    return typeof value === 'object' && value ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+/** "FLAC", or "FLAC/MP3" for a mixed folder, most common first. The grid and
+ *  table printed the raw JSON — `{"flac": 13}` — on every release. */
+export function formatsLabel(json: string): string {
+  return Object.entries(parseFormats(json))
+    .sort((a, b) => b[1] - a[1])
+    .map(([ext]) => ext.toUpperCase())
+    .join('/');
 }
 
 /* --- mirror of sidecar/library.py. Keep in step. --- */
@@ -99,6 +125,8 @@ export interface LibrarySession {
 
 const EMPTY: LibraryState = {
   scannedAt: 0, roots: [], releaseCount: 0, trackCount: 0, scanning: false,
+  offlineRoots: [],
+  downloadRoot: '',
 };
 
 export function useLibrary(client: SidecarClient | null): LibrarySession {
@@ -131,9 +159,9 @@ export function useLibrary(client: SidecarClient | null): LibrarySession {
       const g = d as LibraryGaps;
       setGaps((prev) => new Map(prev).set(g.key, g));
     });
-    void client.request<LibraryState>('library.state').then(setState).catch(() => {});
+    const stop = readUntilAnswered<LibraryState>(client, 'library.state', undefined, setState);
     refreshOwned();
-    return () => { off(); offGaps(); };
+    return () => { off(); offGaps(); stop(); };
   }, [client, refreshOwned]);
 
   const findGaps = useCallback((key: string, artist: string, release: string) => {

@@ -607,6 +607,10 @@ class AppSettings(TypedDict):
     # default — it only ever adds a grouping, never changes or hides an entry,
     # and it can be switched off here.
     autoDigSessions: bool
+    # Look for a new Seek version on GitHub shortly after launch. The one
+    # request Seek makes that is neither Soulseek nor a lookup you switched
+    # on, so it has its own switch.
+    checkUpdates: bool
     # How many minutes of silence before a download is shown under Failed
     # instead of Downloads. 0 never does it. Seek does NOT touch the transfer:
     # it keeps its place in the peer's queue, which is often hours long and
@@ -653,6 +657,7 @@ class AppSettingsPatch(TypedDict):
     # The client secret, for writing. Empty clears it.
     youtubeOauthClientSecret: Optional[str]
     autoDigSessions: Optional[bool]
+    checkUpdates: Optional[bool]
     stalledFailMinutes: Optional[int]
     clearCompletedDays: Optional[int]
     uploadGreetingEnabled: Optional[bool]
@@ -687,6 +692,13 @@ class LibraryState(TypedDict):
     releaseCount: int
     trackCount: int
     scanning: bool
+    # Roots that could not be reached at the last scan, e.g. an unplugged
+    # drive. Their releases are kept from the previous scan rather than
+    # dropped. Leave one out of the next scan's roots to forget it.
+    offlineRoots: List[str]
+    # The download folder, which every scan includes whatever roots it is
+    # given — so it cannot be forgotten by leaving it out.
+    downloadRoot: str
 
 
 class LibraryScanParams(TypedDict):
@@ -1963,8 +1975,9 @@ class AutoClaim(TypedDict):
     transferId: str
     # The candidate's virtual path.
     path: str
-    # downloading | analysing | awaiting-review. The frontend's vocabulary;
-    # the sidecar does not interpret it.
+    # downloading | analysing | awaiting-review | skipped. The frontend's
+    # vocabulary; the sidecar does not interpret it. `skipped` marks a file
+    # rejected at review or failed, so it is never picked again for that wish.
     status: str
 
 
@@ -2102,6 +2115,10 @@ class Settings(TypedDict):
     # `Transfer.stalled` is set. Seek-specific; upstream has no such concept
     # (RECON.md §5).
     stallSeconds: Optional[int]
+    # Ask the router to forward the listening port (NAT-PMP, then UPnP).
+    # Upstream's `server.upnp`, on by default as in Nicotine+. Without it, a
+    # peer who is also behind a router cannot reach us at all.
+    portMapping: Optional[bool]
 
 
 class ConnectionState(TypedDict):
@@ -2580,6 +2597,26 @@ class ChatOpenParams(TypedDict):
     username: str
 
 
+class ChatHistoryParams(TypedDict):
+    """Ask for what was said before, from the engine's own chat log."""
+    scope: "ChatScope"
+    # Room name, or the other person's username.
+    target: str
+    # Most recent lines to return. Null uses Nicotine+'s own setting (200 by
+    # default).
+    limit: Optional[int]
+
+
+class ChatHistory(TypedDict):
+    """A conversation's log, oldest line first."""
+    scope: "ChatScope"
+    target: str
+    # Each line exactly as Nicotine+ wrote it — '<timestamp> [<user>] <text>',
+    # the timestamp in the user's locale. Raw on purpose: splitting it is the
+    # frontend's. Empty when there is no log.
+    lines: List[str]
+
+
 class ShareState(TypedDict):
     """
     Everything the frontend needs to drive sharing and to render the
@@ -2602,6 +2639,11 @@ class ShareState(TypedDict):
     # Consent was granted after the sidecar started without the shares
     # component. Sharing begins on next launch.
     restartRequired: bool
+    # Shared folders that stopped the last rescan because they could not be
+    # read (an unplugged drive). Upstream refuses to rescan while any share is
+    # missing, so until this is empty the index — what peers see — is the one
+    # from before. Cleared when a rescan actually runs.
+    unavailable: List[str]
 
 
 class ShareSetParams(TypedDict):
@@ -2619,6 +2661,17 @@ class ShareSetParams(TypedDict):
 class ShareRescanParams(TypedDict):
     # Rescan even if upstream believes the index is current.
     force: Optional[bool]
+
+
+class RevealParams(TypedDict):
+    """
+    A downloaded file to show in Finder or open. Name it by a finished
+    transfer, or by a local path.
+    """
+    # A finished download.
+    transferId: Optional[str]
+    # A local file or folder, e.g. a Library release folder.
+    path: Optional[str]
 
 
 class PathCheckParams(TypedDict):
@@ -2870,6 +2923,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("youtubeOauthClientId", "bool", False, False),
         ("youtubeOauthClientSecret", "bool", False, False),
         ("autoDigSessions", "bool", False, False),
+        ("checkUpdates", "bool", False, False),
         ("stalledFailMinutes", "int", False, False),
         ("clearCompletedDays", "int", False, False),
         ("uploadGreetingEnabled", "bool", False, False),
@@ -2891,6 +2945,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("youtubeOauthClientId", "str", False, True),
         ("youtubeOauthClientSecret", "str", False, True),
         ("autoDigSessions", "bool", False, True),
+        ("checkUpdates", "bool", False, True),
         ("stalledFailMinutes", "int", False, True),
         ("clearCompletedDays", "int", False, True),
         ("uploadGreetingEnabled", "bool", False, True),
@@ -2914,6 +2969,8 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("releaseCount", "int", False, False),
         ("trackCount", "int", False, False),
         ("scanning", "bool", False, False),
+        ("offlineRoots", "str", True, False),
+        ("downloadRoot", "str", False, False),
     ),
     "LibraryScanParams": (
         ("roots", "str", True, False),
@@ -3481,6 +3538,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("uploadSlots", "int", False, True),
         ("autoConnect", "bool", False, True),
         ("stallSeconds", "int", False, True),
+        ("portMapping", "bool", False, True),
     ),
     "ConnectionState": (
         ("status", "ConnectionStatus", False, False),
@@ -3681,6 +3739,16 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "ChatOpenParams": (
         ("username", "str", False, False),
     ),
+    "ChatHistoryParams": (
+        ("scope", "ChatScope", False, False),
+        ("target", "str", False, False),
+        ("limit", "int", False, True),
+    ),
+    "ChatHistory": (
+        ("scope", "ChatScope", False, False),
+        ("target", "str", False, False),
+        ("lines", "str", True, False),
+    ),
     "ShareState": (
         ("consent", "ShareConsent", False, False),
         ("folders", "SharedFolder", True, False),
@@ -3691,6 +3759,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("totalSize", "int", False, True),
         ("lastScanAt", "float", False, True),
         ("restartRequired", "bool", False, False),
+        ("unavailable", "str", True, False),
     ),
     "ShareSetParams": (
         ("consent", "ShareConsent", False, False),
@@ -3698,6 +3767,10 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     ),
     "ShareRescanParams": (
         ("force", "bool", False, True),
+    ),
+    "RevealParams": (
+        ("transferId", "str", False, True),
+        ("path", "str", False, True),
     ),
     "PathCheckParams": (
         ("path", "str", False, False),
@@ -3765,6 +3838,7 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "chat.leave": ("ChatLeaveParams", None),
     "chat.say": ("ChatSayParams", None),
     "chat.open": ("ChatOpenParams", None),
+    "chat.history": ("ChatHistoryParams", "ChatHistory"),
     "wishlist.add": ("WishParams", "WishlistState"),
     "wishlist.remove": ("WishParams", "WishlistState"),
     "wishlist.filters": ("WishFiltersParams", "WishlistState"),
@@ -3847,6 +3921,8 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "settings.patch": ("SettingsPatchParams", "SettingsResult"),
     "fs.check": ("PathCheckParams", "PathCheck"),
     "fs.ensureFolder": ("EnsureFolderParams", "PathCheck"),
+    "fs.reveal": ("RevealParams", None),
+    "fs.open": ("RevealParams", None),
 }
 
 EVENTS: Dict[str, str] = {

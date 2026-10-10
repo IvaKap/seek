@@ -6,7 +6,7 @@
  * "the two files disagree", not "the expectation is stale".
  */
 import { describe, expect, it } from 'vitest';
-import { normalise, releaseKey, trackKey } from '../data/libraryStore.ts';
+import { formatsLabel, normalise, releaseKey, trackKey } from '../data/libraryStore.ts';
 
 describe('library key normalisation', () => {
   const cases: Array<[string, string]> = [
@@ -37,5 +37,14 @@ describe('library key normalisation', () => {
   it('drops the empty side rather than leaving a bare separator', () => {
     expect(releaseKey(null, 'Untrue')).toBe('untrue');
     expect(trackKey('', 'Archangel')).toBe('archangel');
+  });
+});
+
+describe('formatsLabel', () => {
+  it('reads the extension counts instead of printing the JSON', () => {
+    expect(formatsLabel('{"flac": 13}')).toBe('FLAC');
+    expect(formatsLabel('{"mp3": 1, "flac": 12}')).toBe('FLAC/MP3');
+    expect(formatsLabel('')).toBe('');
+    expect(formatsLabel('not json')).toBe('');
   });
 });

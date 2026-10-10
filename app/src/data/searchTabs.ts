@@ -25,6 +25,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { SearchSession, SearchSnapshot } from './searchStore.ts';
+import type { SourceFile } from '../domain/types.ts';
 
 export interface SearchTab {
   id: string;
@@ -50,6 +51,11 @@ export interface SearchTabs {
    * blank forever.
    */
   openWith(query: string): void;
+  /**
+   * Show results that were ALREADY found — a wish's — in a tab, without
+   * searching again. Same tab rules as `openWith`.
+   */
+  showResults(query: string, files: SourceFile[]): void;
   /** Close one. Never closes the last: an empty window is not a state. */
   close(id: string): void;
   /**
@@ -86,6 +92,9 @@ function blank(session: SearchSession): SearchSnapshot {
     expanded: new Set(), closedReason: null, tick: 0,
   };
 }
+
+/** The `closedReason` of a tab showing a wish's results rather than a search. */
+export const WISHLIST_REASON = 'wishlist';
 
 /** The label a tab shows before anything has been searched in it. */
 const BLANK = 'New search';
@@ -212,6 +221,28 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     session.run(text);
   }, [open, session]);
 
+  const showResults = useCallback((query: string, files: SourceFile[]) => {
+    const text = query.trim();
+    if (!text) return;
+    // Same rule as openWith: the same text again is THIS tab, not a copy of it.
+    const ran = ranQuery.current.get(activeRef.current);
+    const id = ran !== undefined && ran !== text ? open() : activeRef.current;
+    ranQuery.current.set(id, text);
+    session.restore({
+      query: text,
+      files,
+      peers: [...new Set(files.map((f) => f.user))],
+      filters: session.filters,
+      groupBy: 'release',
+      sort: session.sort,
+      expanded: new Set(),
+      // Not "stopped listening": these came from the wishlist, and the search
+      // field reruns the query live if you want what is out there now.
+      closedReason: WISHLIST_REASON,
+      tick: 0,
+    });
+  }, [open, session]);
+
   const markUsed = useCallback(() => {
     usedAt.current.set(activeRef.current, Date.now());
   }, []);
@@ -256,6 +287,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     select,
     open,
     openWith,
+    showResults,
     close,
     markUsed,
   };

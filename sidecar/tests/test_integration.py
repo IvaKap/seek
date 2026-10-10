@@ -180,7 +180,7 @@ async def test_settings_round_trip_through_real_config(host, client):
     patch = {"uploadSlots": 7, "maxDownloadSpeed": 2_097_152,
              "stallSeconds": 90, "downloadFolder": None,
              "incompleteFolder": None, "listenPort": None,
-             "maxUploadSpeed": None, "autoConnect": None}
+             "maxUploadSpeed": None, "autoConnect": None, "portMapping": None}
     reply = await call(host, client, "settings.patch", {"settings": patch})
     assert reply["ok"] is True
     after = reply["result"]["settings"]
@@ -194,6 +194,42 @@ async def test_settings_round_trip_through_real_config(host, client):
     assert after["maxDownloadSpeed"] == 2_097_152
 
 
+async def test_port_mapping_is_a_setting_and_applies_at_once(host, client, monkeypatch):
+    """It was a component Seek never enabled, so the port was never forwarded.
+    Now it is upstream's own `server.upnp`, and switching it acts immediately
+    rather than at the next login. The mapper is stubbed: the real one talks to
+    the router."""
+    calls = []
+
+    class Mapper:
+        def add_port_mapping(self):
+            calls.append("add")
+
+        def remove_port_mapping(self):
+            calls.append("remove")
+
+    assert host.core.portmapper is not None, "portmapper must be enabled"
+    monkeypatch.setattr(host.core, "portmapper", Mapper())
+    blank = {"downloadFolder": None, "incompleteFolder": None, "listenPort": None,
+             "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
+             "autoConnect": None, "stallSeconds": None}
+
+    reply = await call(host, client, "settings.patch",
+                       {"settings": {**blank, "portMapping": False}})
+    assert reply["result"]["settings"]["portMapping"] is False
+    assert host.config.sections["server"]["upnp"] is False
+
+    reply = await call(host, client, "settings.patch",
+                       {"settings": {**blank, "portMapping": True}})
+    assert reply["result"]["settings"]["portMapping"] is True
+    assert calls == ["remove", "add"]
+
+    # Leaving it alone leaves the router alone.
+    await call(host, client, "settings.patch",
+               {"settings": {**blank, "portMapping": None}})
+    assert calls == ["remove", "add"]
+
+
 async def test_a_bad_download_folder_is_refused_over_the_wire(host, client, tmp_path):
     """The path helpers are unit-tested in test_paths.py. What this adds is
     that the refusal survives the socket as a bad_request the UI can render,
@@ -205,7 +241,7 @@ async def test_a_bad_download_folder_is_refused_over_the_wire(host, client, tmp_
     reply = await call(host, client, "settings.patch", {"settings": {
         "downloadFolder": missing, "incompleteFolder": None, "listenPort": None,
         "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
-        "autoConnect": None, "stallSeconds": None,
+        "autoConnect": None, "stallSeconds": None, "portMapping": None,
     }})
 
     assert reply["ok"] is False
@@ -222,6 +258,7 @@ async def test_a_good_download_folder_is_stored_expanded(host, client, tmp_path)
         "downloadFolder": f"{folder}/", "incompleteFolder": None,
         "listenPort": None, "maxDownloadSpeed": None, "maxUploadSpeed": None,
         "uploadSlots": None, "autoConnect": None, "stallSeconds": None,
+        "portMapping": None,
     }})
 
     assert reply["ok"] is True
@@ -303,7 +340,7 @@ def _settings_patch(**overrides):
         "autoConnect": None, "externalLookups": None, "discogsToken": None,
         "artworkCacheMb": None, "embedArtwork": None, "writeCoverFile": None,
         "preferLossless": None, "minBitrate": None, "rejectTranscodes": None,
-        "autoOrganise": None, "autoDigSessions": None,
+        "autoOrganise": None, "autoDigSessions": None, "checkUpdates": None,
         "stalledFailMinutes": None, "clearCompletedDays": None,
         "uploadGreetingEnabled": None, "uploadGreeting": None,
         "acoustidApiKey": None, "youtubeApiKey": None,
@@ -903,6 +940,68 @@ async def test_granting_consent_records_folders(host, client, tmp_path):
     await call(host, client, "shares.set", {"consent": "unset", "folders": []})
 
 
+async def test_an_unplugged_share_does_not_block_other_changes(host, client, tmp_path,
+                                                               monkeypatch):
+    """Every folder used to be re-checked on every save, so one unplugged drive
+    refused ALL changes — including removing a different folder. And a removal
+    has to be forced: upstream will not rescan while a share is missing, which
+    would leave the withdrawn folder in the index, still public."""
+    keep = tmp_path / "Music"
+    drop = tmp_path / "Private"
+    drive = tmp_path / "SSD"
+    for folder in (keep, drop, drive):
+        os.makedirs(folder)
+    shared = [
+        {"virtualName": "Music", "path": str(keep), "exists": True},
+        {"virtualName": "Private", "path": str(drop), "exists": True},
+        {"virtualName": "SSD", "path": str(drive), "exists": True},
+    ]
+    assert (await call(host, client, "shares.set",
+                       {"consent": "granted", "folders": shared}))["ok"] is True
+
+    rescans = []
+    # On the class: Shares uses __slots__, so the instance attribute is read-only.
+    monkeypatch.setattr(type(host.core.shares), "rescan_shares",
+                        lambda _self, **kw: rescans.append(kw))
+    os.rmdir(drive)                                    # unplugged
+
+    reply = await call(host, client, "shares.set", {
+        "consent": "granted",
+        "folders": [shared[0], {**shared[2], "exists": False}],
+    })
+    assert reply["ok"] is True, reply
+    paths = [f["path"] for f in reply["result"]["folders"]]
+    assert paths == [str(keep), str(drive)]            # the drive is kept
+    assert rescans == [{"force": True}]                # the removal took effect
+
+    # Adding a NEW folder that is not there is still refused.
+    reply = await call(host, client, "shares.set", {
+        "consent": "granted",
+        "folders": [shared[0], {"virtualName": "Gone", "path": str(tmp_path / "gone"),
+                                "exists": False}],
+    })
+    assert reply["ok"] is False
+
+    await call(host, client, "shares.set", {"consent": "unset", "folders": []})
+
+
+async def test_a_refused_rescan_is_reported_until_one_runs(host, client):
+    """Upstream emits `shares-unavailable` and does nothing else; Seek used to
+    ignore it, so a stale index went on being served with no word about why."""
+    host._on_shares_unavailable([("SSD", "/Volumes/SSD/Music")])
+    reply = await call(host, client, "shares.get")
+    assert reply["result"]["unavailable"] == ["/Volumes/SSD/Music"]
+
+    # The scan that comes WITH the report (upstream scans anyway at launch)
+    # keeps it; a later scan with no report means the share is back.
+    host._on_shares_scanning()
+    reply = await call(host, client, "shares.get")
+    assert reply["result"]["unavailable"] == ["/Volumes/SSD/Music"]
+    host._on_shares_scanning()
+    reply = await call(host, client, "shares.get")
+    assert reply["result"]["unavailable"] == []
+
+
 async def test_contradictory_share_settings_are_rejected(host, client):
     reply = await call(host, client, "shares.set",
                        {"consent": "granted", "folders": []})
@@ -987,3 +1086,47 @@ async def test_import_from_a_missing_config_is_a_clean_error(host, client, monke
     })
     assert reply["ok"] is False
     assert reply["error"]["code"] == "not_found"
+
+
+async def test_chat_commands_run_headless_and_answer_in_the_chat(host, monkeypatch):
+    """Upstream's command plugin must actually load with no GTK, and its replies
+    must come back as chat lines — otherwise routing "/help" to it would just
+    swallow the line."""
+    lines = []
+    original = host.bridge.broadcast
+
+    def capture(event, payload):
+        if event == "chat.message":
+            lines.append(payload)
+        return original(event, payload)
+
+    monkeypatch.setattr(host.bridge, "broadcast", capture)
+    monkeypatch.setattr(host.core.users, "login_status", host.UserStatus.ONLINE)
+    host._cmd_chat_say({"scope": "private", "target": "bob",
+                        "message": "/help", "automatic": None})
+    assert lines, "no reply to /help"
+    assert all(line["target"] == "bob" for line in lines)
+
+
+async def test_chat_history_reads_back_what_the_engine_logged(host, client):
+    """Every conversation was logged to disk and never read back, so a restart
+    showed every chat empty. Written through upstream's own logger, read through
+    the command, so the folder and the file naming are the real ones."""
+    from pynicotine.logfacility import log
+
+    # Never anyone's real chat logs: the host's data folder is a temp dir.
+    assert log.private_chat_folder_path.startswith(host.config.data_folder_path)
+    log.write_log_file(log.private_chat_folder_path, "bob", "[bob] got the test press?")
+    log.write_log_file(log.private_chat_folder_path, "bob", "[me] yes, sending tonight")
+
+    reply = await call(host, client, "chat.history",
+                       {"scope": "private", "target": "bob", "limit": None})
+    assert reply["ok"] is True, reply
+    lines = reply["result"]["lines"]
+    assert len(lines) == 2
+    assert lines[0].endswith("[bob] got the test press?")      # oldest first
+    assert lines[1].endswith("[me] yes, sending tonight")
+
+    reply = await call(host, client, "chat.history",
+                       {"scope": "private", "target": "nobody-ever", "limit": None})
+    assert reply["result"]["lines"] == []

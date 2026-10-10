@@ -34,6 +34,11 @@ export function hitTarget(activate: () => void) {
     tabIndex: 0,
     onKeyDown(event: React.KeyboardEvent) {
       if (event.key !== 'Enter' && event.key !== ' ') return;
+      // Only for the row ITSELF. A key pressed on a button inside it (Get, the
+      // quality chip, Compare) bubbles here too, and acting on it ran the row's
+      // action as well as the button's — and the preventDefault below then
+      // swallowed the button's own click.
+      if (event.target !== event.currentTarget) return;
       // Space scrolls the page by default, and Enter would submit an ancestor
       // form. Both are wrong here.
       event.preventDefault();
@@ -107,15 +112,11 @@ export function SegmentedControl<T extends string>({
           role="radio"
           aria-checked={value === s.value}
           className="segmented__item pressable"
-          // Pointer-down, not click: the commit happens on release but the
-          // interface must acknowledge the press immediately.
-          onPointerDown={() => onChange(s.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onChange(s.value);
-            }
-          }}
+          // Click: the press is acknowledged by `.pressable:active`, which
+          // is all BRIEF_SEEK asked for. Acting on press made every control
+          // fire on a right-click and do nothing from the keyboard — a native
+          // button already turns Return and Space into a click.
+          onClick={() => onChange(s.value)}
         >
           {s.icon}
           <span>{s.label}</span>
@@ -140,13 +141,7 @@ export function Toggle({
       role="switch"
       aria-checked={checked}
       className="toggle pressable"
-      onPointerDown={() => onChange(!checked)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onChange(!checked);
-        }
-      }}
+      onClick={() => onChange(!checked)}
     >
       <span className="toggle__track" aria-hidden>
         <span className="toggle__knob" />
@@ -172,13 +167,7 @@ export function Chip({
       aria-pressed={active}
       className="chip pressable"
       data-active={active ? 'true' : 'false'}
-      onPointerDown={onToggle}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onToggle();
-        }
-      }}
+      onClick={onToggle}
     >
       {/* Colour is never the only signal: the active chip also gets a check. */}
       {active && <IconCheck size={13} painted={1.9} />}

@@ -23,7 +23,7 @@ import type { TransferSession } from '../data/transferStore.ts';
 import { buildQueueMaps } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
-import { judge, pickSource } from '../domain/preferences.ts';
+import { judge, judgeRelease, pickSource } from '../domain/preferences.ts';
 import { copiesOf, groupCopies } from '../domain/bestSources.ts';
 import { CopiesSheet } from './CopiesSheet.tsx';
 import type { DownloadPrefs } from '../domain/preferences.ts';
@@ -34,6 +34,7 @@ import type { PeerLookup } from './PeerHistory.tsx';
 import {
   IconChevronDown, IconEmpty, IconList, IconRelease, IconSearch, IconStar, IconTrack,
 } from '../icons/index.tsx';
+import { WISHLIST_REASON } from '../data/searchTabs.ts';
 
 /* "User" is gone: grouping a result set by who is sharing buried the music under
  * the peer, and browsing a peer's whole library is what the Browse view and the
@@ -156,19 +157,21 @@ export function SearchView({
     return art?.state === 'ready' ? art.trackCount : null;
   }, [artwork]);
 
-  const queueRelease = useCallback((release: Release) => {
-    setRefused(null);
-    /* This tab has done its job. Stamped rather than closed — you often take a
-       second record from the same results — and swept 45 minutes later. */
-    tabs?.markUsed();
-    void transfers.enqueueFolder(release.user, release.folderPath);
-  }, [transfers, tabs]);
-
   /* Queue whatever the row represents. A release queues the whole remote
    * folder in one command — the two-phase folder dance lives in the sidecar
    * (RECON.md §5) — because the unit a DJ downloads is a folder, not a file. */
   const rules: DownloadPrefs = prefs
     ?? { preferLossless: false, minBitrate: 0, rejectTranscodes: false };
+
+  const queueRelease = useCallback((release: Release) => {
+    const verdict = judgeRelease(release.files, rules);
+    if (!verdict.allowed) { setRefused(verdict.reason ?? null); return; }
+    setRefused(null);
+    /* This tab has done its job. Stamped rather than closed — you often take a
+       second record from the same results — and swept 45 minutes later. */
+    tabs?.markUsed();
+    void transfers.enqueueFolder(release.user, release.folderPath);
+  }, [transfers, tabs, rules]);
 
   const onQueue = useCallback((row: Row) => {
     tabs?.markUsed();
@@ -407,7 +410,7 @@ export function SearchView({
             className="btn pressable search__wish"
             disabled={!session.query.trim()}
             title="Keep looking for this in the background, on the interval the server allows"
-            onPointerDown={onWish}
+            onClick={onWish}
           >
             <IconStar size={14} painted={1.5} />
             Wishlist
@@ -465,7 +468,7 @@ export function SearchView({
             type="button"
             className="quick__more pressable"
             aria-expanded={advanced}
-            onPointerDown={() => setAdvanced((v) => !v)}
+            onClick={() => setAdvanced((v) => !v)}
           >
             <span>Advanced</span>
             <IconChevronDown
@@ -492,7 +495,7 @@ export function SearchView({
         {refused && (
           <p className="refused" role="status">
             {refused}
-            <button type="button" className="verify pressable" onPointerDown={() => setRefused(null)}>
+            <button type="button" className="verify pressable" onClick={() => setRefused(null)}>
               Dismiss
             </button>
           </p>
@@ -511,7 +514,15 @@ export function SearchView({
               <span className="resultbar__of tnum">of {integer(session.totalFiles)}</span>
             )}
             {session.running && <span className="resultbar__live">searching…</span>}
-            {!session.running && session.closedReason && (
+            {!session.running && session.closedReason === WISHLIST_REASON && (
+              <span
+                className="resultbar__closed"
+                title="What your wishlist found when it last ran. Press Return in the search field for a live search."
+              >
+                found by your wishlist
+              </span>
+            )}
+            {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
               <span
                 className="resultbar__closed"
                 title="Soulseek has no completion signal. Peers answer whenever they like and stragglers can arrive minutes later — this only means Seek stopped listening."
@@ -548,7 +559,7 @@ export function SearchView({
               <button
                 type="button"
                 className="btn pressable"
-                onPointerDown={onSave}
+                onClick={onSave}
                 title="Save this query together with the filters currently applied"
               >
                 Save

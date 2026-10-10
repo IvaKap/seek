@@ -171,7 +171,8 @@ export function FolderTree({
               type="button"
               className="ftree__disclosure"
               aria-label={open.has(node.path) ? 'Collapse folder' : 'Expand folder'}
-              onPointerDown={(e) => { e.stopPropagation(); onToggle(node.path); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); onToggle(node.path); }}
             >
               <IconChevronDown
                 size={11}

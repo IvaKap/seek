@@ -399,8 +399,8 @@ def lookup_release(artist, release, cache):
                 # this silently means completeness never appears and nobody can
                 # tell why. MusicBrainz answers 503 when it is being hammered,
                 # which is the usual cause.
-                log.warning("release detail failed for %s - %s: %s",
-                            artist, release, error)
+                # The error, not the release: the log goes into bug reports.
+                log.warning("release detail failed: %s", error)
                 summary = None
             data, mime = caa_front(match["id"])
             cache.put(key, data, mime or "image/jpeg")
@@ -492,6 +492,34 @@ def write_tags(path, tags, art=None):
         # Other formats: tags were written, art simply is not embeddable.
     except Exception as error:                        # noqa: BLE001
         raise EnrichError(f"could not embed artwork: {error}") from error
+
+
+def has_artwork(path):
+    """Whether the file already carries a picture.
+
+    Post-download embedding never replaces one: a cover the uploader chose is
+    usually the right scan, and the lookup's guess is not worth losing it for.
+    Unreadable reads as "has one", so a file mutagen cannot parse is left alone.
+    """
+    import mutagen
+
+    try:
+        audio = mutagen.File(path)
+    except Exception:                                 # noqa: BLE001
+        return True
+    if audio is None:
+        return True
+    if getattr(audio, "pictures", None):              # FLAC
+        return True
+    tags = getattr(audio, "tags", None)
+    if tags is None:
+        return False
+    if hasattr(tags, "getall"):                       # ID3
+        return bool(tags.getall("APIC"))
+    try:
+        return bool(tags.get("covr"))                 # MP4
+    except Exception:                                 # noqa: BLE001
+        return False
 
 
 # Characters a filesystem, a DJ controller or a USB stick will object to.

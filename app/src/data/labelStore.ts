@@ -39,6 +39,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { UrlProvider } from '../domain/discoverUrl.ts';
+import { readUntilAnswered } from './failures.ts';
 
 /** Providers that actually have a catalogue. `discover.browse` serves these
  *  two and refuses the rest, so nothing else can be watched. */
@@ -137,10 +138,10 @@ export function useLabels(client: SidecarClient | null): LabelsSession {
     const off = client.on('labels.changed', (data) => {
       setLabels((data as { labels: WatchedLabel[] }).labels ?? []);
     });
-    void client.request<{ labels: WatchedLabel[] }>('labels.list')
-      .then((r) => setLabels(r.labels ?? []))
-      .catch(() => {});
-    return off;
+    const stop = readUntilAnswered<{ labels: WatchedLabel[] }>(
+      client, 'labels.list', undefined, (r) => setLabels(r.labels ?? []),
+    );
+    return () => { off(); stop(); };
   }, [client]);
 
   const send = useCallback((cmd: string, params: Record<string, unknown>) => {

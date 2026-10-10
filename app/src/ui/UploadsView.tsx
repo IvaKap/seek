@@ -103,7 +103,7 @@ function Row({
             type="button"
             className="verify pressable"
             title="Stop sending these. The peer is told, rather than the connection just dropping."
-            onPointerDown={() => onCancel(running.map((t) => t.id))}
+            onClick={() => onCancel(running.map((t) => t.id))}
           >
             <IconClose size={12} painted={1.7} />
             Stop
@@ -113,7 +113,7 @@ function Row({
           <button
             type="button"
             className="verify pressable"
-            onPointerDown={() => onClear(group.transfers.map((t) => t.id))}
+            onClick={() => onClear(group.transfers.map((t) => t.id))}
           >
             Clear
           </button>

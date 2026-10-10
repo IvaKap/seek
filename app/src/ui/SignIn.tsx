@@ -17,6 +17,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { isSignedIn } from '../data/searchStore.ts';
 import { EngineBusyError } from '../data/sidecarClient.ts';
+import { reportFailure } from '../data/failures.ts';
 
 export function SignIn({
   client, state, settings,
@@ -82,7 +83,8 @@ export function SignIn({
   }, [client, username, password]);
 
   const disconnect = useCallback(() => {
-    void client?.request('connection.disconnect').catch(() => {});
+    void client?.request('connection.disconnect')
+      .catch((e) => reportFailure('Sign out', e));
   }, [client]);
 
   if (!client) {
@@ -101,7 +103,7 @@ export function SignIn({
           Seek signs in again automatically next launch.
         </p>
         <div className="import__actions">
-          <button type="button" className="btn pressable" onPointerDown={disconnect}>
+          <button type="button" className="btn pressable" onClick={disconnect}>
             Sign out
           </button>
         </div>
@@ -161,7 +163,7 @@ export function SignIn({
           type="button"
           className="btn pressable"
           disabled={busy}
-          onPointerDown={() => void connect(true)}
+          onClick={() => void connect(true)}
         >
           Use stored details
         </button>

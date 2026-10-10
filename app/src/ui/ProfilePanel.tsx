@@ -23,6 +23,7 @@ import { canChooseFolder, chooseImage } from '../data/choose.ts';
 import type { ConnectionsSession, ProfileSession } from '../data/profileStore.ts';
 import { fileSize } from '../domain/format.ts';
 import { IconFolderOpen, IconUser } from '../icons/index.tsx';
+import { reportFailure } from '../data/failures.ts';
 
 /* ------------------------------------------------------------------ profile */
 
@@ -59,7 +60,7 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
   const pickPicture = () => {
     void chooseImage('Choose a profile picture', profile.picturePath || null)
       .then((picked) => {
-        if (picked) void session.save({ picturePath: picked }).catch(() => {});
+        if (picked) void session.save({ picturePath: picked }).catch((e) => reportFailure('Save your profile', e));
       });
   };
 
@@ -119,9 +120,9 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
               type="button"
               className="btn btn--primary pressable"
               disabled={session.saving}
-              onPointerDown={() => {
+              onClick={() => {
                 committed.current = draft;
-                void session.save({ description: draft }).catch(() => {});
+                void session.save({ description: draft }).catch((e) => reportFailure('Save your profile', e));
               }}
             >
               {session.saving ? 'Saving…' : 'Save description'}
@@ -129,7 +130,7 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
             <button
               type="button"
               className="btn pressable"
-              onPointerDown={() => setDraft(profile.description)}
+              onClick={() => setDraft(profile.description)}
             >
               Revert
             </button>
@@ -152,7 +153,7 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
         </div>
         <div className="folderset__controls">
           {canChooseFolder() && (
-            <button type="button" className="btn pressable" onPointerDown={pickPicture}>
+            <button type="button" className="btn pressable" onClick={pickPicture}>
               <IconFolderOpen size={14} painted={1.5} />
               <span>{profile.picturePath ? 'Change…' : 'Choose a picture…'}</span>
             </button>
@@ -161,7 +162,7 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
             <button
               type="button"
               className="btn pressable"
-              onPointerDown={() => { void session.save({ picturePath: '' }).catch(() => {}); }}
+              onClick={() => { void session.save({ picturePath: '' }).catch((e) => reportFailure('Save your profile', e)); }}
             >
               Remove
             </button>
@@ -185,7 +186,7 @@ export function ProfilePanel({ profile: session }: { profile: ProfileSession }) 
         control={(
           <Toggle
             checked={profile.pictureVisible}
-            onChange={(v) => { void session.save({ pictureVisible: v }).catch(() => {}); }}
+            onChange={(v) => { void session.save({ pictureVisible: v }).catch((e) => reportFailure('Save your profile', e)); }}
             label="Send the picture to peers"
           />
         )}

@@ -17,6 +17,7 @@
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
@@ -165,6 +166,39 @@ fn spawn_sidecar() -> Result<(Child, Endpoint), String> {
     Ok((child, endpoint))
 }
 
+/// How long a quitting sidecar gets to save before it is killed. Its own
+/// shutdown pumps the core for at most 5 s (`CoreHost.shutdown`), so this
+/// covers that with a little to spare.
+const SIDECAR_STOP_GRACE: Duration = Duration::from_secs(6);
+
+/// Ask the sidecar to shut down, and kill it only if it will not.
+///
+/// This used to be `child.kill()`, which is SIGKILL — and SIGKILL skips the
+/// sidecar's SIGTERM handler, which is what runs `core.quit()`. Upstream saves
+/// the transfer list on quit and otherwise only every 180 s
+/// (`transfers.py:129`), so every quit threw away whatever had been queued in
+/// the last three minutes: the downloads, and the queue places with them.
+fn stop_sidecar(child: &mut Child) {
+    #[cfg(unix)]
+    {
+        // SAFETY: `kill` with a pid we spawned and still own (it has not been
+        // waited on, so the pid cannot have been reused) and a valid signal.
+        unsafe {
+            libc::kill(child.id() as libc::pid_t, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + SIDECAR_STOP_GRACE;
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 /// The frontend asks for this on mount. Returning `Ok(None)` means "no sidecar,
 /// stay on recorded data" — a normal state, not an error.
 #[tauri::command]
@@ -293,8 +327,7 @@ pub fn run() {
                 if let Some(state) = app.try_state::<Sidecar>() {
                     if let Ok(mut guard) = state.0.lock() {
                         if let Some(child) = guard.as_mut() {
-                            let _ = child.kill();
-                            let _ = child.wait();
+                            stop_sidecar(child);
                         }
                     }
                 }

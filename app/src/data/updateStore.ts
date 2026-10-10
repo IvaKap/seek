@@ -60,11 +60,18 @@ const IDLE: UpdateState = {
  */
 const CHECK_DELAY_MS = 8000;
 
-export function useUpdates(): UpdateState & {
+export function useUpdates(
+  /** Settings → About. Null until the stored preference has arrived: the
+   *  check WAITS for it rather than acting on the default, or a busy first
+   *  launch would contact GitHub for someone who switched it off. */
+  enabled: boolean | null = true,
+): UpdateState & {
   install: () => void;
   dismiss: () => void;
 } {
   const [state, setState] = useState<UpdateState>(IDLE);
+  const allowed = useRef(enabled);
+  allowed.current = enabled;
   /* The plugin's Update handle. Held rather than re-fetched, because
    * downloadAndInstall() must be called on the same object check() returned. */
   const handle = useRef<unknown>(null);
@@ -77,7 +84,18 @@ export function useUpdates(): UpdateState & {
     if (!isTauri()) return undefined;
 
     let cancelled = false;
-    const timer = setTimeout(() => {
+    let timer = 0;
+    let waited = 0;
+    const due = () => {
+      // Not known yet: ask again shortly. But not for ever — if the engine
+      // never starts, no preference can arrive, and an update may be exactly
+      // what fixes it, so after a minute the default (on) applies.
+      if (allowed.current === null && waited < 30) {
+        waited += 1;
+        timer = window.setTimeout(due, 2000);
+        return;
+      }
+      if (allowed.current === false) return;
       void (async () => {
         try {
           const { check } = await import('@tauri-apps/plugin-updater');
@@ -102,9 +120,10 @@ export function useUpdates(): UpdateState & {
           });
         }
       })();
-    }, CHECK_DELAY_MS);
+    };
+    timer = window.setTimeout(due, CHECK_DELAY_MS);
 
-    return () => { cancelled = true; clearTimeout(timer); };
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, []);
 
   const install = useCallback(() => {

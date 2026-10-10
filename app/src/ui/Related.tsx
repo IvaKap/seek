@@ -50,7 +50,7 @@ function Tile({
           <>
             <button
               type="button" className="rel__act pressable"
-              title="Search Soulseek for this" onPointerDown={onSearch}
+              title="Search Soulseek for this" onClick={onSearch}
             >
               <IconSearch size={11} painted={1.5} />
             </button>
@@ -58,7 +58,7 @@ function Tile({
               type="button" className="rel__act pressable"
               disabled={wanted}
               title={wanted ? 'Already on your want list' : 'Keep it for later'}
-              onPointerDown={onWant}
+              onClick={onWant}
             >
               {wanted ? '✓' : '+'}
             </button>

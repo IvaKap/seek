@@ -16,7 +16,10 @@ import type { WishHits, WishHit } from './wishHits.ts';
 import type { Transfer } from './transferStore.ts';
 import { adaptSearchResult } from './adapt.ts';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 const analysisStub = () => ({ analyseTransfer: vi.fn() });
 const transfersOf = (all: Transfer[] = []) =>
@@ -36,8 +39,11 @@ function finishedTransfer(user: string, path: string): Transfer {
 function fakeClient(over: {
   wishes?: { query: string; filters: null; auto: boolean }[];
   claims?: unknown[];
+  /** Fail the first N ledger reads. */
+  failClaimsReads?: number;
 } = {}) {
   const sent: { cmd: string; params: Record<string, unknown> }[] = [];
+  let failures = over.failClaimsReads ?? 0;
   const client = {
     on() { return () => {}; },
     request(cmd: string, params?: Record<string, unknown>) {
@@ -45,12 +51,29 @@ function fakeClient(over: {
       if (cmd === 'wishlist.list') {
         return Promise.resolve({ items: over.wishes ?? [], intervalSeconds: 720 });
       }
-      if (cmd === 'wishlist.claimsList') return Promise.resolve({ items: over.claims ?? [] });
+      if (cmd === 'wishlist.claimsList') {
+        if (failures > 0) {
+          failures -= 1;
+          return Promise.reject(new Error('the engine has not answered yet'));
+        }
+        return Promise.resolve({ items: over.claims ?? [] });
+      }
       return Promise.resolve({});
     },
   } as unknown as SidecarClient;
   return { client, sent };
 }
+
+/** Two copies of one wish's track, the first scoring higher. */
+function twoCopies(query: string): WishHit {
+  const a = hit(query, '01.flac');
+  const b = hit(query, '01 (other rip).flac');
+  const lower = { ...b.sources[0], user: 'b-peer', score: a.sources[0].score - 1 };
+  return { ...a, sources: [a.sources[0], lower], fresh: [a.sources[0], lower] };
+}
+
+/** Let resolved promises (the ledger read) land inside act. */
+const settle = () => act(async () => { await Promise.resolve(); await Promise.resolve(); });
 
 /** A wish's results, as real SourceFiles from the adapter. */
 function hit(query: string, name: string): WishHit {
@@ -143,12 +166,32 @@ describe('useAutoDownloads', () => {
       claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path, status: 'downloading' }],
     });
     const failed: Transfer = {
-      ...finishedTransfer('a-peer', path), state: 'connection_closed', bytesDone: 0, finishedAt: null,
+      ...finishedTransfer('a-peer', path), state: 'local_file_error', bytesDone: 0, finishedAt: null,
     };
     const { result } = renderHook(() => useAutoDownloads(client, wishHitsOf({}), transfersOf([failed]), analysisStub()),
       { wrapper: StrictMode });
 
-    await waitFor(() => expect(result.current.claims).toHaveLength(0));
+    // Kept as SKIPPED — no longer holding the wish, but remembered so the same
+    // file is not picked again.
+    await waitFor(() => expect(result.current.claims[0]?.status).toBe('skipped'));
+  });
+
+  it('after a failure, takes ANOTHER copy rather than the same one again', async () => {
+    const path = 'music\\Drexciya\\01.flac';
+    const { client } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path, status: 'downloading' }],
+    });
+    const failed: Transfer = {
+      ...finishedTransfer('a-peer', path), state: 'rejected', bytesDone: 0, finishedAt: null,
+    };
+    const transfers = transfersOf([failed]);
+    renderHook(() => useAutoDownloads(client, wishHitsOf({ drexciya: twoCopies('drexciya') }), transfers, analysisStub()),
+      { wrapper: StrictMode });
+
+    await waitFor(() => expect(transfers.enqueue).toHaveBeenCalled());
+    expect(transfers.enqueue).not.toHaveBeenCalledWith('a-peer', path, expect.anything());
+    expect(transfers.enqueue).toHaveBeenCalledWith('b-peer', expect.any(String), expect.any(Number));
   });
 
   it('approve ends the wish and drops the claim, keeping the file', async () => {
@@ -184,6 +227,123 @@ describe('useAutoDownloads', () => {
     expect(transfers.clear).toHaveBeenCalledWith(['t1']);
     // The wish is NOT removed — it stays to find another copy.
     expect(sent.some((s) => s.cmd === 'wishlist.remove')).toBe(false);
-    await waitFor(() => expect(result.current.claims).toHaveLength(0));
+    await waitFor(() => expect(result.current.claims[0]?.status).toBe('skipped'));
+  });
+
+  it('never re-picks the file you just rejected', async () => {
+    /* The bug: Reject dropped the claim, the planner ran on the same results,
+     * and the rejected copy — still the top score — downloaded again. */
+    const path = 'music\\Drexciya\\01.flac';
+    const { client } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{ query: 'drexciya', user: 'a-peer', transferId: 't1', path, status: 'awaiting-review' }],
+    });
+    const transfers = transfersOf();
+    const { result } = renderHook(
+      () => useAutoDownloads(client, wishHitsOf({ drexciya: twoCopies('drexciya') }), transfers, analysisStub()),
+      { wrapper: StrictMode },
+    );
+    await waitFor(() => expect(result.current.claims).toHaveLength(1));
+
+    act(() => result.current.reject('drexciya'));
+    await waitFor(() => expect(transfers.enqueue).toHaveBeenCalled());
+    expect(transfers.enqueue).not.toHaveBeenCalledWith('a-peer', path, expect.anything());
+    expect(transfers.enqueue).toHaveBeenCalledWith('b-peer', expect.any(String), expect.any(Number));
+  });
+
+  it('gives up on a claim whose download never appears, and frees the slot', async () => {
+    /* Enqueue fails quietly, or the queued file is cleared by hand: the
+     * transfer never shows up, and the claim used to wait for ever. Three of
+     * those stopped auto-download entirely, across restarts. */
+    vi.useFakeTimers();
+    const { client } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{
+        query: 'drexciya', user: 'a-peer', transferId: '', path: 'gone.flac', status: 'downloading',
+      }],
+    });
+    const transfers = transfersOf();
+    const { result } = renderHook(
+      () => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers, analysisStub()),
+      { wrapper: StrictMode },
+    );
+    await settle();
+    expect(transfers.enqueue).not.toHaveBeenCalled();         // still waiting
+
+    await act(async () => { vi.advanceTimersByTime(3 * 60_000 + 31_000); });
+    // Dropped, not skipped: a transfer that never appeared says nothing
+    // against that copy, so the wish may try again — it included.
+    expect(result.current.claims.find((c) => c.path === 'gone.flac')).toBeUndefined();
+    expect(transfers.enqueue).toHaveBeenCalledWith('a-peer', 'music\\Drexciya\\01.flac', 40_000_000);
+  });
+
+  it('waits out a peer who went offline instead of starting a second copy', async () => {
+    /* user_logged_off and timeouts recover by themselves; treating them as
+       final started another download, and the first then finished past review. */
+    vi.useFakeTimers();
+    const path = 'music\\Drexciya\\01.flac';
+    const { client } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [{ query: 'drexciya', user: 'a-peer', transferId: '', path, status: 'downloading' }],
+    });
+    const away: Transfer = {
+      ...finishedTransfer('a-peer', path), state: 'user_logged_off', bytesDone: 0, finishedAt: null,
+    };
+    const transfers = transfersOf([away]);
+    const { result } = renderHook(
+      () => useAutoDownloads(client, wishHitsOf({ drexciya: twoCopies('drexciya') }), transfers, analysisStub()),
+      { wrapper: StrictMode },
+    );
+    await settle();
+    await act(async () => { vi.advanceTimersByTime(10 * 60_000); });
+    expect(result.current.claims[0]?.status).toBe('downloading');
+    expect(transfers.enqueue).not.toHaveBeenCalled();
+
+    // Long enough gone: given up, and the stale copy cleared so it cannot
+    // finish later behind the review's back.
+    await act(async () => { vi.advanceTimersByTime(11 * 60_000); });
+    expect(result.current.claims[0]?.status).toBe('skipped');
+    expect(transfers.clear).toHaveBeenCalled();
+  });
+
+  it('starts nothing while signed out', async () => {
+    const { client } = fakeClient({ wishes: [{ query: 'drexciya', filters: null, auto: true }] });
+    const transfers = transfersOf();
+    renderHook(
+      () => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers,
+        analysisStub(), undefined, false),
+      { wrapper: StrictMode },
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(transfers.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('retries an unreadable ledger instead of overwriting it with nothing', async () => {
+    /* The sidecar replaces the whole ledger on every write, so treating a
+     * failed read as "empty" and then acting erased everything awaiting review. */
+    vi.useFakeTimers();
+    const awaiting = { query: 'q', user: 'u', transferId: 't1', path: 'p', status: 'awaiting-review' };
+    const { client, sent } = fakeClient({
+      wishes: [{ query: 'drexciya', filters: null, auto: true }],
+      claims: [awaiting],
+      // Two: StrictMode mounts the effect twice, and each mount reads once.
+      failClaimsReads: 2,
+    });
+    const transfers = transfersOf();
+    const { result } = renderHook(
+      () => useAutoDownloads(client, wishHitsOf({ drexciya: hit('drexciya', '01.flac') }), transfers, analysisStub()),
+      { wrapper: StrictMode },
+    );
+    await settle();
+    // Nothing acted on, nothing written, while the ledger is unknown.
+    expect(transfers.enqueue).not.toHaveBeenCalled();
+    expect(sent.some((s) => s.cmd === 'wishlist.claims')).toBe(false);
+
+    await act(async () => { vi.advanceTimersByTime(5_000); });
+    await settle();
+    expect(result.current.claims.some((c) => c.query === 'q')).toBe(true);
+    const write = sent.filter((s) => s.cmd === 'wishlist.claims').pop();
+    const items = (write?.params as { items: { query: string }[] } | undefined)?.items ?? [];
+    expect(items.some((c) => c.query === 'q')).toBe(true);   // review entry kept
   });
 });

@@ -172,13 +172,13 @@ export function FilterBar({
           onChange={(e) => patch({ exclude: e.target.value })}
         />
 
-        <button type="button" className="preset pressable" onPointerDown={applyPreset}>
+        <button type="button" className="preset pressable" onClick={applyPreset}>
           {PRESET_LOSSLESS}
         </button>
 
         <div className="filters__reset-slot">
           {active && (
-            <button type="button" className="reset pressable" onPointerDown={onReset}>
+            <button type="button" className="reset pressable" onClick={onReset}>
               <IconClose size={13} painted={1.7} />
               <span>Reset</span>
             </button>

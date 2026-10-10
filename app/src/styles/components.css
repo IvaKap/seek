@@ -1757,6 +1757,15 @@
   background: var(--bg-raised); color: var(--text-primary); font-size: var(--fs-secondary);
 }
 .chat__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); outline: none; }
+.chat__line--history { opacity: 0.6; }
+.chat__divider {
+  margin: var(--sp-2) 0; text-align: center;
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.chat__failed {
+  margin: 0; padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--fs-caption); color: var(--danger);
+}
 
 /* =========================================================== sign-in ===== */
 .signin { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -1783,6 +1792,7 @@
 /* Not an error: "already in your downloads" is the app answering a question,
    not reporting a fault, and red would say the opposite. */
 .dls__note { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dls__undo { display: flex; align-items: center; gap: var(--sp-2); }
 
 /* Completed section divider — a quiet label between date/who/format groups. */
 .dls__section {
@@ -2094,9 +2104,12 @@
      often 776px wide, so `1fr` resolved to ZERO and the filename — the only
      thing identifying the row — disappeared completely. `auto` collapses an
      empty cell to nothing, and the name keeps a floor it cannot be squeezed
-     below. Predates the table density; it was just easier to see there. */
+     below. Predates the table density; it was just easier to see there.
+     The status column takes the width a separate "#N in queue" column used to
+     hold: the status says it ("#1433 in queue"), and in 4.5rem the longer
+     reasons wrapped to four lines. */
   grid-template-columns:
-    minmax(6rem, 1fr) 4rem 5rem 5rem 4.5rem auto auto auto auto;
+    minmax(6rem, 1fr) 4rem 5rem 9.5rem auto auto auto auto;
   gap: var(--sp-2); align-items: center;
   padding: 0.2rem 0; font-size: var(--fs-caption);
   border-top: 1px solid var(--separator);
@@ -2488,6 +2501,8 @@
 }
 .browse__who { font-size: var(--fs-body); color: var(--text-primary); }
 .browse__stat { font-size: var(--fs-caption); color: var(--text-secondary); }
+.shares__blocked { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
+.lib__offline { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
 .browse__filter { margin-left: auto; min-width: 14rem; }
 
 /* ---- the peer header: who this is, gathered from three separate sources -- */
@@ -3837,3 +3852,31 @@
   color: var(--text-tertiary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ============================================================ crash ===== */
+.crash__detail { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-tertiary); }
+.crash__actions { display: flex; gap: var(--sp-2); justify-content: center; margin-top: var(--sp-3); }
+
+/* ========================================================= failures ===== */
+/* What a failed action leaves behind (data/failures.ts). Bottom right, out of
+   the way of the content, and gone after a few seconds. */
+.failures {
+  position: fixed; right: var(--sp-4); bottom: var(--sp-4); z-index: 200;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+.failures__item {
+  display: flex; align-items: flex-start; gap: var(--sp-2); margin: 0;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border: 1px solid var(--separator-strong); border-left: 3px solid var(--danger);
+  border-radius: var(--radius-md); background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-secondary); color: var(--text-primary);
+  animation: popIn var(--dur-fast) var(--ease-out);
+}
+.failures__item > span { flex: 1; }
+.failures__close {
+  flex: none; display: grid; place-items: center; width: 1.25rem; height: 1.25rem;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
+}
+.failures__close:hover { background: var(--bg-hover); }

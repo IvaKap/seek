@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { WantEntry, WantStatus } from './wantStore.ts';
+import { readUntilAnswered, reportFailure } from './failures.ts';
 
 export interface DigSession {
   id: string;
@@ -81,10 +82,10 @@ export function useSessions(
     const off = client.on('session.changed', (data) => {
       setSessions((data as { sessions: DigSession[] }).sessions ?? []);
     });
-    void client.request<{ sessions: DigSession[] }>('session.list')
-      .then((r) => setSessions(r.sessions ?? []))
-      .catch(() => {});
-    return off;
+    const stop = readUntilAnswered<{ sessions: DigSession[] }>(
+      client, 'session.list', undefined, (r) => setSessions(r.sessions ?? []),
+    );
+    return () => { off(); stop(); };
   }, [client]);
 
   /* The aggregates the sidecar deliberately does not store. Recomputed from
@@ -115,7 +116,7 @@ export function useSessions(
     if (!client) return;
     void client.request<{ sessions: DigSession[] }>(cmd, params)
       .then((r) => setSessions(r.sessions ?? []))
-      .catch(() => {});
+      .catch((e) => reportFailure('Change the digging session', e));
   }, [client]);
 
   return {

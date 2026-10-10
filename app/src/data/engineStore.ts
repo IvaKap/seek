@@ -27,6 +27,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { PathFacts } from '../domain/folders.ts';
 import { readableError } from '../domain/folders.ts';
+import { readUntilAnswered } from './failures.ts';
 
 /** `Settings` on the wire. Bytes/sec throughout; upstream's KiB/s is the
  * sidecar's problem, not ours. */
@@ -39,6 +40,7 @@ export interface EngineSettings {
   uploadSlots: number;
   autoConnect: boolean;
   stallSeconds: number;
+  portMapping: boolean;
 }
 
 export type EngineSettingsPatch = Partial<EngineSettings>;
@@ -61,6 +63,9 @@ export interface ShareState {
   totalSize: number | null;
   lastScanAt: number | null;
   restartRequired: boolean;
+  /** Shared folders that stopped the last rescan because they could not be
+   * read. Until this is empty, peers see the index from before. */
+  unavailable: string[];
 }
 
 export interface EngineSession {
@@ -93,6 +98,7 @@ const NOTHING: Record<keyof EngineSettings, null> = {
   uploadSlots: null,
   autoConnect: null,
   stallSeconds: null,
+  portMapping: null,
 };
 
 export function useEngine(client: SidecarClient | null): EngineSession {
@@ -120,12 +126,14 @@ export function useEngine(client: SidecarClient | null): EngineSession {
       setPublicAddress((d as { publicAddress?: string | null }).publicAddress ?? null);
     });
 
-    void client.request<{ settings: EngineSettings }>('settings.get')
-      .then((r) => setSettings(r.settings))
-      .catch(() => {});
-    void client.request<ShareState>('shares.get').then(setShares).catch(() => {});
+    // Asked until answered: a single failed read on a busy first launch left
+    // Settings showing "No folder set" and port 0 as though they were saved.
+    const stopSettings = readUntilAnswered<{ settings: EngineSettings }>(
+      client, 'settings.get', undefined, (r) => setSettings(r.settings),
+    );
+    const stopShares = readUntilAnswered<ShareState>(client, 'shares.get', undefined, setShares);
 
-    return () => { offShares(); offConn(); };
+    return () => { offShares(); offConn(); stopSettings(); stopShares(); };
   }, [client]);
 
   const save = useCallback(async (patch: EngineSettingsPatch) => {

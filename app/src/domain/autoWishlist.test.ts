@@ -15,7 +15,7 @@
 import { describe, expect, it } from 'vitest';
 import { adaptSearchResult } from '../data/adapt.ts';
 import type { WireFileRef, WireSearchResultData } from '../data/adapt.ts';
-import { pickAutoCandidate, planAutoDownloads } from './autoWishlist.ts';
+import { pickAutoCandidate, planAutoDownloads, skipKey } from './autoWishlist.ts';
 import type { AutoWish } from './autoWishlist.ts';
 import type { SourceFile, WishFilters } from './types.ts';
 
@@ -121,6 +121,23 @@ describe('planAutoDownloads', () => {
 
   it('never plans a wish that already has a claim', () => {
     expect(planAutoDownloads([wish('a', true)], by('a'), new Set(['a']), 3)).toEqual([]);
+  });
+
+  it('applies the Settings download rules, not only the wish\'s own filters', () => {
+    const files = sources([mp3(192)]);
+    const rules = { preferLossless: false, minBitrate: 256, rejectTranscodes: false };
+    expect(planAutoDownloads([wish('a', true)], { a: files }, new Set(), 3, new Set(), rules)).toEqual([]);
+    expect(planAutoDownloads([wish('a', true)], { a: files }, new Set(), 3, new Set())).toHaveLength(1);
+  });
+
+  it('skips a file already rejected or failed for that wish, and only that wish', () => {
+    const files = by('a', [flac()]).a;
+    const only = files[0];
+    const skipped = new Set([skipKey('a', only.user, only.path)]);
+    expect(planAutoDownloads([wish('a', true)], { a: files }, new Set(), 3, skipped)).toEqual([]);
+    // The same file is still fair game for a different wish.
+    const plan = planAutoDownloads([wish('b', true)], { b: files }, new Set(), 3, skipped);
+    expect(plan).toHaveLength(1);
   });
 
   it('skips a wish that found nothing qualifying', () => {

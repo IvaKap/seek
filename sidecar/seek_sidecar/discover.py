@@ -465,7 +465,7 @@ def _bandcamp_from_opengraph(url, html, path, fetch_image):
     # inventing a second title grammar down here.
     out["providerUrl"] = tags.get("url") or None
     out["artworkUri"] = fetch_image(tags.get("image"))
-    log.info("bandcamp structured data missing for %s; fell back to OpenGraph", url)
+    log.info("bandcamp structured data missing; fell back to OpenGraph")
     return out
 
 

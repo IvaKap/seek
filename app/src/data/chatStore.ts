@@ -14,8 +14,11 @@
  * on the wire anyway.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
+import { parseLogLine, withoutLive } from '../domain/chatHistory.ts';
+import type { HistoryLine } from '../domain/chatHistory.ts';
+import { readUntilAnswered, reportFailure } from './failures.ts';
 
 export type ChatScope = 'room' | 'private';
 
@@ -44,6 +47,9 @@ export interface Conversation {
   messages: ChatMessage[];
   members: string[];
   unread: number;
+  /** Earlier lines from the engine's chat log, oldest first. Undefined until
+   * the conversation has been opened once this session and its log read. */
+  history?: HistoryLine[];
 }
 
 export interface ChatSession {
@@ -54,7 +60,8 @@ export interface ChatSession {
   join(room: string): void;
   leave(room: string): void;
   openPrivate(username: string): void;
-  send(text: string): void;
+  /** Resolves once the engine has taken the line; rejects with why it did not. */
+  send(text: string): Promise<void>;
   refreshRooms(): void;
   /** False when there is no sidecar, or it is not signed in. */
   available: boolean;
@@ -64,6 +71,9 @@ const key = (scope: ChatScope, target: string) => `${scope}:${target}`;
 
 /** Bounded so a busy room cannot grow the heap without limit. */
 const MAX_BACKLOG = 500;
+
+/** How long incoming lines wait to be applied together. */
+const FLUSH_MS = 150;
 
 export function useChatSession(
   client: SidecarClient | null,
@@ -100,25 +110,40 @@ export function useChatSession(
   useEffect(() => {
     if (!client) return;
 
-    const offMessage = client.on('chat.message', (data) => {
-      const m = data as ChatMessage;
-      const k = key(m.scope, m.target);
+    /* Batched, like transfers. This state lives at the top of the app, and a
+       busy room sends several lines a second: applying each as it came copied
+       the backlog and redrew every screen per line. Lines now land together,
+       at most every FLUSH_MS — still instant to read. */
+    let pending: ChatMessage[] = [];
+    let timer = 0;
+    const flush = () => {
+      timer = 0;
+      const batch = pending;
+      pending = [];
+      if (batch.length === 0) return;
       setMap((prev) => {
         const out = new Map(prev);
-        const conv = out.get(k) ?? {
-          scope: m.scope, target: m.target, messages: [], members: [], unread: 0,
-        };
-        const messages = [...conv.messages, m];
-        out.set(k, {
-          ...conv,
-          messages: messages.length > MAX_BACKLOG
-            ? messages.slice(messages.length - MAX_BACKLOG)
-            : messages,
-          // Our own echoed messages must never mark a conversation unread.
-          unread: m.outgoing ? conv.unread : conv.unread + 1,
-        });
+        for (const m of batch) {
+          const k = key(m.scope, m.target);
+          const conv = out.get(k) ?? {
+            scope: m.scope, target: m.target, messages: [], members: [], unread: 0,
+          };
+          const messages = [...conv.messages, m];
+          out.set(k, {
+            ...conv,
+            messages: messages.length > MAX_BACKLOG
+              ? messages.slice(messages.length - MAX_BACKLOG)
+              : messages,
+            // Our own echoed messages must never mark a conversation unread.
+            unread: m.outgoing ? conv.unread : conv.unread + 1,
+          });
+        }
         return out;
       });
+    };
+    const offMessage = client.on('chat.message', (data) => {
+      pending.push(data as ChatMessage);
+      if (!timer) timer = window.setTimeout(flush, FLUSH_MS);
     });
 
     const offRooms = client.on('chat.rooms', (data) => {
@@ -138,7 +163,10 @@ export function useChatSession(
       });
     });
 
-    return () => { offMessage(); offRooms(); offMembers(); };
+    return () => {
+      offMessage(); offRooms(); offMembers();
+      window.clearTimeout(timer);
+    };
   }, [client]);
 
   // Clearing unread for whatever is on screen belongs here rather than in the
@@ -154,6 +182,34 @@ export function useChatSession(
     });
   }, [active, map.get(active ?? '')?.messages.length]);
 
+  // Read the log the first time a conversation is opened, so it starts with
+  // what was said before rather than empty. Once per conversation per session:
+  // the ref survives StrictMode's double effect and a re-render storm alike.
+  const asked = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!client || !active || asked.current.has(active)) return;
+    const conv = map.get(active);
+    if (!conv) return;
+    asked.current.add(active);
+    const k = active;
+    void client.request<{ lines: string[] }>('chat.history', {
+      scope: conv.scope, target: conv.target, limit: null,
+    })
+      .then((r) => {
+        const parsed = (r.lines ?? []).map(parseLogLine);
+        setMap((prev) => {
+          const now = prev.get(k);
+          if (!now) return prev;
+          const out = new Map(prev);
+          out.set(k, { ...now, history: withoutLive(parsed, now.messages) });
+          return out;
+        });
+      })
+      // Not worth a message: the conversation simply starts empty, as before.
+      // Allowed to try again next time it is opened.
+      .catch(() => { asked.current.delete(k); });
+  }, [client, active, map]);
+
   const available = Boolean(client) && signedIn;
 
   const refreshRooms = useCallback(() => {
@@ -161,16 +217,25 @@ export function useChatSession(
     void client?.request('chat.rooms').catch(() => {});
   }, [client, available]);
 
-  useEffect(() => { refreshRooms(); }, [refreshRooms]);
+  // On sign-in, asked until answered: one failed request left the rail on
+  // "Loading rooms…" for good, with no error and no way to ask again.
+  useEffect(() => {
+    if (!client || !available) return undefined;
+    return readUntilAnswered(client, 'chat.rooms', undefined, () => {});
+  }, [client, available]);
 
   const join = useCallback((room: string) => {
     if (!available) return;
-    void client?.request('chat.join', { room }).catch(() => {});
+    void client?.request('chat.join', { room })
+      .catch((e) => reportFailure(`Join #${room}`, e));
     setActive(key('room', room));
   }, [client, available, setActive]);
 
   const leave = useCallback((room: string) => {
-    void client?.request('chat.leave', { room }).catch(() => {});
+    // Rejoining starts a fresh conversation, so its log is read again.
+    asked.current.delete(key('room', room));
+    void client?.request('chat.leave', { room })
+      .catch((e) => reportFailure(`Leave #${room}`, e));
     setMap((prev) => {
       const out = new Map(prev);
       out.delete(key('room', room));
@@ -181,7 +246,8 @@ export function useChatSession(
 
   const openPrivate = useCallback((username: string) => {
     if (!available) return;
-    void client?.request('chat.open', { username }).catch(() => {});
+    void client?.request('chat.open', { username })
+      .catch((e) => reportFailure(`Message ${username}`, e));
     setMap((prev) => {
       if (prev.has(key('private', username))) return prev;
       const out = new Map(prev);
@@ -193,19 +259,22 @@ export function useChatSession(
     setActive(key('private', username));
   }, [client, available, setActive]);
 
-  const send = useCallback((text: string) => {
+  const send = useCallback(async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || !active || !available) return;
-    const conv = map.get(active);
-    if (!conv) return;
+    if (!trimmed) return;
+    // A REJECTION, not a quiet return: the composer keeps the text until this
+    // settles, so a line that cannot go must say so rather than vanish.
+    if (!client || !available) throw new Error('Not signed in to Soulseek.');
+    const conv = active ? map.get(active) : undefined;
+    if (!conv) throw new Error('No conversation is open.');
     // No optimistic append: the sidecar echoes it back with outgoing=true, and
     // one ingest path means the transcript cannot diverge from the server's.
-    void client?.request('chat.say', {
+    await client.request('chat.say', {
       // Typed by a person, so never the automatic form — that one prefixes
       // "[Automatic Message]". Sent as null rather than omitted: the schema's
       // Optional means nullable, not absent, and a missing key is rejected.
       scope: conv.scope, target: conv.target, message: trimmed, automatic: null,
-    }).catch(() => {});
+    });
   }, [client, active, available, map]);
 
   const conversations = useMemo(

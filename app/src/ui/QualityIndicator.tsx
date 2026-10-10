@@ -182,14 +182,16 @@ export function QualityIndicator({
         aria-expanded={open}
         aria-describedby={open ? id : undefined}
         aria-label={`Quality: ${assessment.label}. ${assessment.summary}. Show the reasoning.`}
-        onPointerDown={(e) => {
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
           e.stopPropagation();
           setOpen((v) => !v);
         }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen((v) => !v);
+            // The native click does the toggling; this only keeps the key
+            // from reaching the row underneath.
+            e.stopPropagation();
           }
         }}
       >

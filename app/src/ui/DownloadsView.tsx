@@ -90,7 +90,7 @@ function Verdict({
       <button
         type="button"
         className="verify pressable"
-        onPointerDown={() => analysis.analyseTransfer(id)}
+        onClick={() => analysis.analyseTransfer(id)}
         title="Decode the file and inspect its spectrum for a lowpass shelf — the only transcode check that works on lossless."
       >
         Verify
@@ -110,7 +110,7 @@ function Verdict({
       data-tone={ASSESSMENT_TONE[a.assessment]}
       aria-expanded={open}
       title={explain(a)}
-      onPointerDown={onToggle}
+      onClick={onToggle}
     >
       {ASSESSMENT_LABEL[a.assessment]}
       <span className="verify__caret" aria-hidden>{open ? '\u2303' : '\u2304'}</span>
@@ -168,7 +168,7 @@ function AutoReview({
                 <button
                   type="button"
                   className="btn pressable"
-                  title="Discard this copy and keep looking for another"
+                  title="Not this copy: keep looking for another. The file stays in your download folder."
                   onClick={() => onReject?.(c.query)}
                 >
                   Reject
@@ -227,7 +227,7 @@ function HashButton({
         type="button"
         className={cls}
         title="Check these files against any .ffp or .md5 the uploader shipped with them — the one hard fact Soulseek itself cannot give you."
-        onPointerDown={() => { checksums.check(id); onToggle(); }}
+        onClick={() => { checksums.check(id); onToggle(); }}
       >
         Check hashes
       </button>
@@ -248,7 +248,7 @@ function HashButton({
       data-tone={s.tone}
       aria-expanded={open}
       title={s.headline}
-      onPointerDown={onToggle}
+      onClick={onToggle}
     >
       {/* "0 verified" in red is a riddle. When something failed, the count
           that matters is the count of failures. */}
@@ -321,9 +321,6 @@ function FileRow({
         <span className="dl__meta tnum">
           {isActive(t.state) && t.speed > 0 ? `↓ ${fmtSpeed(t.speed)}` : ''}
         </span>
-        <span className="dl__meta tnum">
-          {t.queuePosition !== null ? `#${t.queuePosition} in queue` : ''}
-        </span>
         {/* `t.state.replace(/_/g, ' ')` used to be here, which is how a queue of
             stalled downloads came to read "unknown" and "user logged off" at
             people. All the wording lives in domain/transferStatus.ts now; the
@@ -343,7 +340,12 @@ function FileRow({
                 type="button"
                 className="verify pressable"
                 title="Stop and remove this file"
-                onPointerDown={(e) => { e.stopPropagation(); session.cancel([t.id]); }}
+                // Click, not pointer-down: a destructive action must let you
+                // drag off to back out, and must never fire on a right-click.
+                // Pointer-down is still stopped so pressing does not select
+                // the row underneath.
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); session.cancel([t.id]); }}
               >
                 Cancel
               </button>
@@ -401,12 +403,12 @@ function Actions({
   return (
     <>
       {g.state === 'active' && (
-        <button type="button" className={cls} onPointerDown={() => session.pause(ids)}>
+        <button type="button" className={cls} onClick={() => session.pause(ids)}>
           Pause
         </button>
       )}
       {g.state === 'paused' && (
-        <button type="button" className={cls} onPointerDown={() => session.resume(ids)}>
+        <button type="button" className={cls} onClick={() => session.resume(ids)}>
           Resume
         </button>
       )}
@@ -414,7 +416,7 @@ function Actions({
         <button
           type="button"
           className={cls}
-          onPointerDown={() => session.retry(
+          onClick={() => session.retry(
             g.transfers.filter((t) => isFailed(t.state)).map((t) => t.id),
           )}
         >
@@ -422,7 +424,7 @@ function Actions({
         </button>
       )}
       {g.state === 'cancelled' && (
-        <button type="button" className={cls} onPointerDown={() => session.retry(ids)}>
+        <button type="button" className={cls} onClick={() => session.retry(ids)}>
           Retry
         </button>
       )}
@@ -440,17 +442,27 @@ function Actions({
           type="button" className={cls}
           aria-expanded={related}
           title="What else this artist made, and what else is on the label"
-          onPointerDown={() => setRelated?.((v) => !v)}
+          onClick={() => setRelated?.((v) => !v)}
         >
           Related
         </button>
       )}
+      {g.state === 'finished' && (
+        <button
+          type="button"
+          className={cls}
+          title="Show this release's files in Finder"
+          onClick={() => session.reveal(g.transfers.find((t) => t.state === 'finished')?.id ?? ids[0])}
+        >
+          {compact ? 'Finder' : 'Show in Finder'}
+        </button>
+      )}
       {g.state === 'finished' || g.state === 'cancelled' ? (
-        <button type="button" className={cls} onPointerDown={() => session.clear(ids)}>
+        <button type="button" className={cls} onClick={() => session.clear(ids)}>
           Clear
         </button>
       ) : (
-        <button type="button" className={cls} onPointerDown={() => session.cancel(ids)}>
+        <button type="button" className={cls} onClick={() => session.cancel(ids)}>
           Cancel
         </button>
       )}
@@ -496,7 +508,7 @@ function TableRow({
         className="dl__disclose"
         aria-expanded={open}
         aria-label={`${g.title}, ${g.finished} of ${g.transfers.length} files, ${fileSize(g.size)}`}
-        onPointerDown={onToggle}
+        onClick={onToggle}
       >
         <IconChevronDown
           size={12} painted={1.6} className="dl__chev"
@@ -680,7 +692,7 @@ function Group({
         type="button"
         className="dl__hit"
         aria-expanded={open}
-        onPointerDown={() => setOpen((v) => !v)}
+        onClick={() => setOpen((v) => !v)}
       >
         {/* Review lenses only. While a download is RUNNING the folder name is
             the honest label — it is literally what is arriving — and a cover
@@ -971,6 +983,8 @@ export function DownloadsView({
       cancel: session.cancel,
       clear: session.clear,
       copy: (text) => { void copyText(text); },
+      reveal: session.reveal,
+      open: session.open,
     }),
     [session],
   );
@@ -1202,11 +1216,30 @@ export function DownloadsView({
     );
   }
 
+  /* Built once and shown in BOTH returns: cancelling the last download in a
+     lens empties it, and Undo used to live only in the non-empty one — so
+     the one Cancel most worth undoing had no Undo at all. */
+  const undo = session.cancelled && (
+    <p className="dls__note dls__undo" role="status">
+      Cancelled {session.cancelled.length}{' '}
+      {session.cancelled.length === 1 ? 'file' : 'files'}.
+      <button
+        type="button"
+        className="verify pressable"
+        title="Ask for them again. The peer decides where in their queue they go."
+        onClick={session.undoCancel}
+      >
+        Undo
+      </button>
+    </p>
+  );
+
   if (groups.length === 0) {
     return (
       <>
         {header}
         <div className="pane__scroll">
+          {undo && <div className="dls">{undo}</div>}
           <div className="empty empty--section">
             <span className="empty__icon">
               {filter === 'active'
@@ -1247,6 +1280,7 @@ export function DownloadsView({
             if (!(e.target as HTMLElement).closest('.dl__file, button')) clearSelection();
           }}
         >
+          {undo}
           {session.note && !session.error && (
             <p className="dls__note" role="status">{session.note}</p>
           )}

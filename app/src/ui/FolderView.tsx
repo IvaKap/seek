@@ -95,7 +95,7 @@ export function FolderView({
         <button
           type="button"
           className="finder__crumb pressable"
-          onPointerDown={() => setPath([])}
+          onClick={() => setPath([])}
         >
           All
         </button>
@@ -104,7 +104,7 @@ export function FolderView({
             key={`${part}-${i}`}
             type="button"
             className="finder__crumb pressable"
-            onPointerDown={() => setPath(path.slice(0, i + 1))}
+            onClick={() => setPath(path.slice(0, i + 1))}
           >
             {part}
           </button>
@@ -117,7 +117,7 @@ export function FolderView({
             key={f.path}
             type="button"
             className="tile pressable"
-            onPointerDown={(e) => {
+            onClick={(e) => {
               if (e.altKey) onGetFolder(f.path);
               else setPath([...path, f.name]);
             }}
@@ -136,7 +136,7 @@ export function FolderView({
             key={f.path}
             type="button"
             className="tile tile--file pressable"
-            onPointerDown={() => onGetFile(f)}
+            onClick={() => onGetFile(f)}
             title={`Queue ${fileName(f.path)}`}
           >
             <span className="tile__icon"><IconRelease size={26} painted={1.2} /></span>
@@ -155,7 +155,7 @@ export function FolderView({
           <button
             type="button"
             className="btn pressable"
-            onPointerDown={() => onGetFolder(node.path)}
+            onClick={() => onGetFolder(node.path)}
           >
             <IconDownload size={13} painted={1.5} />
             Get this folder — {node.fileCount} files, {fileSize(node.size)}

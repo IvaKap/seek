@@ -90,9 +90,8 @@ export function groupStatus(transfers: Array<Parameters<typeof transferStatus>[0
 TransferStatusLine | null {
   if (transfers.length === 0) return null;
 
-  const lines = transfers
-    .filter((t) => t.state !== 'finished')
-    .map(transferStatus);
+  const unfinished = transfers.filter((t) => t.state !== 'finished');
+  const lines = unfinished.map(transferStatus);
   if (lines.length === 0) return null;
 
   const byTone = (tone: TransferTone) => lines.find((l) => l.tone === tone);
@@ -103,8 +102,22 @@ TransferStatusLine | null {
   const broken = byTone('broken');
   if (broken) return countedLine(broken, lines);
 
-  const waiting = byTone('waiting');
-  if (waiting) return waiting;
+  const waiting = lines.findIndex((l) => l.tone === 'waiting');
+  if (waiting >= 0) {
+    // A release's files queue one behind another (#1433, #1434, …), so the
+    // number worth showing is the LOWEST: the file that starts first, and the
+    // honest answer to "how far back are we". The first file in the list can
+    // be any of them.
+    if (unfinished[waiting].state === 'queued') {
+      const positions = unfinished
+        .filter((t) => t.state === 'queued' && t.queuePosition !== null)
+        .map((t) => t.queuePosition as number);
+      if (positions.length > 0) {
+        return { ...lines[waiting], text: queuedText(Math.min(...positions)) };
+      }
+    }
+    return lines[waiting];
+  }
 
   // Everything left is moving. The bar says so better than words.
   return null;
@@ -124,15 +137,16 @@ function countedLine(line: TransferStatusLine, all: TransferStatusLine[]): Trans
 }
 
 /**
- * Queue position, worded so the number means something.
+ * Queue position, short enough to fit a status column and a release's header
+ * pill without wrapping or being cut off: "#1433 in queue".
  *
  * `queuePosition` is null both for "not queued" and "queued but they have not
  * said where" — upstream collapses both to 0. Those are different sentences: a
  * queue with no number is still a queue, and saying so beats saying nothing.
  */
 function queuedText(position: number | null): string {
-  if (position === null) return 'Waiting in their queue';
-  return `Waiting in their queue — number ${position}`;
+  if (position === null) return 'In their queue';
+  return `#${position} in queue`;
 }
 
 export function transferStatus(t: {

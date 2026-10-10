@@ -131,12 +131,11 @@ export function HowTo({ title, steps, note }: { title: string; steps: string[]; 
           // mousedown focus lands after the panel mounts and pulls focus back
           // out of it.
           e.preventDefault();
-          setOpen((v) => !v);
         }}
+        onClick={() => setOpen((v) => !v)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setOpen((v) => !v);
+            e.stopPropagation();
           }
         }}
       >
@@ -210,7 +209,7 @@ function SecretRow({
             type="button"
             className="btn pressable"
             disabled={!available || !draft.trim()}
-            onPointerDown={() => {
+            onClick={() => {
               if (!draft.trim()) return;
               onSave(draft);
               setDraft('');
@@ -458,19 +457,16 @@ export function SettingsView({
                   label="Minimum bitrate"
                   hint="Refuse lossy files below this. Never applied to lossless, which advertises no bitrate at all. 0 disables it."
                   control={(
-                    <span className="settings__inline">
-                      <input
-                        className="settings__input settings__input--num tnum"
-                        type="number"
-                        min={0}
-                        max={1411}
-                        step={32}
-                        value={settings.minBitrate}
-                        aria-label="Minimum bitrate in kbps"
-                        onChange={(e) => prefs.patch({ minBitrate: Number(e.target.value) })}
-                      />
-                      <span className="settings__unit">kbps</span>
-                    </span>
+                    <NumberSetting
+                      value={settings.minBitrate}
+                      min={0}
+                      max={1411}
+                      step={32}
+                      suffix="kbps"
+                      ariaLabel="Minimum bitrate in kbps"
+                      available
+                      onCommit={(v) => prefs.patch({ minBitrate: v })}
+                    />
                   )}
                 />
                 <Row
@@ -494,42 +490,36 @@ export function SettingsView({
                   label="Move silent downloads to Failed"
                   hint="A download that has not moved a byte for this long is shown under Failed instead of Downloads. Seek does not cancel it — it keeps its place in the peer's queue, which is often hours long, and it returns here by itself if it starts again. 0 never moves anything."
                   control={(
-                    <span className="settings__inline">
-                      <input
-                        className="settings__input settings__input--num tnum"
-                        type="number"
-                        min={0}
-                        max={1440}
-                        step={5}
-                        value={settings.stalledFailMinutes}
-                        aria-label="Minutes of silence before showing a download under Failed"
-                        onChange={(e) => prefs.patch({
-                          stalledFailMinutes: Number(e.target.value),
-                        })}
-                      />
-                      <span className="settings__unit">minutes</span>
-                    </span>
+                    <NumberSetting
+                      value={settings.stalledFailMinutes}
+                      min={0}
+                      max={1440}
+                      step={5}
+                      suffix="minutes"
+                      ariaLabel="Minutes of silence before showing a download under Failed"
+                      available
+                      onCommit={(v) => prefs.patch({ stalledFailMinutes: v })}
+                    />
                   )}
                 />
                 <Row
                   label="Forget completed downloads"
                   hint="Clear finished downloads from the Completed list once they are this old. This forgets Seek's RECORD of the download — the files on disk are never touched. 0 keeps them forever."
                   control={(
-                    <span className="settings__inline">
-                      <input
-                        className="settings__input settings__input--num tnum"
-                        type="number"
-                        min={0}
-                        max={365}
-                        step={1}
-                        value={settings.clearCompletedDays}
-                        aria-label="Days before forgetting a completed download"
-                        onChange={(e) => prefs.patch({
-                          clearCompletedDays: Number(e.target.value),
-                        })}
-                      />
-                      <span className="settings__unit">days</span>
-                    </span>
+                    /* Committed on Return or leaving the field, never per
+                       keystroke: typing "30" used to pass through 3, and the
+                       once-a-minute sweep could forget everything older than
+                       three days before the 0 arrived. */
+                    <NumberSetting
+                      value={settings.clearCompletedDays}
+                      min={0}
+                      max={365}
+                      step={1}
+                      suffix="days"
+                      ariaLabel="Days before forgetting a completed download"
+                      available
+                      onCommit={(v) => prefs.patch({ clearCompletedDays: v })}
+                    />
                   )}
                 />
               </Group>
@@ -561,7 +551,7 @@ export function SettingsView({
                 </p>
                 <Row
                   label="Organise completed downloads"
-                  hint="Move finished files into Artist/Year - Album/ using the MusicBrainz match. Never overwrites, never leaves the download folder."
+                  hint="Moves each finished release — with its cover, cue and checksum files — into Artist/Year - Album/ using the MusicBrainz match. Only with a confident match; never overwrites; never leaves the download folder."
                   control={(
                     <Toggle
                       checked={settings.autoOrganise}
@@ -572,7 +562,7 @@ export function SettingsView({
                 />
                 <Row
                   label="Embed artwork into file tags"
-                  hint="Writes the fetched cover into the downloaded file."
+                  hint="Writes the release's cover into each downloaded file that has none. Skipped for a release that came with an .md5, because changing the file would break the uploader's checksum."
                   control={(
                     <Toggle
                       checked={settings.embedArtwork}
@@ -583,6 +573,7 @@ export function SettingsView({
                 />
                 <Row
                   label="Write cover.jpg into the release folder"
+                  hint="Saves the release's cover beside the files, unless the folder already has one."
                   control={(
                     <Toggle
                       checked={settings.writeCoverFile}
@@ -627,6 +618,19 @@ export function SettingsView({
                   )}
                 />
                 <Row
+                  label="Forward the port automatically"
+                  hint="Asks your router to open the listening port (NAT-PMP or UPnP), as Nicotine+ does by default. Turn it off if you forward the port by hand or your network forbids it."
+                  control={engineSettings ? (
+                    <Toggle
+                      checked={engineSettings.portMapping}
+                      onChange={(v) => saveEngine({ portMapping: v })}
+                      label="Forward the port automatically"
+                    />
+                  ) : (
+                    <span className="settings__static">Not connected</span>
+                  )}
+                />
+                <Row
                   label="Your address"
                   hint="How the Soulseek server sees you. Only known while signed in."
                   control={(
@@ -659,9 +663,11 @@ export function SettingsView({
                   label="Upload slots"
                   hint="How many people can download from you at once. Everyone else waits in your queue."
                   control={(
+                    /* At least 1: the engine treats 0 as 1 (uploads.py:237),
+                       so a 0 here described a state that did not exist. */
                     <NumberSetting
-                      value={engineSettings?.uploadSlots ?? 0}
-                      min={0}
+                      value={engineSettings?.uploadSlots ?? 1}
+                      min={1}
                       max={99}
                       step={1}
                       ariaLabel="Upload slots"
@@ -722,7 +728,7 @@ export function SettingsView({
           {tab === 'lookups' && (
             <Group
               title="External lookups"
-              footnote="Soulseek transmits no artwork. Turning this off keeps Seek from contacting anyone but the Soulseek network itself."
+              footnote="Soulseek transmits no artwork. Turning this off keeps Seek from contacting these services. The check for new Seek versions is separate, under About."
             >
               <Row
                 label="Look up artwork and release data"
@@ -881,24 +887,22 @@ export function SettingsView({
                 label="Artwork cache limit"
                 hint="Least-recently-used eviction once the cap is reached."
                 control={(
-                  <span className="settings__inline">
-                    <input
-                      className="settings__input settings__input--num tnum"
-                      type="number"
-                      min={50}
-                      step={50}
-                      value={settings.artworkCacheMb}
-                      aria-label="Artwork cache limit in megabytes"
-                      onChange={(e) => prefs.patch({ artworkCacheMb: Number(e.target.value) })}
-                    />
-                    <span className="settings__suffix">MB</span>
-                  </span>
+                  <NumberSetting
+                    value={settings.artworkCacheMb}
+                    min={50}
+                    max={100_000}
+                    step={50}
+                    suffix="MB"
+                    ariaLabel="Artwork cache limit in megabytes"
+                    available
+                    onCommit={(v) => prefs.patch({ artworkCacheMb: v })}
+                  />
                 )}
               />
             </Group>
           )}
 
-          {tab === 'about' && <About client={client} />}
+          {tab === 'about' && <About client={client} prefs={prefs} />}
         </div>
       </div>
     </>
@@ -933,6 +937,18 @@ function NumberSetting({
     setDraft(String(n));
     if (n !== value) onCommit(n);
   };
+
+  /* Leaving Settings with the field still focused (⌘1, say) removes it without
+     a blur on most engines, which would drop what was typed. Commit on the way
+     out instead. Refs, because the cleanup must see the latest values. */
+  const pending = useRef({ draft, value, min, max, onCommit });
+  pending.current = { draft, value, min, max, onCommit };
+  useEffect(() => () => {
+    const p = pending.current;
+    if (p.draft.trim() === '') return;
+    const n = Math.min(p.max, Math.max(p.min, Math.floor(Number(p.draft) || 0)));
+    if (n !== p.value) p.onCommit(n);
+  }, []);
 
   return (
     <span className="settings__inline">
@@ -1032,7 +1048,7 @@ function PortField({
   );
 }
 
-function About({ client }: { client: SidecarClient | null }) {
+function About({ client, prefs }: { client: SidecarClient | null; prefs: PrefsSession }) {
   /* Read at render rather than held in state: the handshake writes it once per
    * connection and nothing changes it in between. */
   const diag = sidecarDiagnostics();
@@ -1098,6 +1114,17 @@ function About({ client }: { client: SidecarClient | null }) {
           label="Version"
           hint="An unofficial frontend for Nicotine+. Not affiliated with the Nicotine+ team."
           control={<span className="settings__static tnum">{__APP_VERSION__}</span>}
+        />
+        <Row
+          label="Check for updates"
+          hint="Looks for a new version on GitHub a few seconds after launch, and asks before installing anything. Off means Seek never contacts GitHub."
+          control={(
+            <Toggle
+              checked={prefs.settings.checkUpdates}
+              onChange={(v) => prefs.patch({ checkUpdates: v })}
+              label="Check for updates"
+            />
+          )}
         />
         <Row
           label="Licence"

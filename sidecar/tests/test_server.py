@@ -431,7 +431,8 @@ def _event_samples():
             "rejectTranscodes": False, "autoOrganise": False,
             "externalLookups": True, "discogsToken": False,
             "artworkCacheMb": 500, "embedArtwork": True, "writeCoverFile": False,
-            "autoDigSessions": True, "stalledFailMinutes": 0, "clearCompletedDays": 0,
+            "autoDigSessions": True, "checkUpdates": True,
+            "stalledFailMinutes": 0, "clearCompletedDays": 0,
             "uploadGreetingEnabled": False, "uploadGreeting": "hello",
             "acoustidApiKey": False,
             "youtubeApiKey": False,
@@ -445,6 +446,7 @@ def _event_samples():
         "library.state": {
             "scannedAt": 1786000000, "roots": ["/Users/x/Music"],
             "releaseCount": 412, "trackCount": 5140, "scanning": False,
+            "offlineRoots": [], "downloadRoot": "",
         },
         "preview.result": {
             "requestId": "p1", "path": "/tmp/a.flac",
@@ -472,6 +474,7 @@ def _event_samples():
             "consent": "declined", "folders": [], "scanning": False,
             "ready": False, "fileCount": None, "folderCount": None,
             "totalSize": None, "lastScanAt": None, "restartRequired": False,
+            "unavailable": [],
         },
         "discover.parsed": {
             "requestId": "r1", "url": "https://www.youtube.com/watch?v=8k_f2QK77ew",

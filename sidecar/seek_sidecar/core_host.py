@@ -82,11 +82,19 @@ _YT_PENDING = {
 #                     startup is close enough to the line.
 #   now_playing     — the only D-Bus/GTK surface in the core.
 #   cli / signal_handler / error_handler — the sidecar owns its lifecycle.
-#   portmapper      — UPnP/NAT-PMP; should be a user setting, not a default.
+#
+# `portmapper` (UPnP / NAT-PMP) used to be on this list, as "should be a user
+# setting, not a default" — and then the setting never came, so Seek simply
+# never forwarded its port. Behind a home router that means no peer can open a
+# connection to us, and when the peer is ALSO behind one, nobody can: the
+# download sits on "They did not answer". It is now enabled, and gated by
+# upstream's own `server.upnp` (default True, as in Nicotine+), which
+# `Settings.portMapping` exposes. Upstream checks that flag at every mapping
+# attempt (portmapper.py:620, :696), so the switch needs no restart.
 BASE_COMPONENTS = {
     "network_thread", "users", "notifications", "network_filter",
     "statistics", "search", "downloads", "uploads", "interests",
-    "userbrowse", "userinfo", "buddies", "pluginhandler",
+    "userbrowse", "userinfo", "buddies", "pluginhandler", "portmapper",
     # Chat is a shipped feature, so its components must be enabled. Without
     # these, `core.chatrooms` and `core.privatechat` are None and every chat
     # command raises the moment the user opens the screen — which only shows
@@ -154,6 +162,9 @@ class CoreHost:
 
         self.searches = registries.SearchRegistry()
         self.transfers = registries.TransferRegistry()
+        stall = self._load_state().get("stall_seconds")
+        if isinstance(stall, int) and stall > 0:
+            self.transfers.stall_seconds = stall
 
         self._connection = {
             "status": "offline",
@@ -165,6 +176,10 @@ class CoreHost:
         self._share_ready = False
         self._share_last_scan = None
         self._share_restart_required = False
+        # Paths upstream named in `shares-unavailable`: it refused to rescan
+        # because they could not be read. Cleared by `shares-scanning`, which
+        # only fires when a scan really starts.
+        self._share_unavailable = []
         self._folder_requests = {}   # (username, folderPath) -> request info
         self._peer_extra = {}        # username -> {"files", "folders", "country"}
 
@@ -186,6 +201,21 @@ class CoreHost:
         self._discover_pool = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="SeekDiscover"
         )
+
+        # File work that follows a download, and the commands that move or
+        # rewrite files (Organise, Fix tags). Its own worker so a long library
+        # scan on the analysis pool never holds a finished download hostage, and
+        # ONE worker so the jobs for a release run in order — the last file's
+        # artwork is written before its folder is moved, never after.
+        self._post_pool = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="SeekPostDownload"
+        )
+        # Where a file went when Seek moved it: old path -> new path. Read by the
+        # resolver so Verify and Fix tags keep working after an Organise, and by
+        # a queued job whose file moved before it ran.
+        self._moved_paths = {}
+        # The request a command handler is answering, for `_defer`.
+        self._replying = None
 
         self._import_upstream(upstream_path)
 
@@ -317,6 +347,7 @@ class CoreHost:
             ("room-list", self._on_room_list),
             ("shares-scanning", self._on_shares_scanning),
             ("shares-ready", self._on_shares_ready),
+            ("shares-unavailable", self._on_shares_unavailable),
             ("update-stat", self._on_update_stat),
         ):
             self.events.connect(name, self._guard(name, callback))
@@ -379,8 +410,14 @@ class CoreHost:
         except Exception:
             log.exception("error during core shutdown")
 
+        # A library walk can run for minutes, and Python waits for pool threads
+        # at exit, so quitting mid-scan sat out the shell's whole grace period
+        # and ended in a kill. Ask it to stop; the old index is kept.
+        if getattr(self, "_library_index", None) is not None:
+            self._library_index.cancel()
         self._analysis_pool.shutdown(wait=False)
         self._discover_pool.shutdown(wait=False)
+        self._post_pool.shutdown(wait=False)
 
         try:
             self.config.write_configuration()
@@ -389,6 +426,7 @@ class CoreHost:
 
     def _pump_commands(self):
         for websocket, request_id, command, params in self.bridge.drain():
+            self._replying = (websocket, request_id, command)
             try:
                 result = self.dispatch(command, params)
             except CommandError as error:
@@ -398,7 +436,36 @@ class CoreHost:
                 log.exception("command %s failed", command)
                 self.bridge.reply_error(websocket, request_id, "internal", str(error))
                 continue
+            finally:
+                self._replying = None
+            if result is DEFERRED:
+                continue
             self.bridge.reply(websocket, request_id, result)
+
+    def _defer(self, work, *args):
+        """Answer the current command from the post-download worker.
+
+        For commands that make network calls or move files. Organise and Fix
+        tags called MusicBrainz ON THIS THREAD — a 12 s timeout per request and
+        a rate limit that sleeps — so one press froze every transfer, search
+        result and chat line until it came back. The client still gets an
+        ordinary reply to the request it sent; it just comes from the worker.
+        """
+        websocket, request_id, command = self._replying
+
+        def run():
+            try:
+                result = work(*args)
+            except CommandError as error:
+                self.bridge.reply_error(websocket, request_id, error.code, str(error))
+            except Exception as error:                 # noqa: BLE001 - worker
+                log.exception("command %s failed", command)
+                self.bridge.reply_error(websocket, request_id, "internal", str(error))
+            else:
+                self.bridge.reply(websocket, request_id, result)
+
+        self._post_pool.submit(run)
+        return DEFERRED
 
     def _pump_searches(self):
         if self.searches.due():
@@ -747,7 +814,9 @@ class CoreHost:
         search = self.searches.add(
             token, upstream.term, upstream.term_transmitted, "wishlist",
         )
-        log.info("wishlist search %r produced results", upstream.term)
+        # Not the term: the log is for bug reports, and Settings promises it
+        # holds "not what you searched for".
+        log.info("a wishlist search produced results")
         self.bridge.broadcast("search.started", search.info())
 
     def _on_search_response(self, msg):
@@ -926,9 +995,43 @@ class CoreHost:
 
     def _on_folder_finished(self, folder_path):
         self.bridge.broadcast("folder.finished", {"localFolder": folder_path})
+        # Organise the release as one, after its files' artwork jobs — the
+        # worker is FIFO, so those were queued first.
+        if not folder_path or not self._app_settings().get("autoOrganise"):
+            return
+        if not self._lookups_allowed():
+            return
+        real_root = self._real_download_root()
+        if real_root is not None:
+            self._post_pool.submit(self._organise_folder_quietly, folder_path, real_root)
+
+    def _organise_folder_quietly(self, folder_path, real_root):
+        try:
+            self._organise_folder(folder_path, real_root)
+        except Exception as error:                     # noqa: BLE001 - worker
+            log.warning("organising a release failed: %s", type(error).__name__)
 
     def _on_shares_scanning(self, *_args, **_kwargs):
         self._share_scanning = True
+        # At launch upstream reports the missing share and THEN scans anyway
+        # (init=True carries on to load the old index, shares.py:1150-1163), so
+        # the report that came with this very scan must survive it. Any later
+        # scan without a report means the shares are all back.
+        if getattr(self, "_share_unavailable_fresh", False):
+            self._share_unavailable_fresh = False
+        else:
+            self._share_unavailable = []
+        self.bridge.broadcast("shares.state", self._share_state())
+
+    def _on_shares_unavailable(self, shares=(), *_args, **_kwargs):
+        # Upstream's rescan refused (shares.py:1144-1153) and said nothing else.
+        # Seek ignored this event, so "Indexing…" never appeared, nothing said
+        # why, and the stale index went on being served.
+        self._share_unavailable = sorted({
+            str(entry[1]) for entry in (shares or ())
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2
+        })
+        self._share_unavailable_fresh = True
         self.bridge.broadcast("shares.state", self._share_state())
 
     def _on_shares_ready(self, *_args, **_kwargs):
@@ -999,7 +1102,12 @@ class CoreHost:
                 # would read as {} and the next save would cement into total loss.
                 path = self._state_path()
                 tmp = f"{path}.tmp"
-                with open(tmp, "w", encoding="utf-8") as handle:
+                # 0600: this file holds the Discogs token, API keys and the
+                # Google refresh token, and was readable by every account on
+                # the Mac. os.replace keeps the temp file's mode.
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                os.chmod(tmp, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
                     json.dump(state, handle, indent=2)
                     handle.flush()
                     os.fsync(handle.fileno())
@@ -1053,6 +1161,7 @@ class CoreHost:
             "ready": bool(self._share_ready),
             "lastScanAt": self._share_last_scan,
             "restartRequired": bool(self._share_restart_required),
+            "unavailable": list(self._share_unavailable),
             **stats,
         }
 
@@ -1082,6 +1191,7 @@ class CoreHost:
                 )
             path = self.core.downloads.get_current_download_file_path(upstream)
 
+        path = self._follow_move(path)
         if not path or not os.path.isfile(path):
             raise CommandError("not_found", f"no such file: {path}")
         return path
@@ -1096,28 +1206,43 @@ class CoreHost:
             silently replace something that took an hour to fetch;
           * never move without a confident match — an unknown release stays
             exactly where it is.
+
+        The checks run here; the lookup and the move run on the post-download
+        worker (see `_defer`), so a slow MusicBrainz never freezes the engine.
         """
         if not self._lookups_allowed():
             raise CommandError("unsupported", "external lookups are switched off")
 
         path = self._resolve_local_file(params)
+        real_root = self._real_download_root()
+        if real_root is None:
+            raise CommandError("bad_request", "no download folder is configured")
+        if not self._inside(real_root, path):
+            raise CommandError("bad_request", "that file is not in the download folder")
+        return self._defer(self._organise_now, path, real_root)
+
+    def _real_download_root(self):
         root = self._download_root()
         if not root or not os.path.isdir(root):
-            raise CommandError("bad_request", "no download folder is configured")
+            return None
+        return os.path.realpath(root)
 
-        # Refuse to act on anything outside the download folder. `realpath`
-        # first: a symlink out of the tree would otherwise pass a prefix test.
-        real_root = os.path.realpath(root)
+    @staticmethod
+    def _inside(real_root, path):
+        # `realpath` first: a symlink out of the tree would otherwise pass.
         real_path = os.path.realpath(path)
-        if os.path.commonpath([real_root, real_path]) != real_root:
-            raise CommandError("bad_request", "that file is not in the download folder")
+        return os.path.commonpath([real_root, real_path]) == real_root
 
+    def _release_summary_for(self, path):
+        """The MusicBrainz release a downloaded file belongs to, or None.
+
+        Worker thread: this may make two rate-limited requests. Cached by
+        artist + release, so a whole album costs one lookup, not fifteen.
+        """
         current = enrich.read_tags(path)
         folder = os.path.basename(os.path.dirname(path))
         artist = current.get("albumartist") or current.get("artist") or ""
         release = current.get("album") or folder
-
-        summary = None
         cache = self._art_cache()
         ckey = enrich.cache_key(artist, release)
         summary = cache.get_meta(ckey)
@@ -1127,7 +1252,12 @@ class CoreHost:
                 summary = enrich.release_summary(enrich.mb_release_detail(match["id"]))
                 summary["score"] = int(match.get("score", 0))
                 cache.put_meta(ckey, summary)
+        return summary or None
 
+    def _organise_now(self, path, real_root):
+        """Worker body of Organise for ONE file."""
+        path = self._follow_move(path)
+        summary = self._release_summary_for(path)
         if not summary:
             return {
                 "moved": False, "fromPath": path, "toPath": "",
@@ -1135,7 +1265,7 @@ class CoreHost:
             }
 
         target = enrich.organised_path(real_root, summary, os.path.basename(path))
-        if os.path.realpath(target) == real_path:
+        if os.path.realpath(target) == os.path.realpath(path):
             return {
                 "moved": False, "fromPath": path, "toPath": path,
                 "reason": "already where it should be",
@@ -1152,8 +1282,93 @@ class CoreHost:
         except OSError as error:
             raise CommandError("internal", f"could not move: {error}") from error
 
-        log.info("organised %s -> %s", os.path.basename(path), target)
+        self._record_moves([(path, target)])
         return {"moved": True, "fromPath": path, "toPath": target, "reason": ""}
+
+    def _organise_folder(self, folder, real_root):
+        """Move a finished release folder — the audio AND everything beside it —
+        into Artist/Year - Album/. Worker thread.
+
+        The whole folder, not file by file: a release's `.ffp`, `.md5`, cue and
+        cover only mean anything next to its audio, and moving the tracks out
+        from under them would break the checksum check on every organised
+        release. Same rules as Organise: never outside the download folder,
+        never over an existing file, never without a confident match.
+        """
+        real_folder = os.path.realpath(folder)
+        if real_folder == real_root or not self._inside(real_root, real_folder):
+            return []
+        try:
+            names = sorted(os.listdir(real_folder))
+        except OSError:
+            return []
+        audio = [n for n in names if os.path.splitext(n)[1].lower() in enrich.AUDIO_EXTENSIONS]
+        if not audio:
+            return []
+        summary = self._release_summary_for(os.path.join(real_folder, audio[0]))
+        if not summary:
+            return []
+        target_dir = os.path.dirname(enrich.organised_path(real_root, summary, "_"))
+        if os.path.realpath(target_dir) == real_folder:
+            return []
+
+        moves = []
+        os.makedirs(target_dir, exist_ok=True)
+        for name in names:
+            src = os.path.join(real_folder, name)
+            dst = os.path.join(target_dir, name)
+            if not os.path.isfile(src) or os.path.exists(dst):
+                continue
+            try:
+                os.replace(src, dst)
+            except OSError:
+                continue
+            moves.append((src, dst))
+        try:
+            os.rmdir(real_folder)                     # only succeeds when empty
+        except OSError:
+            pass
+        self._record_moves(moves)
+        return moves
+
+    def _follow_move(self, path):
+        """Where Seek moved `path` to — but only if nothing is there now. A
+        later download can land at the old name, and that file is the one
+        meant, not the one moved away from it."""
+        if path and not os.path.exists(path):
+            return self._moved_paths.get(path, path)
+        return path
+
+    def _record_moves(self, moves):
+        """Remember where files went, and tell the core — on ITS thread."""
+        if not moves:
+            return
+        for old, new in moves:
+            self._moved_paths[old] = new
+        self.events.invoke_main_thread(self._apply_moves, list(moves))
+
+    def _apply_moves(self, moves):
+        """Point finished downloads at where their files now live.
+
+        Upstream finds a finished file from the transfer's `folder_path`, so a
+        moved file read as missing: Verify and Fix tags failed with "no such
+        file", and the row kept pointing at an empty folder. Updating the
+        folder keeps every later lookup — Verify, Fix tags, Show in Finder,
+        and the next launch, since upstream saves it — pointing at the file.
+        """
+        moved = dict(moves)
+        downloads = getattr(self.core, "downloads", None)
+        if downloads is None:
+            return
+        for upstream in list(downloads.transfers.values()):
+            if translate.transfer_state(upstream.status) != "finished":
+                continue
+            current = downloads.get_current_download_file_path(upstream)
+            new = moved.get(current)
+            if new is None:
+                continue
+            upstream.folder_path = os.path.dirname(new)
+            self._emit_transfer(upstream, "download", None)
 
     def _cmd_preview_get(self, params):
         """Decode an excerpt on the worker pool; the audio arrives as an event."""
@@ -1195,9 +1410,13 @@ class CoreHost:
         "autoOrganise": False,
         "externalLookups": True,
         "artworkCacheMb": 500,
-        "embedArtwork": True,
+        # Off. This switch was shown ON for a long time while doing nothing at
+        # all; now that it rewrites files, it must not start doing so for
+        # everyone who never chose it. Anyone who did choose it keeps it.
+        "embedArtwork": False,
         "writeCoverFile": False,
         "autoDigSessions": True,
+        "checkUpdates": True,
         # Both off by default. The first changes where a download APPEARS and
         # the second forgets records, and neither should start happening to
         # somebody who never asked for it.
@@ -1261,7 +1480,7 @@ class CoreHost:
         stored = dict(self._load_state().get("app_settings") or {})
         for key in ("externalLookups", "embedArtwork", "writeCoverFile",
                     "preferLossless", "rejectTranscodes", "autoOrganise",
-                    "autoDigSessions", "uploadGreetingEnabled"):
+                    "autoDigSessions", "uploadGreetingEnabled", "checkUpdates"):
             if params.get(key) is not None:
                 stored[key] = bool(params[key])
         if params.get("uploadGreeting") is not None:
@@ -1445,7 +1664,11 @@ class CoreHost:
         return self._library_index
 
     def _download_root(self):
-        return self.config.sections["transfers"].get("downloaddir") or ""
+        # EXPANDED. Upstream's default is the literal
+        # "${NICOTINE_DATA_HOME}/downloads" and it only expands it at use, so
+        # for anyone who never changed the folder this was not a directory:
+        # Organise refused, and every after-download step silently skipped.
+        return self._resolve_path(self.config.sections["transfers"].get("downloaddir"))
 
     def _cmd_library_state(self, _params):
         return self._library().state()
@@ -1549,7 +1772,8 @@ class CoreHost:
             self.bridge.broadcast("library.state", state)
 
         try:
-            state = index.scan(roots, progress=progress, read_tags=read_tags)
+            state = index.scan(roots, progress=progress, read_tags=read_tags,
+                               download_root=self._download_root())
         except Exception as error:                     # noqa: BLE001 - worker
             log.exception("library scan failed: %s", error)
             state = index.state()
@@ -1679,25 +1903,37 @@ class CoreHost:
         self.bridge.broadcast("metadata.proposal", blank)
 
     def _cmd_metadata_apply(self, params):
-        path = params.get("path") or ""
+        path = self._follow_move(params.get("path") or "")
         if not os.path.isfile(path):
             raise CommandError("not_found", f"no such file: {path}")
         fields = {
             f["field"]: f["proposed"]
             for f in (params.get("fields") or []) if f.get("field")
         }
+        embed = bool(params.get("embedArtwork"))
+        if embed and not self._lookups_allowed():
+            raise CommandError("unsupported", "external lookups are switched off")
+        return self._defer(
+            self._apply_metadata, path, fields, embed,
+            params.get("artist") or "", params.get("release") or "",
+        )
+
+    def _apply_metadata(self, path, fields, embed, artist, release):
+        """Worker body of Fix tags.
+
+        A missing cover no longer refuses the whole write. It used to raise
+        before a single tag was written, so on exactly the obscure releases
+        the panel exists for — the ones no cover service has — every checked
+        correction was thrown away. Tags are written; the reply says whether
+        the artwork made it.
+        """
         art = None
-        if params.get("embedArtwork"):
-            if not self._lookups_allowed():
-                raise CommandError("unsupported", "external lookups are switched off")
+        if embed:
             try:
-                data, mime, _src = enrich.fetch_artwork(
-                    params.get("artist") or "", params.get("release") or "",
-                    self._art_cache(),
-                )
+                data, mime, _src = enrich.fetch_artwork(artist, release, self._art_cache())
                 art = (data, mime)
-            except Exception as error:                 # noqa: BLE001
-                raise CommandError("not_found", f"no artwork: {error}") from error
+            except Exception:                          # noqa: BLE001 - no cover is normal
+                art = None
         try:
             enrich.write_tags(path, fields, art)
         except Exception as error:                     # noqa: BLE001
@@ -1705,6 +1941,91 @@ class CoreHost:
         return {
             "path": path, "written": len(fields), "artworkEmbedded": art is not None,
         }
+
+    # -- after a download finishes -------------------------------------------
+    #
+    # The three switches under Settings → After downloading were stored and
+    # never read: turning on "Organise completed downloads" moved nothing.
+    # These are them. Each runs on the post-download worker, never the main
+    # loop, and each only ever touches files inside the download folder.
+
+    def _after_download(self, upstream_transfer):
+        """A download just finished (witnessed, not restored at launch)."""
+        settings = self._app_settings()
+        embed = bool(settings.get("embedArtwork"))
+        cover = bool(settings.get("writeCoverFile"))
+        organise = bool(settings.get("autoOrganise"))
+        if not (embed or cover or organise) or not self._lookups_allowed():
+            return
+        real_root = self._real_download_root()
+        if real_root is None:
+            return
+        path = self.core.downloads.get_current_download_file_path(upstream_transfer)
+        if not path or not self._inside(real_root, path):
+            return
+        if os.path.splitext(path)[1].lower() not in enrich.AUDIO_EXTENSIONS:
+            return
+        # A single file lands loose in the download folder and gets no
+        # folder-finished event (upstream skips the default folder,
+        # downloads.py:453), so it is organised here. A file that is part of a
+        # release waits for the folder, so the release moves as one.
+        loose = os.path.realpath(os.path.dirname(path)) == real_root
+        self._post_pool.submit(
+            self._post_process_file, path, real_root, embed, cover, organise and loose,
+        )
+
+    def _post_process_file(self, path, real_root, embed, cover, organise):
+        path = self._follow_move(path)
+        if not os.path.isfile(path):
+            return
+        folder = os.path.dirname(path)
+        # A loose file sits in the download folder itself, which is shared by
+        # every loose download: a cover written there belongs to no release and
+        # would stop the next one from getting its own.
+        cover = cover and os.path.realpath(folder) != real_root
+        # Separate tries: a file whose artwork step fails is still organised.
+        if embed or cover:
+            try:
+                self._add_artwork(path, folder, embed, cover)
+            except Exception as error:                 # noqa: BLE001 - worker
+                log.warning("post-download artwork failed: %s", type(error).__name__)
+        if organise:
+            try:
+                self._organise_now(path, real_root)
+            except Exception as error:                 # noqa: BLE001 - worker
+                log.warning("post-download organise failed: %s", type(error).__name__)
+
+    def _add_artwork(self, path, folder, embed, cover):
+        names = os.listdir(folder)
+        # Rewriting tags changes the file's bytes, which breaks a whole-file
+        # `.md5` the uploader published (an `.ffp` survives, being a hash of the
+        # audio). The checksum is the only hard fact about those bytes, so a
+        # folder that came with one keeps its files exactly as they arrived.
+        embed = embed and not any(n.lower().endswith(".md5") for n in names)
+        embed = embed and not enrich.has_artwork(path)
+        has_cover = any(
+            os.path.splitext(n)[0].lower() in ("cover", "folder", "front")
+            and os.path.splitext(n)[1].lower() in (".jpg", ".jpeg", ".png")
+            for n in names
+        )
+        cover = cover and not has_cover
+        if not (embed or cover):
+            return
+        current = enrich.read_tags(path)
+        artist = current.get("albumartist") or current.get("artist") or ""
+        release = current.get("album") or os.path.basename(folder)
+        try:
+            data, mime, _src = enrich.fetch_artwork(artist, release, self._art_cache())
+        except Exception:                              # noqa: BLE001 - no cover is normal
+            return
+        if embed:
+            enrich.write_tags(path, {}, (data, mime))
+        if cover:
+            name = "cover.png" if "png" in (mime or "") else "cover.jpg"
+            target = os.path.join(folder, name)
+            if not os.path.exists(target):
+                with open(target, "wb") as handle:
+                    handle.write(data)
 
     # -- discovery ---------------------------------------------------------
     #
@@ -2212,7 +2533,7 @@ class CoreHost:
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
-            log.exception("fingerprint failed for %s", path)
+            log.warning("fingerprint failed: %s", type(error).__name__)
             self.bridge.broadcast("discover.parseFailed", {
                 "requestId": request_id, "url": path, "reason": str(error), "needs": "",
                 "unreachable": False,
@@ -2376,7 +2697,7 @@ class CoreHost:
             })
             return
         except Exception as error:                     # noqa: BLE001 - worker
-            log.exception("browse failed for %s", url or params.get("name"))
+            log.warning("discovery browse failed: %s", type(error).__name__)
             self.bridge.broadcast("discover.browseFailed", {
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": "",
@@ -2402,7 +2723,7 @@ class CoreHost:
             # A worker thread that raises takes nothing down, but it also tells
             # nobody: the frontend would sit on a skeleton card forever waiting
             # for an event that is never coming.
-            log.exception("discover failed for %s", url)
+            log.warning("discover failed: %s", type(error).__name__)
             self.bridge.broadcast("discover.parseFailed", {
                 "requestId": request_id, "url": url,
                 "reason": str(error), "needs": "",
@@ -3278,11 +3599,23 @@ class CoreHost:
         # the failure that matters — it advertises files to the network that
         # every request for will then fail, which is worse for the people
         # asking than not sharing at all.
+        # A folder that is ALREADY shared is kept even while it cannot be found.
+        # Checking every folder used to mean one unplugged drive blocked every
+        # change to the list — including removing a different folder, which is
+        # the change that matters most. Only folders being ADDED are checked.
+        already = {path for _virtual, path in (
+            (str(e[0]), str(e[1])) for e in (self.config.sections["transfers"].get("shared") or ())
+            if isinstance(e, (list, tuple)) and len(e) >= 2
+        )}
         resolved = []
         for folder in folders:
             if not folder["path"]:
                 raise CommandError("bad_request", "a shared folder needs a path")
             path = self._resolve_path(folder["path"])
+            if path in already and not (os.path.isdir(path) and os.access(path, os.R_OK | os.X_OK)):
+                virtual = folder["virtualName"] or os.path.basename(path.rstrip(os.sep)) or path
+                resolved.append((virtual, path))
+                continue
             if not os.path.isdir(path):
                 raise CommandError(
                     "bad_request", f"this shared folder is not a folder: {path}"
@@ -3305,6 +3638,8 @@ class CoreHost:
                 "that name, so it has to be unique",
             )
 
+        removed = already - {path for _virtual, path in resolved}
+
         self._save_state(share_consent=consent)
         self.config.sections["transfers"]["shared"] = resolved
         self.config.write_configuration()
@@ -3313,8 +3648,14 @@ class CoreHost:
         # effect THIS session: re-index to match the new folder set — a granted
         # set advertises those folders, a cleared one stops — rather than the old
         # "restart required" dance.
+        #
+        # A REMOVAL is forced. Upstream refuses to rescan while any share is
+        # missing, which would leave a folder you just stopped sharing in the
+        # index, still browsable and downloadable by anyone. Forcing drops an
+        # unplugged drive's files from the index too — but those requests fail
+        # anyway, and a folder you withdrew staying public is the worse error.
         if self.core.shares is not None:
-            self.core.shares.rescan_shares()
+            self.core.shares.rescan_shares(force=bool(removed))
 
         state = self._share_state()
         self.bridge.broadcast("shares.state", state)
@@ -3410,6 +3751,8 @@ class CoreHost:
         witnessed = record.last_emitted_state is not None
         if direction == "download" and witnessed and state != record.last_emitted_state:
             self._record_outcome(record, state)
+            if state == "finished":
+                self._after_download(upstream_transfer)
         record.last_emitted_state = state
 
         payload = translate.transfer(
@@ -3797,11 +4140,15 @@ class CoreHost:
     def _run_analysis(self, request_id, path, transfer_id):
         """Worker-thread body. Never raises into the pool."""
         from . import spectral
+        # Organise may have moved it between the request and now.
+        path = self._follow_move(path)
         try:
             payload = spectral.analyse(path, request_id=request_id,
                                        transfer_id=transfer_id)
         except Exception as error:
-            log.warning("spectral analysis failed for %s: %s", path, error)
+            # The error class, never the path: the log is pasted into public bug
+            # reports, and a path is a list of what someone downloads.
+            log.warning("spectral analysis failed: %s", type(error).__name__)
             self.bridge.broadcast("analysis.failed", {
                 "requestId": request_id, "path": path, "reason": str(error),
             })
@@ -3860,7 +4207,7 @@ class CoreHost:
         try:
             report = checksums.verify_folder(folder)
         except Exception as error:
-            log.warning("checksum check failed for %s: %s", folder, error)
+            log.warning("checksum check failed: %s", type(error).__name__)
             self.bridge.broadcast("checksums.failed", {
                 "requestId": request_id, "path": path, "reason": str(error),
             })
@@ -3941,10 +4288,18 @@ class CoreHost:
         ))
 
     def _on_room_echo(self, room, text, message_type):
-        self.bridge.broadcast("chat.message", self._chat_line(
-            "room", room, self._own_username(), text,
+        self.bridge.broadcast("chat.message", self._echo_line("room", room, text, message_type))
+
+    def _echo_line(self, scope, target, text, message_type):
+        # A command's reply (upstream's "command" type, and Seek's own refusals)
+        # is the app talking, not you: it used to be drawn as a line YOU typed,
+        # under your name.
+        if message_type == "command":
+            return self._chat_line(scope, target, "", text, outgoing=False, kind="local")
+        return self._chat_line(
+            scope, target, self._own_username(), text,
             outgoing=True, kind=self._chat_kind(message_type or "local"),
-        ))
+        )
 
     def _on_private_message(self, msg, **_unused):
         """A private message. Upstream reports BOTH directions on this event.
@@ -4005,10 +4360,7 @@ class CoreHost:
         ))
 
     def _on_private_echo(self, user, text, message_type):
-        self.bridge.broadcast("chat.message", self._chat_line(
-            "private", user, self._own_username(), text,
-            outgoing=True, kind=self._chat_kind(message_type or "local"),
-        ))
+        self.bridge.broadcast("chat.message", self._echo_line("private", user, text, message_type))
 
     def _on_join_room(self, msg):
         self._emit_members(msg.room, [u.username for u in (msg.users or [])])
@@ -4072,11 +4424,56 @@ class CoreHost:
         self._emit_rooms()
         return {}
 
+    # Commands Seek refuses even though upstream has them: each would act behind
+    # Seek's back. /quit stops the ENGINE and leaves the window up with nothing
+    # behind it; /share and /unshare edit the share list without the consent
+    # Seek records for it (`shares.set`).
+    _NO_QUIT = ("Seek is quit from its menu — /quit would stop the engine and "
+                "leave the window with nothing behind it.")
+    _NO_SHARE = ("Shared folders are set in Settings → Folders, so Seek keeps "
+                 "track of what you agreed to share.")
+    BLOCKED_CHAT_COMMANDS = {
+        "quit": _NO_QUIT, "q": _NO_QUIT, "exit": _NO_QUIT,
+        "share": _NO_SHARE, "unshare": _NO_SHARE,
+    }
+
     def _cmd_chat_say(self, params):
         self._require_online()
         target = params["target"]
         message = params["message"]
-        if params["scope"] == "room":
+        room = params["scope"] == "room"
+
+        # A line starting with ONE slash is a command, as in Nicotine+
+        # (gtkgui/widgets/textentry.py:192-210), and "//" sends a literal slash.
+        # Sent verbatim, "/away" or "/msg bob hi" went to everyone in the room.
+        # Commands run through upstream's own handler — the `pluginhandler`
+        # component is enabled and `core_commands` always loads — and its replies
+        # come back as echo events, which `_on_room_echo` / `_on_private_echo`
+        # already turn into chat lines.
+        # Never for an automatic message: that is the upload greeting, typed
+        # once in Settings, and a greeting beginning "/" is just text.
+        if (not params.get("automatic") and message.startswith("/")
+                and not message.startswith("//")):
+            command, _sep, args = message[1:].partition(" ")
+            refused = self.BLOCKED_CHAT_COMMANDS.get(command.lower())
+            if refused:
+                if room:
+                    self.core.chatrooms.echo_message(target, refused, "command")
+                else:
+                    self.core.privatechat.echo_message(target, refused, "command")
+                return {}
+            if room:
+                self.core.pluginhandler.trigger_chatroom_command_event(
+                    target, command, args.strip())
+            else:
+                self.core.privatechat.show_user(target, switch_page=False)
+                self.core.pluginhandler.trigger_private_chat_command_event(
+                    target, command, args.strip())
+            return {}
+        if message.startswith("//"):
+            message = message[1:]
+
+        if room:
             self.core.chatrooms.send_message(target, message)
         elif params.get("automatic"):
             # Upstream's own method for bot messages: it prefixes
@@ -4095,12 +4492,72 @@ class CoreHost:
         self.core.privatechat.show_user(params["username"], switch_page=False)
         return {}
 
+    def _cmd_chat_history(self, params):
+        """Earlier lines of a conversation, from upstream's own chat log.
+
+        The engine has always logged every room and private chat to disk
+        (`logging.privatechat` / `logging.chatrooms`, on by default), and Seek
+        never read any of it back — so every restart showed every conversation
+        empty while the words sat in `data/logs/`. Nicotine+ prepends these when
+        a chat opens (gtkgui/privatechat.py:397). Lines go out raw, decoded the
+        way upstream decodes them (textview.py:461); splitting the timestamp and
+        the name off is the frontend's job. Needs no connection: it is a file.
+        """
+        from pynicotine.logfacility import log
+
+        room = params["scope"] == "room"
+        logging_config = self.config.sections["logging"]
+        limit = params.get("limit")
+        if limit is None:
+            limit = logging_config.get("readroomlines" if room else "readprivatelines") or 200
+        limit = max(0, min(int(limit), 2000))
+        folder = log.room_folder_path if room else log.private_chat_folder_path
+        raw = log.read_log(folder, params["target"], limit) if limit else None
+        lines = []
+        for line in raw or ():
+            try:
+                lines.append(line.decode("utf-8"))
+            except UnicodeDecodeError:
+                lines.append(line.decode("latin-1"))
+        return {"scope": params["scope"], "target": params["target"], "lines": lines}
+
     # -- local paths --------------------------------------------------------
 
     # These exist because `settings.patch` used to write whatever string it was
     # handed. A mistyped download folder is not a cosmetic problem: every
     # transfer then fails with upstream's `download_folder_error`, one file at a
     # time, with nothing on the settings screen suggesting the folder is why.
+
+    # -- show in Finder / open ----------------------------------------------
+
+    def _reveal_target(self, params):
+        if params.get("transferId"):
+            return self._resolve_local_file({"transferId": params["transferId"], "path": None})
+        path = self._follow_move(self._resolve_path(params.get("path")))
+        if not path or not os.path.exists(path):
+            raise CommandError("not_found", f"no such file or folder: {path}")
+        return path
+
+    @staticmethod
+    def _system_open(args):
+        import subprocess
+        subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         close_fds=True)
+
+    def _cmd_fs_reveal(self, params):
+        path = self._reveal_target(params)
+        if sys.platform == "darwin":
+            self._system_open(["open", "-R", path])
+        else:
+            self._system_open(["xdg-open", os.path.dirname(path) if os.path.isfile(path) else path])
+        return {}
+
+    def _cmd_fs_open(self, params):
+        path = self._reveal_target(params)
+        if not os.path.isfile(path) or os.path.splitext(path)[1].lower() not in enrich.AUDIO_EXTENSIONS:
+            raise CommandError("bad_request", "only audio files are opened from Seek")
+        self._system_open(["open" if sys.platform == "darwin" else "xdg-open", path])
+        return {}
 
     @staticmethod
     def _resolve_path(path):
@@ -4236,11 +4693,28 @@ class CoreHost:
                 transfers[limit_key] = max(1, value // KIB)
 
         if patch.get("stallSeconds") is not None:
-            self.transfers.stall_seconds = int(patch["stallSeconds"])
+            self.transfers.stall_seconds = max(1, int(patch["stallSeconds"]))
+            # Saved, not just set: it lived only on the registry, so every
+            # restart quietly put it back to 45 s.
+            self._save_state(stall_seconds=self.transfers.stall_seconds)
+
+        mapping = patch.get("portMapping")
+        if mapping is not None:
+            server["upnp"] = bool(mapping)
 
         self.core.downloads.update_transfer_limits()
         self.core.uploads.update_transfer_limits()
         self.config.write_configuration()
+
+        # Apply now rather than at the next login. Both calls hand the work to a
+        # thread of upstream's own, so a slow router never stalls this loop, and
+        # `add_port_mapping` is a no-op until the listening port exists.
+        portmapper = getattr(self.core, "portmapper", None)
+        if mapping is not None and portmapper is not None:
+            if mapping:
+                portmapper.add_port_mapping()
+            else:
+                portmapper.remove_port_mapping()
         return {"settings": self._read_settings()}
 
     def _read_settings(self):
@@ -4267,7 +4741,12 @@ class CoreHost:
             "uploadSlots": int(transfers.get("uploadslots") or 0),
             "autoConnect": bool(server.get("auto_connect_startup")),
             "stallSeconds": int(self.transfers.stall_seconds),
+            "portMapping": bool(server.get("upnp")),
         }
+
+
+# Returned by a handler whose reply will come from a worker (see `_defer`).
+DEFERRED = object()
 
 
 class CommandError(Exception):

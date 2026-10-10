@@ -200,9 +200,10 @@ export function CommandPalette({
                 role="option"
                 aria-selected={i === active}
                 data-active={i === active ? 'true' : undefined}
-                // Pointer-down, not click: the palette closes on commit, and a
-                // click handler would fire after the element had gone.
-                onPointerDown={(e) => { e.preventDefault(); commit(i); }}
+                // Click, so a press can be dragged off and a right-click does
+                // nothing. Pointer-down only keeps focus in the search field.
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => commit(i)}
                 onPointerEnter={() => setActive(i)}
               >
                 <span className="cmdk__group">{r.cmd.group}</span>

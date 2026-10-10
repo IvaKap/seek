@@ -279,7 +279,7 @@ export function BrowseTreeView({
               <button
                 type="button"
                 className="btn pressable"
-                onPointerDown={() => void transfers.enqueueFolder(username, node.path)}
+                onClick={() => void transfers.enqueueFolder(username, node.path)}
               >
                 <IconDownload size={13} painted={1.5} />
                 Get this folder — <span className="tnum">{files.length}</span> files, {fileSize(node.size)}

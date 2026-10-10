@@ -16,7 +16,7 @@ import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useSidecarConnection } from './data/connectionStore.ts';
-import { useSearchTabs } from './data/searchTabs.ts';
+import { WISHLIST_REASON, useSearchTabs } from './data/searchTabs.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
@@ -28,7 +28,6 @@ import { useLibrary } from './data/libraryStore.ts';
 import { useYoutube } from './data/youtubeStore.ts';
 import { usePrefs } from './data/prefsStore.ts';
 import { useEngine } from './data/engineStore.ts';
-import { useThroughput } from './data/throughputStore.ts';
 import { useTransferStats } from './data/statsStore.ts';
 import { useConnections, useProfile } from './data/profileStore.ts';
 import { TransferStatsView } from './ui/TransferStatsView.tsx';
@@ -48,6 +47,10 @@ import { useRelated } from './data/relatedStore.ts';
 import { LibraryView } from './ui/LibraryView.tsx';
 import { BrowseView } from './ui/BrowseView.tsx';
 import { WishlistView } from './ui/WishlistView.tsx';
+import { ErrorBoundary } from './ui/ErrorBoundary.tsx';
+import { Failures } from './ui/Failures.tsx';
+import { reportFailure, showNotice } from './data/failures.ts';
+import { judgeRelease } from './domain/preferences.ts';
 import { useWishHits } from './data/wishHits.ts';
 import { useAutoDownloads } from './data/autoDownloads.ts';
 import { useAutoGreet } from './data/autoGreet.ts';
@@ -57,7 +60,7 @@ import { ChatView } from './ui/ChatView.tsx';
 import { CommandPalette } from './ui/CommandPalette.tsx';
 import { ContextMenu } from './ui/ContextMenu.tsx';
 import { usePreview } from './ui/Preview.tsx';
-import { useDownloadNotifications } from './data/notify.ts';
+import { useChatNotifications, useDownloadNotifications, useWishNotifications } from './data/notify.ts';
 import type { MenuRequest } from './ui/ContextMenu.tsx';
 import type { Command } from './ui/CommandPalette.tsx';
 import type { MenuItem } from './ui/ContextMenu.tsx';
@@ -149,6 +152,13 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
   return { dot: 'online', label: 'Connected', detail: 'Signed in to Soulseek.' };
 }
 
+/** Sidebar entries that are one screen with a different lens. */
+function screenOf(section: string): string {
+  if (section === 'messages') return 'chat';
+  if (section === 'completed' || section === 'failed') return 'downloads';
+  return section;
+}
+
 export default function App() {
   const [section, setSection] = useState<Section>('search');
   /* Table by default for search too: the people who live in Seek are collectors
@@ -207,7 +217,6 @@ export default function App() {
   /* pynicotine's own configuration — folders, port, limits, shares. Distinct
    * from `prefs`, which is Seek's; see the header on `data/engineStore.ts`. */
   const engine = useEngine(session.client);
-  const throughput = useThroughput(session.client);
   const transferStats = useTransferStats(session.client);
   const profile = useProfile(session.client);
   const connections = useConnections(session.client);
@@ -223,7 +232,7 @@ export default function App() {
     prefs.settings.stalledFailMinutes * 60,
     prefs.settings.clearCompletedDays,
   );
-  const updates = useUpdates();
+  const updates = useUpdates(prefs.loaded ? prefs.settings.checkUpdates : null);
   const analysis = useAnalysis(session.client);
   const checksums = useChecksums(session.client);
   const artwork = useArtwork(session.client);
@@ -243,7 +252,9 @@ export default function App() {
      result as it arrives and hold it for review. Mounted here, not in the
      Wishlist screen, so it runs whenever Seek is open. Its claims feed the
      review UI in a later step; here it is mounted for its effect. */
-  const autoDownloads = useAutoDownloads(session.client, wishHits, transfers, analysis);
+  const autoDownloads = useAutoDownloads(
+    session.client, wishHits, transfers, analysis, prefs.settings, isSignedIn(session.serverState),
+  );
   /* Greet somebody the first time they finish downloading from you. Mounted
      here for the same reason as auto-download: an upload completes whether or
      not the Uploads screen is open. Off unless switched on in Settings. */
@@ -260,6 +271,8 @@ export default function App() {
      and CLAUDE.md records that as the thing which gets an account limited. */
   const [searchingWant, setSearchingWant] = useState<WantEntry | null>(null);
   useDownloadNotifications(transfers.groups);
+  useChatNotifications(chat.conversations, chat.active);
+  useWishNotifications(wishHits.byQuery);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [menu, setMenu] = useState<MenuRequest | null>(null);
 
@@ -295,6 +308,13 @@ export default function App() {
     // The search the user launched from the want list has stopped listening.
     if (!searchingWant || session.running) return;
     if (!session.closedReason) return;
+    // A wish's stored results replaced the search: no verdict from those.
+    // Put the entry back to waiting, or it reads "Searching" for good.
+    if (session.closedReason === WISHLIST_REASON) {
+      want.update(searchingWant.id, { status: 'pending' });
+      setSearchingWant(null);
+      return;
+    }
     const names = session.rows.flatMap((row) => (
       row.kind === 'release' ? [`${row.release.artist ?? ''} ${row.release.title}`]
         : row.kind === 'track' ? [`${row.track.displayArtist ?? ''} ${row.track.displayTitle}`]
@@ -451,7 +471,8 @@ export default function App() {
   const addWish = useCallback((query: string) => {
     const q = query.trim();
     if (!q || !session.client) return;
-    void session.client.request('wishlist.add', { query: q }).catch(() => {});
+    void session.client.request('wishlist.add', { query: q })
+      .catch((e) => reportFailure('Add to wishlist', e));
     go('wishlist');
   }, [session.client, go]);
 
@@ -699,7 +720,8 @@ export default function App() {
         run: () => {
           const q = session.query.trim();
           if (!q) return;
-          void session.client?.request('wishlist.add', { query: q }).catch(() => {});
+          void session.client?.request('wishlist.add', { query: q })
+      .catch((e) => reportFailure('Add to wishlist', e));
           go('wishlist');
         },
       });
@@ -711,7 +733,7 @@ export default function App() {
           if (!q) return;
           void session.client?.request('saved.add', {
             query: q, filtersJson: serialiseFilters(session.filters),
-          }).catch(() => {});
+          }).catch((e) => reportFailure('Save this search', e));
         },
       });
     }
@@ -755,11 +777,17 @@ export default function App() {
       const who = r.peer.username;
       items.push(
         { id: 'get', label: `Download folder — ${r.trackCount} tracks`,
-          run: () => void transfers.enqueueFolder(who, r.folderPath) },
+          run: () => {
+            // The same rules as the card's Get; this path skipped them.
+            const verdict = judgeRelease(r.files, prefs.settings);
+            if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+            void transfers.enqueueFolder(who, r.folderPath);
+          } },
         { id: 'browse', label: `Browse ${who}`, separated: true,
           run: () => { browse.browse(who); go('browsing'); } },
         { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who }).catch(() => {}) },
+          run: () => void session.client?.request('buddies.add', { username: who })
+            .catch((e) => reportFailure(`Follow ${who}`, e)) },
         { id: 'msg', label: `Message ${who}`,
           run: () => { chat.openPrivate(who); go('messages'); } },
         { id: 'wish', label: 'Add to wishlist', separated: true,
@@ -778,11 +806,21 @@ export default function App() {
       items.push(
         { id: 'get', label, run: () => void transfers.enqueue(who, file.path, file.size) },
         { id: 'getfolder', label: 'Download the whole folder',
-          run: () => void transfers.enqueueFolder(who, file.parsed.folderPath) },
+          run: () => {
+            // The folder's files as far as these results show them, judged by
+            // the same rules as a release Get.
+            const inFolder = session.snapshot().files.filter((s) => (
+              s.user === who && s.parsed.folderPath === file.parsed.folderPath
+            ));
+            const verdict = judgeRelease(inFolder.length > 0 ? inFolder : [file], prefs.settings);
+            if (!verdict.allowed) { showNotice(verdict.reason ?? ''); return; }
+            void transfers.enqueueFolder(who, file.parsed.folderPath);
+          } },
         { id: 'browse', label: `Browse ${who}`, separated: true,
           run: () => { browse.browse(who); go('browsing'); } },
         { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who }).catch(() => {}) },
+          run: () => void session.client?.request('buddies.add', { username: who })
+            .catch((e) => reportFailure(`Follow ${who}`, e)) },
         { id: 'msg', label: `Message ${who}`,
           run: () => { chat.openPrivate(who); go('messages'); } },
         { id: 'wish', label: 'Add to wishlist', separated: true,
@@ -797,7 +835,8 @@ export default function App() {
         { id: 'browse', label: `Browse everything ${who} shares`,
           run: () => { browse.browse(who); go('browsing'); } },
         { id: 'follow', label: `Follow ${who}`,
-          run: () => void session.client?.request('buddies.add', { username: who }).catch(() => {}) },
+          run: () => void session.client?.request('buddies.add', { username: who })
+            .catch((e) => reportFailure(`Follow ${who}`, e)) },
         { id: 'msg', label: `Message ${who}`,
           run: () => { chat.openPrivate(who); go('messages'); } },
         { id: 'copyuser', label: 'Copy username', separated: true, run: copy(who) },
@@ -805,7 +844,7 @@ export default function App() {
     }
 
     setMenu({ x, y, items });
-  }, [transfers, browse, chat, session.client, go, addWish]);
+  }, [transfers, browse, chat, session.client, go, addWish, prefs.settings]);
 
   return (
     <div className="app">
@@ -826,7 +865,7 @@ export default function App() {
         downloadCount={transfers.activeCount}
         browsingUser={browse.current?.username ?? null}
         status={connectionStatus(session)}
-        throughput={throughput}
+        client={session.client}
         roomUnread={roomUnread}
         privateUnread={privateUnread}
         wantPending={want.pendingCount}
@@ -836,6 +875,12 @@ export default function App() {
         uploadCount={transfers.uploadCount}
       />
       <main className="pane" data-scrolled="false">
+        {/* Keyed by SCREEN, not by sidebar entry: going somewhere else is a
+            fresh start, so one broken screen never follows you round the app —
+            but Rooms and Private chats are one screen, and so are Downloads,
+            Completed and Failed. Keying those apart remounted them on every
+            switch and threw away their drafts, filters and selection. */}
+        <ErrorBoundary key={screenOf(section)} label={`the ${section} screen`}>
         {section === 'search' ? (
           <SearchView
             session={session}
@@ -864,7 +909,7 @@ export default function App() {
               void session.client?.request('saved.add', {
                 query: session.query.trim(),
                 filtersJson: serialiseFilters(session.filters),
-              }).catch(() => {});
+              }).catch((e) => reportFailure('Save this search', e));
             }}
           />
         ) : section === 'chat' || section === 'messages' ? (
@@ -974,6 +1019,12 @@ export default function App() {
             client={session.client}
             signedIn={isSignedIn(session.serverState)}
             onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
+            onOpenHits={(q) => {
+              const found = wishHits.byQuery[q]?.sources ?? [];
+              setSection('search');
+              if (found.length > 0) searchTabs.showResults(q, found);
+              else searchTabs.openWith(q);
+            }}
             hits={wishHits}
             currentFilters={session.filters}
           />
@@ -1020,7 +1071,9 @@ export default function App() {
             youtube={youtube}
           />
         )}
+        </ErrorBoundary>
       </main>
+      <Failures />
     </div>
   );
 }

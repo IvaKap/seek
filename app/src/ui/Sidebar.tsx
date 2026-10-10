@@ -18,7 +18,8 @@ import {
   IconLabels,
 } from '../icons/index.tsx';
 import { speed } from '../domain/format.ts';
-import type { Throughput } from '../data/throughputStore.ts';
+import { useThroughput } from '../data/throughputStore.ts';
+import type { SidecarClient } from '../data/sidecarClient.ts';
 
 export type Section =
   | 'search'
@@ -79,7 +80,7 @@ function Rate({ direction, bytesPerSec }: { direction: 'down' | 'up'; bytesPerSe
 }
 
 export function Sidebar({
-  active, onSelect, downloadCount, browsingUser, status, throughput,
+  active, onSelect, downloadCount, browsingUser, status, client,
   roomUnread = 0, privateUnread = 0, wantPending = 0, hasSessions = false,
   hasLabels = false, uploadCount = 0, wishFound = 0,
 }: {
@@ -89,7 +90,8 @@ export function Sidebar({
   browsingUser: string | null;
   status: ConnectionStatus;
   /** Live aggregate rate from the engine. Absent in offline fixture mode. */
-  throughput?: Throughput;
+  /** For the live rate in the footer, which reads the engine itself. */
+  client?: SidecarClient | null;
   /** Want list entries not yet looked for. Absent, not zero, when there are none. */
   wantPending?: number;
   /** Wishes that have found something you have not looked at yet. */
@@ -229,7 +231,7 @@ export function Sidebar({
                   type="button"
                   className="sidebar__header"
                   aria-expanded={!isCollapsed}
-                  onPointerDown={() => toggle(g.id)}
+                  onClick={() => toggle(g.id)}
                 >
                   <IconChevronDown
                     size={12}
@@ -248,7 +250,7 @@ export function Sidebar({
                       type="button"
                       className="nav-item"
                       aria-current={active === item.id ? 'page' : undefined}
-                      onPointerDown={() => onSelect(item.id)}
+                      onClick={() => onSelect(item.id)}
                     >
                       <span className="nav-item__icon">{item.icon}</span>
                       <span className="nav-item__label">{item.label}</span>
@@ -275,7 +277,7 @@ export function Sidebar({
             type="button"
             className="nav-item"
             aria-current={active === 'settings' ? 'page' : undefined}
-            onPointerDown={() => onSelect('settings')}
+            onClick={() => onSelect('settings')}
           >
             <span className="nav-item__icon"><IconSettings size={16} /></span>
             <span className="nav-item__label">Settings</span>
@@ -289,19 +291,32 @@ export function Sidebar({
           <span className="status-dot" data-state={status.dot} aria-hidden />
           <span>{status.label}</span>
         </span>
-        {/* Only once the engine has actually reported. A rate of zero is real
-            information — nothing is moving — but a rate of zero before any
-            stats event has arrived is just an absence dressed as a fact. */}
-        {throughput?.live && (
-          <span
-            className="sidebar__rate"
-            title={`${throughput.connections} peer connections open`}
-          >
-            <Rate direction="down" bytesPerSec={throughput.down} />
-            <Rate direction="up" bytesPerSec={throughput.up} />
-          </span>
-        )}
+        <LiveRate client={client ?? null} />
       </div>
     </nav>
+  );
+}
+
+/**
+ * The live rate, subscribed HERE rather than at the top of the app.
+ *
+ * It updates once a second, and held in App it re-rendered every screen once a
+ * second — at idle too, since the engine reports zeros on the same clock. Down
+ * here a tick redraws two numbers.
+ */
+function LiveRate({ client }: { client: SidecarClient | null }) {
+  const throughput = useThroughput(client);
+  /* Only once the engine has actually reported. A rate of zero is real
+     information — nothing is moving — but a rate of zero before any stats
+     event has arrived is just an absence dressed as a fact. */
+  if (!throughput.live) return null;
+  return (
+    <span
+      className="sidebar__rate"
+      title={`${throughput.connections} peer connections open`}
+    >
+      <Rate direction="down" bytesPerSec={throughput.down} />
+      <Rate direction="up" bytesPerSec={throughput.up} />
+    </span>
   );
 }

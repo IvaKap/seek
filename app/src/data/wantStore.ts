@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import { fuzzyKey } from '../domain/text.ts';
+import { readUntilAnswered, reportFailure } from './failures.ts';
 
 export type WantStatus = 'pending' | 'searching' | 'found' | 'downloaded' | 'not_found';
 export type WantSource = 'youtube' | 'bandcamp' | 'discogs' | 'manual' | 'fingerprint';
@@ -114,10 +115,10 @@ export function useWant(client: SidecarClient | null): WantSession {
     const off = client.on('want.changed', (data) => {
       setEntries((data as { entries: WantEntry[] }).entries ?? []);
     });
-    void client.request<{ entries: WantEntry[] }>('want.list')
-      .then((r) => setEntries(r.entries ?? []))
-      .catch(() => {});
-    return off;
+    const stop = readUntilAnswered<{ entries: WantEntry[] }>(
+      client, 'want.list', undefined, (r) => setEntries(r.entries ?? []),
+    );
+    return () => { off(); stop(); };
   }, [client]);
 
   const add = useCallback(async (incoming: NewWantEntry[]) => {
@@ -132,7 +133,7 @@ export function useWant(client: SidecarClient | null): WantSession {
     if (!client || ids.length === 0) return;
     void client.request<{ entries: WantEntry[] }>('want.remove', { ids })
       .then((r) => setEntries(r.entries ?? []))
-      .catch(() => {});
+      .catch((e) => reportFailure('Remove from the want list', e));
   }, [client]);
 
   const update = useCallback((id: string, patch: Partial<Pick<WantEntry,

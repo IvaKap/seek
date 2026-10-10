@@ -95,7 +95,7 @@ export function ImportPanel({ client }: { client: SidecarClient | null }) {
       <div className="settings__text">
         <span className="settings__label">Could not read the configuration</span>
         <span className="settings__hint">{error}</span>
-        <button type="button" className="btn pressable" onPointerDown={() => void inspect()}>
+        <button type="button" className="btn pressable" onClick={() => void inspect()}>
           Try again
         </button>
       </div>
@@ -115,7 +115,7 @@ export function ImportPanel({ client }: { client: SidecarClient | null }) {
             type="button"
             className="btn pressable"
             disabled={busy}
-            onPointerDown={() => void inspect()}
+            onClick={() => void inspect()}
           >
             {busy ? 'Checking…' : 'Check for a Nicotine+ configuration'}
           </button>
@@ -201,7 +201,7 @@ export function ImportPanel({ client }: { client: SidecarClient | null }) {
           type="button"
           className="btn btn--primary pressable"
           disabled={busy || (!wantCredentials && !wantShares && !wantFolder)}
-          onPointerDown={() => void apply()}
+          onClick={() => void apply()}
         >
           {busy ? 'Importing…' : 'Import selected'}
         </button>

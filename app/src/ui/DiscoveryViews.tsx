@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
+import { readUntilAnswered, reportFailure } from '../data/failures.ts';
 import type { Filters } from '../domain/types.ts';
 import { EMPTY_FILTERS } from '../domain/types.ts';
 import { IconEmpty, IconSearch, IconUser, IconUsers } from '../icons/index.tsx';
@@ -60,16 +61,16 @@ export function HistoryView({
   const [items, setItems] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!client) return;
-    void client.request<{ items: string[] }>('history.list')
-      .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
+    if (!client) return undefined;
+    return readUntilAnswered<{ items: string[] }>(
+      client, 'history.list', undefined, (r) => setItems(r.items ?? []),
+    );
   }, [client]);
 
   const clear = useCallback(() => {
     void client?.request<{ items: string[] }>('history.clear')
       .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
+      .catch((e) => reportFailure('Clear the search history', e));
   }, [client]);
 
   return (
@@ -78,7 +79,7 @@ export function HistoryView({
         <h1 className="pane__title">Search History</h1>
         {items.length > 0 && (
           <div className="browse__form">
-            <button type="button" className="btn pressable" onPointerDown={clear}>
+            <button type="button" className="btn pressable" onClick={clear}>
               Clear history
             </button>
           </div>
@@ -99,7 +100,7 @@ export function HistoryView({
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => onSearch(q)}
+                  onClick={() => onSearch(q)}
                 >
                   Search again
                 </button>
@@ -125,16 +126,16 @@ export function SavedView({
   const [items, setItems] = useState<SavedSearch[]>([]);
 
   useEffect(() => {
-    if (!client) return;
-    void client.request<{ items: SavedSearch[] }>('saved.list')
-      .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
+    if (!client) return undefined;
+    return readUntilAnswered<{ items: SavedSearch[] }>(
+      client, 'saved.list', undefined, (r) => setItems(r.items ?? []),
+    );
   }, [client]);
 
   const remove = useCallback((query: string) => {
     void client?.request<{ items: SavedSearch[] }>('saved.remove', { query })
       .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
+      .catch((e) => reportFailure('Remove the saved search', e));
   }, [client]);
 
   return (
@@ -158,14 +159,14 @@ export function SavedView({
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => onOpen(s.query, deserialiseFilters(s.filtersJson))}
+                  onClick={() => onOpen(s.query, deserialiseFilters(s.filtersJson))}
                 >
                   Open
                 </button>
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => remove(s.query)}
+                  onClick={() => remove(s.query)}
                 >
                   Remove
                 </button>
@@ -193,10 +194,10 @@ export function FollowedView({
   useEffect(() => {
     if (!client) return;
     const off = client.on('buddies.state', (d) => setItems((d as { items: string[] }).items ?? []));
-    void client.request<{ items: string[] }>('buddies.list')
-      .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
-    return off;
+    const stop = readUntilAnswered<{ items: string[] }>(
+      client, 'buddies.list', undefined, (r) => setItems(r.items ?? []),
+    );
+    return () => { off(); stop(); };
   }, [client]);
 
   const add = useCallback(() => {
@@ -204,13 +205,13 @@ export function FollowedView({
     if (!who || !client) return;
     void client.request<{ items: string[] }>('buddies.add', { username: who })
       .then((r) => { setItems(r.items ?? []); setDraft(''); })
-      .catch(() => {});
+      .catch((e) => reportFailure(`Follow ${who}`, e));
   }, [client, draft]);
 
   const remove = useCallback((who: string) => {
     void client?.request<{ items: string[] }>('buddies.remove', { username: who })
       .then((r) => setItems(r.items ?? []))
-      .catch(() => {});
+      .catch((e) => reportFailure(`Unfollow ${who}`, e));
   }, [client]);
 
   return (
@@ -251,14 +252,14 @@ export function FollowedView({
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => onBrowse(who)}
+                  onClick={() => onBrowse(who)}
                 >
                   Browse
                 </button>
                 <button
                   type="button"
                   className="verify pressable"
-                  onPointerDown={() => remove(who)}
+                  onClick={() => remove(who)}
                 >
                   Unfollow
                 </button>

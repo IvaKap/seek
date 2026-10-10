@@ -138,7 +138,7 @@ export function PreviewButton({
       title={mine && preview.state === 'failed' && preview.error
         ? preview.error
         : 'Play a short excerpt — Space'}
-      onPointerDown={() => preview.toggle(id)}
+      onClick={() => preview.toggle(id)}
     >
       {label}
     </button>

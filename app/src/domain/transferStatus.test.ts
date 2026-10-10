@@ -18,16 +18,14 @@ function t(over: Partial<Parameters<typeof transferStatus>[0]> = {}) {
 }
 
 describe('the queue, which is where most downloads actually are', () => {
-  it('states the position when the peer gave one', () => {
-    expect(t({ state: 'queued', queuePosition: 39 }).text).toBe(
-      'Waiting in their queue — number 39',
-    );
+  it('states the position when the peer gave one, short enough not to wrap', () => {
+    expect(t({ state: 'queued', queuePosition: 39 }).text).toBe('#39 in queue');
   });
 
   it('still says it is queued when the peer gave no number', () => {
     /* Upstream reports 0 both for "not queued" and "queued, position unknown",
      * so the sidecar sends null. A queue with no number is still a queue. */
-    expect(t({ state: 'queued', queuePosition: null }).text).toBe('Waiting in their queue');
+    expect(t({ state: 'queued', queuePosition: null }).text).toBe('In their queue');
   });
 
   it('does not offer Retry for something that is working', () => {
@@ -172,7 +170,18 @@ describe('groupStatus — one line for a whole release', () => {
   it('falls back to the queue when nothing is wrong', () => {
     const line = groupStatus([t(), t({ state: 'queued', queuePosition: 7 })]);
     expect(line?.tone).toBe('waiting');
-    expect(line?.text).toContain('7');
+    expect(line?.text).toBe('#7 in queue');
+  });
+
+  it('shows the LOWEST queue position — the file that starts first', () => {
+    /* A folder queues file behind file, and the first in the list need not be
+     * the front of the queue. */
+    const line = groupStatus([
+      t({ state: 'queued', queuePosition: 1435 }),
+      t({ state: 'queued', queuePosition: 1433 }),
+      t({ state: 'queued', queuePosition: 1434 }),
+    ]);
+    expect(line?.text).toBe('#1433 in queue');
   });
 
   it('counts a partial failure, so one bad track is not read as a dead release', () => {

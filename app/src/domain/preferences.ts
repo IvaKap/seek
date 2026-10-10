@@ -51,6 +51,32 @@ export function judge(file: SourceFile, prefs: DownloadPrefs): Verdict {
 }
 
 /**
+ * A whole release, for Get on a release card or "Download folder".
+ *
+ * Those queued the folder without asking, so "Reject suspected transcodes" and
+ * the minimum bitrate applied to a track's Get but not to the release Get that
+ * is the default view. A folder is fetched whole — audio, cover, checksums —
+ * so it cannot be fetched minus its bad files: a release with any file the
+ * rules refuse is refused, and says how many, so the good ones can still be
+ * taken one by one from the expanded card.
+ */
+export function judgeRelease(files: SourceFile[], prefs: DownloadPrefs): Verdict {
+  const failing = files
+    .map((f) => judge(f, prefs))
+    .filter((v) => !v.allowed);
+  if (failing.length === 0) return { allowed: true };
+  const first = failing[0].reason ?? '';
+  if (failing.length === files.length) {
+    return { allowed: false, reason: `Every file in this release fails your download rules. ${first}` };
+  }
+  return {
+    allowed: false,
+    reason: `${failing.length} of ${files.length} files fail your download rules (${first}) `
+      + 'A folder downloads whole, so open the release and take the others one by one.',
+  };
+}
+
+/**
  * Which source to actually queue from a set of alternatives.
  *
  * The default is the highest combined score, which weighs speed and queue

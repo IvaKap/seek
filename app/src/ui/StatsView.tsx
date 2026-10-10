@@ -21,20 +21,12 @@
 
 import { useMemo } from 'react';
 import type { LibraryRelease, LibrarySession } from '../data/libraryStore.ts';
+import { parseFormats } from '../data/libraryStore.ts';
 import { fileSize } from '../domain/format.ts';
 
 const LOSSLESS = new Set(['flac', 'wav', 'wave', 'aiff', 'aif', 'alac', 'ape', 'wv']);
 
 interface FormatRow { name: string; count: number; lossless: boolean }
-
-function parseFormats(json: string): Record<string, number> {
-  try {
-    const value = JSON.parse(json || '{}') as Record<string, number>;
-    return typeof value === 'object' && value ? value : {};
-  } catch {
-    return {};
-  }
-}
 
 function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (

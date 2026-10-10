@@ -271,7 +271,7 @@ export function DiscoverPreviewCard({
                         <button
                           type="button"
                           className="verify pressable"
-                          onPointerDown={() => onSearchTrack(trackQuery(shown, t))}
+                          onClick={() => onSearchTrack(trackQuery(shown, t))}
                           aria-label={`Search for ${t.artist || shown.artist} — ${t.title}`}
                         >
                           Search
@@ -289,7 +289,7 @@ export function DiscoverPreviewCard({
               {shown.provider === 'youtube' && shown.kind === 'track' && onFindTracklist && (
                 <div className="dig__tracklist">
                   {!tracklist ? (
-                    <button type="button" className="verify pressable" onPointerDown={onFindTracklist}>
+                    <button type="button" className="verify pressable" onClick={onFindTracklist}>
                       Look for a tracklist
                     </button>
                   ) : tracklist.loading ? (
@@ -320,7 +320,7 @@ export function DiscoverPreviewCard({
                         )}
                       </ol>
                       {onWantTracklist && (
-                        <button type="button" className="verify pressable" onPointerDown={onWantTracklist}>
+                        <button type="button" className="verify pressable" onClick={onWantTracklist}>
                           Add all {tracklist.tracks.length} to Want List
                         </button>
                       )}
@@ -341,7 +341,7 @@ export function DiscoverPreviewCard({
             {playlistId && onImportPlaylist && (
               <div className="dig__tracklist">
                 {!playlist ? (
-                  <button type="button" className="verify pressable" onPointerDown={onImportPlaylist}>
+                  <button type="button" className="verify pressable" onClick={onImportPlaylist}>
                     Read this playlist
                   </button>
                 ) : playlist.loading ? (
@@ -350,7 +350,7 @@ export function DiscoverPreviewCard({
                   <span className="dig__hint">
                     A YouTube Data API key is needed to read a playlist.
                     {onOpenSettings && (
-                      <button type="button" className="verify pressable" onPointerDown={onOpenSettings}>
+                      <button type="button" className="verify pressable" onClick={onOpenSettings}>
                         Open Settings
                       </button>
                     )}
@@ -389,7 +389,7 @@ export function DiscoverPreviewCard({
                       )}
                     </ol>
                     {onWantPlaylist && (
-                      <button type="button" className="verify pressable" onPointerDown={onWantPlaylist}>
+                      <button type="button" className="verify pressable" onClick={onWantPlaylist}>
                         Add all {playlist.entries.length} to Want List
                       </button>
                     )}
@@ -409,7 +409,7 @@ export function DiscoverPreviewCard({
               type="button"
               className="btn btn--primary pressable"
               disabled={shown.loading}
-              onPointerDown={onBrowse}
+              onClick={onBrowse}
             >
               {/* Bandcamp does not distinguish a label page from an artist
                   page, so the wording does not either rather than asserting
@@ -422,7 +422,7 @@ export function DiscoverPreviewCard({
               type="button"
               className="btn btn--primary pressable"
               disabled={shown.loading}
-              onPointerDown={onSearch}
+              onClick={onSearch}
             >
               Search Soulseek
               <kbd className="dig__kbd" aria-hidden>↵</kbd>
@@ -436,14 +436,14 @@ export function DiscoverPreviewCard({
               title={wanted
                 ? 'Already on your want list'
                 : 'Keep this for later without searching now'}
-              onPointerDown={onWant}
+              onClick={onWant}
             >
               {wanted ? 'On the list' : 'Want List'}
               {!wanted && <kbd className="dig__kbd" aria-hidden>⌥↵</kbd>}
             </button>
           )}
           {shown.needs === 'discogsToken' && onOpenSettings && (
-            <button type="button" className="verify pressable" onPointerDown={onOpenSettings}>
+            <button type="button" className="verify pressable" onClick={onOpenSettings}>
               Open Settings
             </button>
           )}
@@ -452,7 +452,7 @@ export function DiscoverPreviewCard({
             className="dig__close pressable"
             aria-label="Dismiss (Escape)"
             title="Dismiss — the link stays in the search field"
-            onPointerDown={onDismiss}
+            onClick={onDismiss}
           >
             <IconClose size={14} painted={1.5} />
           </button>

@@ -121,3 +121,137 @@ class TestScanCountsEachFileOnce:
         index = Library(str(tmp_path / "index.json"))
         state = index.scan([str(downloads), str(music)], read_tags=False)
         assert state["roots"] == [os.path.realpath(str(music))]
+
+
+class TestAnUnpluggedDriveIsNotForgotten:
+    """A rescan with an external drive unplugged used to rebuild the index from
+    the folders that were still there: every release on the drive vanished, the
+    drive dropped out of the folder list, and plugging it back in did not bring
+    it back. Unplugging is simulated by renaming the folder away."""
+
+    def _scan_then_unplug(self, tmp_path):
+        downloads = tmp_path / "Downloads"
+        drive = tmp_path / "SSD"
+        _track(str(downloads / "Burial - Untrue"), "01 - Archangel.flac")
+        _track(str(drive / "Actress - Splazsh"), "01 - Hubble.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(downloads), str(drive)], read_tags=False)
+        os.rename(drive, tmp_path / "SSD-unplugged")
+        return index, downloads, drive
+
+    def test_its_releases_survive_a_rescan(self, tmp_path):
+        index, downloads, drive = self._scan_then_unplug(tmp_path)
+        state = index.scan([str(downloads), str(drive)], read_tags=False)
+
+        names = {r["release"] for r in index.releases()}
+        assert names == {"Untrue", "Splazsh"}
+        assert state["offlineRoots"] == [os.path.realpath(str(drive))]
+        # Still in the folder list, so the next Rescan asks for it again.
+        assert os.path.realpath(str(drive)) in state["roots"]
+
+    def test_it_comes_back_when_plugged_in(self, tmp_path):
+        index, downloads, drive = self._scan_then_unplug(tmp_path)
+        index.scan([str(downloads), str(drive)], read_tags=False)
+        os.rename(tmp_path / "SSD-unplugged", drive)
+        state = index.scan([str(downloads), str(drive)], read_tags=False)
+        assert state["offlineRoots"] == []
+        assert {r["release"] for r in index.releases()} == {"Untrue", "Splazsh"}
+
+    def test_leaving_it_out_of_the_roots_forgets_it(self, tmp_path):
+        """The way to say "that drive is gone for good"."""
+        index, downloads, _drive = self._scan_then_unplug(tmp_path)
+        state = index.scan([str(downloads)], read_tags=False)
+        assert state["offlineRoots"] == []
+        assert {r["release"] for r in index.releases()} == {"Untrue"}
+
+    def test_a_copy_on_disk_wins_over_the_remembered_one(self, tmp_path):
+        """The same release on both: counted once, from the copy that is here."""
+        index, downloads, drive = self._scan_then_unplug(tmp_path)
+        _track(str(downloads / "Actress - Splazsh"), "01 - Hubble.flac")
+        _track(str(downloads / "Actress - Splazsh"), "02 - Maze.flac")
+        index.scan([str(downloads), str(drive)], read_tags=False)
+        splazsh = next(r for r in index.releases() if r["release"] == "Splazsh")
+        assert splazsh["trackCount"] == 2
+
+
+class TestNothingIsCappedOrHalfWritten:
+    def test_every_release_is_listed(self, tmp_path):
+        """It was cut at 2,000, so a large collection lost its tail of the
+        alphabet from the Library screen with nothing saying so."""
+        for n in range(2_100):
+            _track(str(tmp_path / f"Artist {n:04d} - Record {n:04d}"), "01 - x.mp3")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)], read_tags=False)
+        assert len(index.releases()) == 2_100
+
+    def test_a_scan_that_fails_keeps_the_old_index(self, tmp_path, monkeypatch):
+        _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        path = str(tmp_path / "index.json")
+        index = Library(path)
+        index.scan([str(tmp_path)], read_tags=False)
+
+        def boom(*_args, **_kwargs):
+            raise RuntimeError("volume went away mid-walk")
+
+        monkeypatch.setattr(os, "walk", boom)
+        try:
+            index.scan([str(tmp_path)], read_tags=False)
+        except RuntimeError:
+            pass
+        assert {r["release"] for r in index.releases()} == {"Untrue"}
+        assert not index.state()["scanning"]
+        # And what is on disk still loads.
+        assert {r["release"] for r in Library(path).releases()} == {"Untrue"}
+
+    def test_the_index_is_written_whole(self, tmp_path):
+        """Atomic: the temp file is gone and the real one parses."""
+        _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        path = str(tmp_path / "index.json")
+        Library(path).scan([str(tmp_path)], read_tags=False)
+        assert not os.path.exists(path + ".tmp")
+        assert {r["release"] for r in Library(path).releases()} == {"Untrue"}
+
+
+class TestAScanThatIsInterrupted:
+    def test_a_drive_pulled_out_mid_walk_keeps_its_last_full_picture(self, tmp_path, monkeypatch):
+        """os.walk swallows the errors of a vanished folder and just stops, so a
+        drive ejected half way read as a smaller collection."""
+        downloads = tmp_path / "Downloads"
+        drive = tmp_path / "SSD"
+        _track(str(downloads / "Burial - Untrue"), "01 - Archangel.flac")
+        _track(str(drive / "Actress - Splazsh"), "01 - Hubble.flac")
+        _track(str(drive / "Drexciya - Neptune's Lair"), "01 - Andreaen Sand Dunes.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(downloads), str(drive)], read_tags=False)
+
+        real_walk = os.walk
+
+        def ejecting_walk(top, *args, **kwargs):
+            for i, step in enumerate(real_walk(top, *args, **kwargs)):
+                yield step
+                if os.path.realpath(top) == os.path.realpath(str(drive)) and i == 1:
+                    os.rename(drive, tmp_path / "SSD-ejected")
+                    return
+
+        monkeypatch.setattr(os, "walk", ejecting_walk)
+        state = index.scan([str(downloads), str(drive)], read_tags=False)
+
+        assert {r["release"] for r in index.releases()} == {"Untrue", "Splazsh", "Neptune's Lair"}
+        assert state["offlineRoots"] == [os.path.realpath(str(drive))]
+
+    def test_cancel_keeps_the_old_index(self, tmp_path, monkeypatch):
+        _track(str(tmp_path / "Burial - Untrue"), "01 - Archangel.flac")
+        index = Library(str(tmp_path / "index.json"))
+        index.scan([str(tmp_path)], read_tags=False)
+        _track(str(tmp_path / "Actress - Splazsh"), "01 - Hubble.flac")
+
+        real_walk = os.walk
+
+        def cancelling_walk(*args, **kwargs):
+            index.cancel()
+            yield from real_walk(*args, **kwargs)
+
+        monkeypatch.setattr(os, "walk", cancelling_walk)
+        state = index.scan([str(tmp_path)], read_tags=False)
+        assert {r["release"] for r in index.releases()} == {"Untrue"}
+        assert state["scanning"] is False
