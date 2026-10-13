@@ -106,7 +106,6 @@ export function BrowseTreeView({
     } catch {
       setOpen(new Set(['']));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [username]);
 
   useEffect(() => {

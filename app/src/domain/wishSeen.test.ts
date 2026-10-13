@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { idsOf, seenId, splitSeen } from './wishSeen.ts';
+import { freshOf, idsOf, seenId } from './wishSeen.ts';
 import type { SourceFile } from './types.ts';
 
 const src = (id: string) => ({ id } as SourceFile);
@@ -84,45 +84,36 @@ describe('seenId', () => {
   });
 });
 
-describe('splitSeen', () => {
+describe('freshOf', () => {
   const a = src('u1 a.flac');
   const b = src('u1 b.flac');
   const c = src('u2 c.flac');
 
   it('calls everything new when nothing has been seen', () => {
-    const { fresh, seenCount } = splitSeen([a, b], new Set());
-    expect(fresh).toEqual([a, b]);
-    expect(seenCount).toBe(0);
+    expect(freshOf([a, b], new Set())).toEqual([a, b]);
   });
 
   it('holds back what has been seen', () => {
-    const { fresh, seenCount } = splitSeen([a, b, c], new Set([seenId(a), seenId(c)]));
-    expect(fresh).toEqual([b]);
-    expect(seenCount).toBe(2);
+    expect(freshOf([a, b, c], new Set([seenId(a), seenId(c)]))).toEqual([b]);
   });
 
   it('reports nothing new when the run is an exact repeat', () => {
     // The ordinary case, every twelve minutes, forever.
     const seen = new Set([seenId(a), seenId(b)]);
-    const { fresh, seenCount } = splitSeen([a, b], seen);
-    expect(fresh).toEqual([]);
-    expect(seenCount).toBe(2);
+    expect(freshOf([a, b], seen)).toEqual([]);
   });
 
   it('keeps the order it was given', () => {
     // The grouper already ranked these; the split must not re-order them.
-    const { fresh } = splitSeen([c, b, a], new Set());
-    expect(fresh.map((s) => s.id)).toEqual(['u2 c.flac', 'u1 b.flac', 'u1 a.flac']);
+    expect(freshOf([c, b, a], new Set()).map((s) => s.id)).toEqual(['u2 c.flac', 'u1 b.flac', 'u1 a.flac']);
   });
 
   it('an unrelated id in the set holds nothing back', () => {
-    const { fresh, seenCount } = splitSeen([a], new Set(['deadbeefcafe']));
-    expect(fresh).toEqual([a]);
-    expect(seenCount).toBe(0);
+    expect(freshOf([a], new Set(['deadbeefcafe']))).toEqual([a]);
   });
 
   it('handles an empty run', () => {
-    expect(splitSeen([], new Set([seenId(a)]))).toEqual({ fresh: [], seenCount: 0 });
+    expect(freshOf([], new Set([seenId(a)]))).toEqual([]);
   });
 });
 

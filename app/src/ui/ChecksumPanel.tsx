@@ -15,11 +15,7 @@ import {
   KIND_LABEL, explainEntry, labelOfEntry, orderedEntries, summarise, toneOfEntry,
 } from '../domain/checksums.ts';
 import type { ChecksumReport } from '../../../shared/protocol.ts';
-
-function baseName(path: string): string {
-  const cut = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  return cut >= 0 ? path.slice(cut + 1) : path;
-}
+import { fileName } from '../data/transferStore.ts';
 
 export function ChecksumPanel({ report }: { report: ChecksumReport }) {
   const s = summarise(report);
@@ -31,7 +27,7 @@ export function ChecksumPanel({ report }: { report: ChecksumReport }) {
         <span className="cks__headline" data-tone={s.tone}>{s.headline}</span>
         {report.sidecars.length > 0 && (
           <span className="cks__meta">
-            {report.sidecars.map((c) => baseName(c.path)).join(', ')}
+            {report.sidecars.map((c) => fileName(c.path)).join(', ')}
           </span>
         )}
         {s.unparsedLines > 0 && (
@@ -53,7 +49,7 @@ export function ChecksumPanel({ report }: { report: ChecksumReport }) {
             return (
               <li className="cks__row" key={`${e.kind}:${e.name}`} data-tone={tone}>
                 <span className="cks__name" title={e.localPath || e.name}>
-                  {baseName(e.name)}
+                  {fileName(e.name)}
                 </span>
                 <span className="cks__kind">{KIND_LABEL[e.kind]}</span>
                 <span className="cks__verdict" data-tone={tone}>

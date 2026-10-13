@@ -46,7 +46,7 @@ const DEBOUNCE_MS = 180;
 /** Per flush. The sidecar is rate limited, so a big burst only queues. */
 const MAX_IN_FLIGHT = 12;
 
-export function useArtwork(client: SidecarClient | null, enabled = true): ArtworkSession {
+export function useArtwork(client: SidecarClient | null): ArtworkSession {
   const [map, setMap] = useState<Map<string, ArtState>>(() => new Map());
   const known = useRef<Set<string>>(new Set());
   const queue = useRef<Map<string, { artist: string; release: string }>>(new Map());
@@ -102,19 +102,19 @@ export function useArtwork(client: SidecarClient | null, enabled = true): Artwor
   }, [client]);
 
   const want = useCallback((key: string, artist: string | null, release: string) => {
-    if (!client || !enabled || !key || !release) return;
+    if (!client || !key || !release) return;
     if (known.current.has(key)) return;
     known.current.add(key);
     setMap((prev) => (prev.has(key) ? prev : new Map(prev).set(key, { state: 'pending' })));
     queue.current.set(key, { artist: artist ?? '', release });
     if (!timer.current) timer.current = window.setTimeout(flush, DEBOUNCE_MS);
-  }, [client, enabled, flush]);
+  }, [client, flush]);
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
 
   return useMemo(() => ({
     get: (key: string) => map.get(key),
     want,
-    enabled: Boolean(client) && enabled,
-  }), [map, want, client, enabled]);
+    enabled: Boolean(client),
+  }), [map, want, client]);
 }

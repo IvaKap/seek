@@ -10,7 +10,7 @@ import type { ConnectionStatus, Section } from './ui/Sidebar.tsx';
 import type { SearchSession } from './data/searchStore.ts';
 import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
-import { SectionView } from './ui/views.tsx';
+import { SettingsView } from './ui/SettingsView.tsx';
 import type { Density, SearchDensity } from './ui/ViewMenu.tsx';
 import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
@@ -125,6 +125,14 @@ function storedDensity(key: string, fallback: Density): Density {
   }
 }
 
+/** Remember a view choice. Storage can be full or switched off; then the
+ * choice simply isn't remembered, which is not worth a word. */
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch { /* not remembered */ }
+}
+
 /**
  * Four distinct states, because collapsing them would lie. A live socket to the
  * sidecar does not mean we are signed in to Soulseek, and saying "Connected"
@@ -193,11 +201,7 @@ export default function App() {
   const [columns, setColumns] = useState<ColumnId[]>(storedColumns);
   const changeColumns = useCallback((next: ColumnId[]) => {
     setColumns(next);
-    try {
-      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
-    } catch {
-      /* nothing to do — the choice simply won't be remembered */
-    }
+    remember(COLUMNS_KEY, JSON.stringify(next));
   }, []);
 
   const [dlDensity, setDlDensity] = useState<Density>(
@@ -518,33 +522,28 @@ export default function App() {
     go('wishlist');
   }, [session.client, go]);
 
+  const saveSearch = useCallback(() => {
+    const q = session.query.trim();
+    if (!q) return;
+    void session.client?.request('saved.add', { query: q, filtersJson: serialiseFilters(session.filters) })
+      .catch((e) => reportFailure('Save this search', e));
+  }, [session.client, session.query, session.filters]);
+
   const changeDensity = useCallback((d: Density) => {
     // Search now supports every density, Grid included, so the value is stored
     // and applied as-is.
     setDensity(d);
-    try {
-      localStorage.setItem(DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
+    remember(DENSITY_KEY, d);
   }, []);
 
   const changeDlDensity = useCallback((d: Density) => {
     setDlDensity(d);
-    try {
-      localStorage.setItem(DL_DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
+    remember(DL_DENSITY_KEY, d);
   }, []);
 
   const changeLibDensity = useCallback((d: Density) => {
     setLibDensity(d);
-    try {
-      localStorage.setItem(LIB_DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
+    remember(LIB_DENSITY_KEY, d);
   }, []);
 
   useEffect(() => {
@@ -663,22 +662,18 @@ export default function App() {
   // the unmount tears the sidecar down. A "run once" guard would skip the restart
   // and leave a permanently empty list in development. `run()` resets cleanly, so
   // being invoked twice is harmless.
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  const tabsRef = useRef(searchTabs);
-  tabsRef.current = searchTabs;
   useEffect(() => {
     // Only against recorded data. Firing a real Soulseek search for someone
     // else's demo query the instant the app opens would be presumptuous, and
     // it burns a search slot the user did not ask for.
-    if (!sessionRef.current.isMock) return;
+    if (!session.isMock) return;
     /* Through `openWith`, like every other search, and for a reason beyond
      * tidiness: it runs in the fresh tab rather than opening one, AND it
      * records that this tab has now searched. Calling `run` directly left the
      * first tab looking untouched, so the user's NEXT search reused it instead
      * of opening a tab — the fixture quietly behaving unlike the real app. */
-    tabsRef.current.openWith('burial');
-  }, []);
+    searchTabs.openWith('burial');
+  }, []); // Mount only: the first render's session and tabs are the ones to use.
 
   /* Actions, not a mirror of the navigation. Rebuilt whenever the state they
    * close over changes, so a command always acts on what is true now. */
@@ -765,24 +760,12 @@ export default function App() {
       list.push({
         id: 'wish.add', group: 'Wishlist', label: 'Add this search to the wishlist',
         hint: session.query || undefined,
-        run: () => {
-          const q = session.query.trim();
-          if (!q) return;
-          void session.client?.request('wishlist.add', { query: q })
-      .catch((e) => reportFailure('Add to wishlist', e));
-          go('wishlist');
-        },
+        run: () => addWish(session.query),
       });
       list.push({
         id: 'saved.add', group: 'Saved', label: 'Save this search with its filters',
         hint: session.query || undefined,
-        run: () => {
-          const q = session.query.trim();
-          if (!q) return;
-          void session.client?.request('saved.add', {
-            query: q, filtersJson: serialiseFilters(session.filters),
-          }).catch((e) => reportFailure('Save this search', e));
-        },
+        run: saveSearch,
       });
     }
 
@@ -806,7 +789,7 @@ export default function App() {
     }
 
     return list;
-  }, [go, session, transfers, browse, changeDensity, labels.labels.length]);
+  }, [go, session, transfers, browse, changeDensity, labels.labels.length, addWish, saveSearch]);
 
   const userActions = useMemo<UserMenuActions>(() => ({
     browse: (who) => { browse.browse(who); go('browsing'); },
@@ -974,12 +957,7 @@ export default function App() {
             onContext={openMenu}
             rooms={chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target)}
             onWish={() => addWish(session.query)}
-            onSave={() => {
-              void session.client?.request('saved.add', {
-                query: session.query.trim(),
-                filtersJson: serialiseFilters(session.filters),
-              }).catch((e) => reportFailure('Save this search', e));
-            }}
+            onSave={saveSearch}
           />
         ) : section === 'chat' || section === 'messages' ? (
           <ChatView
@@ -1042,11 +1020,7 @@ export default function App() {
             library={library}
             artwork={artwork}
             wantedUrls={wantedUrls}
-            onSearch={(entry) => {
-              const q = `${entry.artist} ${entry.title}`.replace(/\s+/g, ' ').trim();
-              setSection('search');
-              searchTabs.openWith(q);
-            }}
+            onSearch={searchCatalogEntry}
             onWant={(entry) => {
               void want.add([{
                 artist: entry.artist,
@@ -1127,9 +1101,8 @@ export default function App() {
             onRejectAuto={autoDownloads.reject}
             discovery={downloadsDiscovery}
           />
-        ) : (
-          <SectionView
-            section={section}
+        ) : section === 'settings' ? (
+          <SettingsView
             client={session.client}
             serverState={session.serverState}
             prefs={prefs}
@@ -1139,7 +1112,7 @@ export default function App() {
             youtube={youtube}
             people={people}
           />
-        )}
+        ) : null}
         </ErrorBoundary>
       </main>
       <Failures />

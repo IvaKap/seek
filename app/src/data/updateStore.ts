@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isTauri } from './sidecarClient.ts';
 
-export type UpdatePhase =
+type UpdatePhase =
   /** Nothing known yet, or nothing to report. */
   | 'idle'
   /** A newer version exists and the user has not answered. */

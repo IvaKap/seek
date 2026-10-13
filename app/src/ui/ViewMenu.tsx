@@ -11,7 +11,8 @@
  * popover to the thing that opened it is what makes the relationship legible.
  */
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
+import { useDismiss } from './useDismiss.ts';
 import { IconCheck, IconFilters, IconMinus, IconPlus } from '../icons/index.tsx';
 import { SORT_LABELS, naturallyDescending } from '../domain/transferOrder.ts';
 import type { SortKey } from '../domain/transferOrder.ts';
@@ -77,21 +78,7 @@ export function ViewMenu<Id extends string = ColumnId>({
   const wrapRef = useRef<HTMLDivElement>(null);
   const id = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  useDismiss(open, [wrapRef], () => setOpen(false));
 
   return (
     <div className="viewmenu" ref={wrapRef}>

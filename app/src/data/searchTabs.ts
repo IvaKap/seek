@@ -30,7 +30,7 @@ import { GLOBAL_SCOPE } from './mockSidecar.ts';
 import type { SearchScope } from './mockSidecar.ts';
 import { showNotice } from './failures.ts';
 
-export interface SearchTab {
+interface SearchTab {
   id: string;
   /** What to print on the tab. The query, or a placeholder before one is run. */
   label: string;
@@ -103,7 +103,7 @@ export const WISHLIST_REASON = 'wishlist';
 
 /** Tabs are searches put away, each holding its results in memory. Past this,
  *  a new search reuses the tab you are on instead of opening another. */
-export const MAX_TABS = 12;
+const MAX_TABS = 12;
 
 /** The label a tab shows before anything has been searched in it. */
 const BLANK = 'New search';
@@ -126,6 +126,10 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
   /** And where each tab searched: the same words somewhere else are a
    *  different search, and must not replace this tab's results. */
   const ranScope = useRef<Map<string, string>>(new Map());
+  /** Everything kept about one tab, dropped together when it goes. */
+  const forgetTab = (id: string) => {
+    for (const m of [parked, labels, usedAt, ranQuery, ranScope]) m.current.delete(id);
+  };
 
   /* The sweep runs on an interval and must see the CURRENT list, not the one
    * that existed when the effect was created. Reading refs rather than adding
@@ -195,11 +199,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     const at = ids.indexOf(id);
     if (at < 0) return;
     const next = ids.filter((x) => x !== id);
-    parked.current.delete(id);
-    labels.current.delete(id);
-    usedAt.current.delete(id);
-    ranQuery.current.delete(id);
-    ranScope.current.delete(id);
+    forgetTab(id);
 
     if (id === activeId) {
       // Focus the neighbour, the way every tab strip does: the one to the
@@ -285,13 +285,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
 
       const next = idsRef.current.filter((id) => !doomed.includes(id));
       if (next.length === 0) return;          // never empty the strip
-      for (const id of doomed) {
-        parked.current.delete(id);
-        labels.current.delete(id);
-        usedAt.current.delete(id);
-        ranQuery.current.delete(id);
-    ranScope.current.delete(id);
-      }
+      for (const id of doomed) forgetTab(id);
       setIds(next);
     }, SWEEP_MS);
     return () => window.clearInterval(timer);

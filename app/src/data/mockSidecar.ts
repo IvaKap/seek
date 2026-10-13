@@ -25,7 +25,7 @@ export type SearchScope =
 
 export const GLOBAL_SCOPE: SearchScope = { mode: 'global' };
 
-export interface RecordedLine {
+interface RecordedLine {
   offsetMs: number;
   frame: WireFrame;
 }
@@ -40,9 +40,6 @@ export interface Sidecar {
   /** Scope is ignored by the fixture replay, which has only one network. */
   start(query: string, handlers: SidecarHandlers, scope?: SearchScope): void;
   stop(): void;
-  /** Replay faster or slower. 1 = as recorded. */
-  setRate(rate: number): void;
-  readonly running: boolean;
 }
 
 /* -------------------------------------------------------------- the fixture */
@@ -131,7 +128,6 @@ function synthesise(targetFiles = 1100): RecordedLine[] {
 export function createMockSidecar(): Sidecar {
   let timers: number[] = [];
   let running = false;
-  let rate = 1;
   /* Generation token. `loadRecording()` is async, so a start/stop/start cycle —
    * which React StrictMode performs on every mount — could otherwise let a
    * SUPERSEDED load resolve after the restart and schedule a second full set of
@@ -145,12 +141,6 @@ export function createMockSidecar(): Sidecar {
   }
 
   return {
-    get running() {
-      return running;
-    },
-    setRate(r: number) {
-      rate = Math.max(0.05, r);
-    },
     start(query: string, handlers: SidecarHandlers) {
       clear();
       running = true;
@@ -163,7 +153,7 @@ export function createMockSidecar(): Sidecar {
         let sawClosed = false;
 
         for (const line of lines) {
-          const delay = line.offsetMs / rate;
+          const delay = line.offsetMs;
           lastOffset = Math.max(lastOffset, delay);
           const ev = line.frame.ev;
           if (ev === 'search.result') {
@@ -199,7 +189,7 @@ export function createMockSidecar(): Sidecar {
                   searchId: 0, reason: 'timeout', resultCount: 0, peerCount: 0,
                 });
               }
-            }, lastOffset + 1500 / rate),
+            }, lastOffset + 1500),
           );
         }
       });

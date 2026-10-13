@@ -33,8 +33,8 @@ import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchResultData } from './adapt.ts';
 import { createGrouper } from '../domain/group.ts';
 import { reliabilityFrom } from '../domain/score.ts';
-import { idsOf, splitSeen } from '../domain/wishSeen.ts';
-import type { Release, SourceFile } from '../domain/types.ts';
+import { freshOf, idsOf } from '../domain/wishSeen.ts';
+import type { SourceFile } from '../domain/types.ts';
 
 /** Per wish, so one popular query cannot crowd out the rest. It is first come,
  *  first kept — the quickest peers, not the best copies — so it is set well
@@ -48,12 +48,7 @@ export interface WishHit {
   sources: SourceFile[];
   /** Only what no previous run showed you. What the badge is about. */
   fresh: SourceFile[];
-  releases: Release[];
   peerCount: number;
-  /** How many of `sources` had already been shown. `sources.length - fresh.length`. */
-  seenCount: number;
-  /** Epoch ms of the most recent result. */
-  foundAt: number;
   /** False once these have been looked at. Drives the badge, not the list. */
   unseen: boolean;
 }
@@ -65,7 +60,6 @@ export interface WishHits {
   unseenCount: number;
   /** Remember this wish's results so a later run does not announce them again. */
   markSeen(query: string): void;
-  forget(query: string): void;
 }
 
 /** A wishlist run, as announced by the sidecar. */
@@ -113,19 +107,17 @@ export function useWishHits(client: SidecarClient | null): WishHits {
        approving an auto-download), covers them all. */
     const offList = client.on('wishlist.state', (d) => {
       const kept = new Set((d as { items: { query: string }[] }).items.map((w) => w.query));
-      for (const query of [...groupers.current.keys()]) {
+      // Every wish known here, including one loaded from seenList that has not
+      // run this session — otherwise re-adding it would inherit stale ids.
+      for (const query of new Set([...groupers.current.keys(), ...seen.current.keys()])) {
         if (kept.has(query)) continue;
         groupers.current.delete(query);
         seen.current.delete(query);
         seenAtRunStart.current.delete(query);
       }
-      setByQuery((prev) => {
-        const gone = Object.keys(prev).filter((q) => !kept.has(q));
-        if (gone.length === 0) return prev;
-        const next = { ...prev };
-        for (const q of gone) delete next[q];
-        return next;
-      });
+      setByQuery((prev) => (Object.keys(prev).every((q) => kept.has(q))
+        ? prev
+        : Object.fromEntries(Object.entries(prev).filter(([q]) => kept.has(q)))));
     });
 
     const offStarted = client.on('search.started', (d) => {
@@ -142,9 +134,7 @@ export function useWishHits(client: SidecarClient | null): WishHits {
       setByQuery((prev) => ({
         ...prev,
         [ev.query]: {
-          query: ev.query, sources: [], fresh: [], releases: [], peerCount: 0,
-          seenCount: 0,
-          foundAt: Date.now(),
+          query: ev.query, sources: [], fresh: [], peerCount: 0,
           // Preserved: a run that finds nothing must not clear a badge the
           // previous run earned. It is cleared by LOOKING, not by time passing.
           unseen: prev[ev.query]?.unseen ?? false,
@@ -171,19 +161,14 @@ export function useWishHits(client: SidecarClient | null): WishHits {
       for (const s of sources) grouper.add(s);
 
       const all = grouper.all.slice(0, PER_WISH_CAP);
-      const { fresh, seenCount } = splitSeen(
-        all, seenAtRunStart.current.get(query) ?? new Set(),
-      );
+      const fresh = freshOf(all, seenAtRunStart.current.get(query) ?? new Set());
       setByQuery((prev) => ({
         ...prev,
         [query]: {
           query,
           sources: all,
           fresh,
-          releases: grouper.releases(all),
           peerCount: new Set(all.map((s) => s.user)).size,
-          seenCount,
-          foundAt: Date.now(),
           // A run that turned up nothing you have not already been shown is
           // not news, and must not light the badge.
           unseen: fresh.length > 0,
@@ -211,8 +196,7 @@ export function useWishHits(client: SidecarClient | null): WishHits {
        old now. `fresh` is deliberately NOT recomputed for other wishes — see
        the note on freezing in domain/wishSeen.ts. */
     setByQuery((prev) => (prev[query]
-      ? { ...prev, [query]: { ...prev[query], unseen: false, fresh: [],
-        seenCount: prev[query].sources.length } }
+      ? { ...prev, [query]: { ...prev[query], unseen: false, fresh: [] } }
       : prev));
 
     void client?.request('wishlist.seen', { query, ids }).catch(() => {
@@ -220,18 +204,6 @@ export function useWishHits(client: SidecarClient | null): WishHits {
          which is the status quo ante, not a broken screen. */
     });
   }, [client, byQuery]);
-
-  const forget = useCallback((query: string) => {
-    groupers.current.delete(query);
-    seen.current.delete(query);
-    seenAtRunStart.current.delete(query);
-    setByQuery((prev) => {
-      if (!(query in prev)) return prev;
-      const next = { ...prev };
-      delete next[query];
-      return next;
-    });
-  }, []);
 
   return {
     byQuery,
@@ -241,6 +213,5 @@ export function useWishHits(client: SidecarClient | null): WishHits {
        tell apart from the first. */
     unseenCount: Object.values(byQuery).filter((h) => h.unseen).length,
     markSeen,
-    forget,
   };
 }

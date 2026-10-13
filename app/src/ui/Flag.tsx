@@ -84,14 +84,14 @@ export function flagEmoji(code: string): string {
   );
 }
 
-export function Flag({ code, className }: { code: string | null | undefined; className?: string }) {
+export function Flag({ code }: { code: string | null | undefined }) {
   const iso = normaliseCountry(code);
   if (iso === null) return null;
 
   const name = countryName(iso);
   return (
     <span
-      className={className ? `flag ${className}` : 'flag'}
+      className="flag"
       /* The emoji is decorative here — a screen reader announcing "flag of
        * Germany" before every username would be noise — so the accessible
        * name is on the wrapper and the glyph itself is hidden. */

@@ -108,7 +108,6 @@
   background: var(--accent); border-color: transparent;
   color: var(--text-on-accent); font-weight: var(--fw-medium);
 }
-.chip__count { opacity: 0.7; }
 
 /* Advanced panel. Height is animated only here, where there is no transform
    equivalent — grid-template-rows 0fr→1fr keeps it off the layout path for the
@@ -306,14 +305,14 @@
 .wants__hint { text-transform: none; letter-spacing: 0; color: var(--text-quaternary); }
 .wants__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
-.want {
+.want, .cat {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
   background: var(--bg-raised);
 }
-@media (hover: hover) and (pointer: fine) { .want:hover { background: var(--bg-hover); } }
+@media (hover: hover) and (pointer: fine) { .want:hover, .cat:hover { background: var(--bg-hover); } }
 .want__art {
   width: 2.5rem; height: 2.5rem; flex: none;
   border-radius: var(--radius-sm); overflow: hidden;
@@ -471,14 +470,6 @@
   display: grid; gap: var(--sp-2);
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
 }
-.cat {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
-  background: var(--bg-raised);
-}
-@media (hover: hover) and (pointer: fine) { .cat:hover { background: var(--bg-hover); } }
 /* Owned records recede rather than disappear: the shape of a catalogue you
    have most of is itself information. */
 .cat[data-owned='true'] { opacity: 0.6; }
@@ -854,7 +845,6 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro); color: var(--text-tertiary);
   cursor: help; flex: none;
 }
-.row__year { margin-left: var(--sp-2); color: var(--text-tertiary); font-size: var(--fs-secondary); }
 .row__free {
   margin-left: var(--sp-2); padding: 0 var(--sp-1);
   border-radius: var(--radius-sm); background: var(--bg-sunken);
@@ -1397,7 +1387,6 @@
 /* A sentence, not a token: the whole width of a block row. */
 .settings__input--wide { width: 100%; margin-top: var(--sp-2); }
 .settings__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.settings__suffix { font-size: var(--fs-caption); color: var(--text-tertiary); }
 .settings__static { font-size: var(--fs-secondary); color: var(--text-tertiary); }
 /* A filesystem path is long, monospaced and worth selecting. It wraps rather
    than truncating: a path you cannot read all of is a path you cannot use. */
@@ -2499,7 +2488,6 @@
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   padding-bottom: var(--sp-2); border-bottom: 1px solid var(--separator);
 }
-.browse__who { font-size: var(--fs-body); color: var(--text-primary); }
 .browse__stat { font-size: var(--fs-caption); color: var(--text-secondary); }
 .shares__blocked { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
 .lib__offline { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
@@ -3575,7 +3563,7 @@
   padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
-.libtable__head {
+.libtable__head, .yt__head {
   position: sticky; top: 0; z-index: 1;
   background: var(--material-header);
   backdrop-filter: saturate(180%) blur(20px);
@@ -3648,14 +3636,6 @@
   gap: var(--sp-3); align-items: center;
   padding: var(--sp-2);
   width: max-content; min-width: 100%;
-}
-.yt__head {
-  position: sticky; top: 0; z-index: 1;
-  background: var(--material-header);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 0.5px solid var(--separator);
-  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
-  text-transform: uppercase; color: var(--text-tertiary);
 }
 /* ------------------------------------------------------------- colhead -- */
 /* A table header cell (ui/columnHeaders.tsx), shared by the search table and

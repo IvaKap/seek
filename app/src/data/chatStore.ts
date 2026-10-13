@@ -34,14 +34,14 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-export interface ChatRoom {
+interface ChatRoom {
   name: string;
   userCount: number;
   joined: boolean;
   private: boolean;
 }
 
-export type MemberStatus = 'online' | 'away' | 'offline';
+type MemberStatus = 'online' | 'away' | 'offline';
 
 /** Someone in a room, as the server described them. */
 export interface ChatMember {

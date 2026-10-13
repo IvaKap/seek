@@ -36,7 +36,7 @@ export type TransferState =
   | 'connection_timeout' | 'download_folder_error' | 'local_file_error'
   | 'unknown';
 
-export type TransferDirection = 'download' | 'upload';
+type TransferDirection = 'download' | 'upload';
 
 export interface Transfer {
   id: string;
@@ -182,7 +182,7 @@ const BADGE_RANK: Record<QueueBadge, number> = {
   downloading: 5, queued: 4, paused: 3, failed: 2, done: 1, idle: 0,
 };
 
-export interface QueueMaps {
+interface QueueMaps {
   /** By `transferKey` — one file's exact state, for a track/source/file row. */
   files: Map<string, TransferState>;
   /** By `folderKey` — the liveliest badge across a folder, for a release card. */
@@ -198,7 +198,7 @@ export function buildQueueMaps(all: Transfer[]): QueueMaps {
   const folders = new Map<string, QueueBadge>();
   for (const t of all) {
     files.set(transferKey(t.username, t.path), t.state);
-    const fk = `${t.username}\0${splitPath(t.path).folder}`;
+    const fk = groupOf(t);
     const next = queueBadge(t.state);
     const cur = folders.get(fk);
     if (cur === undefined || BADGE_RANK[next] > BADGE_RANK[cur]) folders.set(fk, next);
@@ -415,9 +415,9 @@ export interface TransferSession {
 
 /** Folders with more files than this ask before queueing — the number
  *  Nicotine+ asks at too (userbrowse.py). */
-export const LARGE_FOLDER_FILES = 1000;
+const LARGE_FOLDER_FILES = 1000;
 
-export interface PendingFolder {
+interface PendingFolder {
   username: string;
   folderPath: string;
   recurse: boolean;
@@ -426,7 +426,7 @@ export interface PendingFolder {
 }
 
 /** Enough of a cancelled download to queue it again. */
-export interface CancelledFile {
+interface CancelledFile {
   username: string;
   path: string;
   size: number;

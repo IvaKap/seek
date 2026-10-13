@@ -25,7 +25,7 @@ export function serialiseFilters(f: Filters): string {
   return JSON.stringify({ ...f, formats: [...f.formats] });
 }
 
-export function deserialiseFilters(json: string): Filters {
+function deserialiseFilters(json: string): Filters {
   if (!json) return EMPTY_FILTERS;
   try {
     const raw = JSON.parse(json) as Record<string, unknown>;

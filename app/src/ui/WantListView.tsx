@@ -22,8 +22,7 @@ import { since } from '../domain/format.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
 import type { UrlProvider } from '../domain/discoverUrl.ts';
 import {
-  IconBandcamp, IconClose, IconDiscogs, IconEmpty, IconLink, IconRelease,
-  IconSearch, IconYouTube,
+  IconClose, IconDiscogs, IconEmpty, IconRelease, IconSearch, SourceIcon,
 } from '../icons/index.tsx';
 
 /** Groups, in loop order. A status with no entries renders nothing at all. */
@@ -34,14 +33,6 @@ const GROUPS: Array<{ status: WantStatus; label: string; hint: string }> = [
   { status: 'downloaded', label: 'Downloaded', hint: '' },
   { status: 'not_found', label: 'Nothing found yet', hint: 'Worth retrying another day' },
 ];
-
-function SourceIcon({ kind }: { kind: WantEntry['sourceKind'] }) {
-  const props = { size: 14, painted: 1.5 } as const;
-  if (kind === 'youtube') return <IconYouTube {...props} />;
-  if (kind === 'bandcamp') return <IconBandcamp {...props} />;
-  if (kind === 'discogs') return <IconDiscogs {...props} />;
-  return <IconLink {...props} />;
-}
 
 function Row({
   entry, want, onSearch, busy,
@@ -69,7 +60,7 @@ function Row({
           <span className="want__title">{entry.album ?? entry.title}</span>
         </span>
         <span className="want__meta">
-          <SourceIcon kind={entry.sourceKind} />
+          <SourceIcon kind={entry.sourceKind} size={14} />
           <span>{source ? `From ${source}` : 'Added by hand'}</span>
           <span>·</span>
           <span>{since(entry.addedAt)}</span>

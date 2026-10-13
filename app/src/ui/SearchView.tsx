@@ -59,15 +59,12 @@ const SORTS: Array<{ value: SortKey; label: string }> = [
 ];
 
 /** The quick pills. Each maps to a filter the advanced panel also exposes. */
-const QUICK = [
-  { id: 'FLAC', kind: 'format' as const },
-  { id: 'WAV', kind: 'format' as const },
-  { id: 'AIFF', kind: 'format' as const },
-  { id: '320', kind: 'format' as const },
-  { id: 'lossless', kind: 'lossless' as const, label: 'Lossless only' },
-  { id: 'free', kind: 'free' as const, label: 'Free slots' },
-  { id: 'clean', kind: 'clean' as const, label: 'No transcodes' },
-];
+const FORMAT_PILLS = ['FLAC', 'WAV', 'AIFF', '320'];
+const FLAG_PILLS = [
+  { key: 'losslessOnly', label: 'Lossless only' },
+  { key: 'freeSlotsOnly', label: 'Free slots' },
+  { key: 'excludeTranscodes', label: 'No transcodes' },
+] as const;
 
 /**
  * Where the search goes: everyone, your buddies, one room you are in, or one
@@ -501,51 +498,16 @@ export function SearchView({
         )}
 
         <div className="quick">
-          {QUICK.map((q) => {
-            if (q.kind === 'format') {
-              if (!available.has(q.id) && !session.filters.formats.has(q.id)) return null;
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.formats.has(q.id)}
-                  onToggle={() => toggleFormat(q.id)}
-                >
-                  {q.id}
-                </Chip>
-              );
-            }
-            if (q.kind === 'lossless') {
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.losslessOnly}
-                  onToggle={() => patch({ losslessOnly: !session.filters.losslessOnly })}
-                >
-                  {q.label}
-                </Chip>
-              );
-            }
-            if (q.kind === 'free') {
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.freeSlotsOnly}
-                  onToggle={() => patch({ freeSlotsOnly: !session.filters.freeSlotsOnly })}
-                >
-                  {q.label}
-                </Chip>
-              );
-            }
-            return (
-              <Chip
-                key={q.id}
-                active={session.filters.excludeTranscodes}
-                onToggle={() => patch({ excludeTranscodes: !session.filters.excludeTranscodes })}
-              >
-                {q.label}
-              </Chip>
-            );
-          })}
+          {FORMAT_PILLS.map((f) => (available.has(f) || session.filters.formats.has(f)) && (
+            <Chip key={f} active={session.filters.formats.has(f)} onToggle={() => toggleFormat(f)}>
+              {f}
+            </Chip>
+          ))}
+          {FLAG_PILLS.map(({ key, label }) => (
+            <Chip key={key} active={session.filters[key]} onToggle={() => patch({ [key]: !session.filters[key] })}>
+              {label}
+            </Chip>
+          ))}
 
           <button
             type="button"

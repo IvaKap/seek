@@ -28,7 +28,7 @@ import type { SearchScope, Sidecar, SidecarHandlers } from './mockSidecar.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import { reportFailure } from './failures.ts';
 
-export interface SidecarEndpoint {
+interface SidecarEndpoint {
   host: string;
   port: number;
   token: string;
@@ -48,7 +48,6 @@ export interface SidecarClient extends Sidecar {
   /** Subscribe to an event name. Returns an unsubscribe function. */
   on(event: string, fn: (data: unknown) => void): () => void;
   onPhase(fn: (phase: ConnectionPhase) => void): () => void;
-  readonly phase: ConnectionPhase;
   /**
    * Connect, or revive a client that was closed. Idempotent.
    *
@@ -379,17 +378,6 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
    * `open()`. */
 
   return {
-    get running() {
-      return running;
-    },
-    get phase() {
-      return phase;
-    },
-
-    setRate() {
-      /* Replay rate is a fixture concept. The network sets its own pace. */
-    },
-
     start(query: string, next: SidecarHandlers, scope: SearchScope = { mode: 'global' }) {
       handlers = next;
       running = true;

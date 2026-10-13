@@ -28,7 +28,7 @@ const LOSSLESS = new Set(['flac', 'wav', 'wave', 'aiff', 'aif', 'alac', 'ape', '
 
 interface FormatRow { name: string; count: number; lossless: boolean }
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+export function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="stat">
       <span className="stat__label">{label}</span>

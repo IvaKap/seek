@@ -23,7 +23,7 @@
 import type {
   Filters, FormatTier, Release, SourceFile, TrackCluster, UserGroup,
 } from './types.ts';
-import { TIER_RANK, bestTier } from './quality.ts';
+import { bestTier } from './quality.ts';
 
 /** The brief's tolerance for "the same track from a different rip". */
 const DURATION_TOLERANCE = 2;
@@ -333,5 +333,3 @@ export function terms(text: string): string[] {
     .map((t) => t.trim())
     .filter(Boolean);
 }
-
-export { TIER_RANK };

@@ -20,6 +20,7 @@ import { sessionName } from '../data/sessionStore.ts';
 import type { WantEntry, WantSession, WantStatus } from '../data/wantStore.ts';
 import { WantRows } from './WantListView.tsx';
 import { IconChevronRight, IconEmpty } from '../icons/index.tsx';
+import { since } from '../domain/format.ts';
 
 /** Only the states worth putting on a card. 'searching' is transient. */
 const SHOWN: Array<{ key: WantStatus; label: string }> = [
@@ -33,16 +34,6 @@ const SOURCE_LABEL: Record<WantEntry['sourceKind'], string> = {
   youtube: 'YouTube', bandcamp: 'Bandcamp', discogs: 'Discogs',
   manual: 'by hand', fingerprint: 'fingerprint',
 };
-
-function ago(epochSeconds: number): string {
-  const seconds = Math.max(0, Date.now() / 1000 - epochSeconds);
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${Math.max(1, minutes)}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ${minutes % 60}m ago`;
-  const days = Math.round(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
 
 /** Inline rename. Double-click the title, Escape abandons, Enter commits. */
 function SessionTitle({
@@ -126,7 +117,7 @@ function SessionCard({
         {session.sources.length > 0
           ? session.sources.map((s) => SOURCE_LABEL[s]).join(' · ')
           : 'nothing in it yet'}
-        {' · started '}{ago(session.createdAt)}
+        {' · started '}{since(session.createdAt)}
       </p>
 
       <button
@@ -177,7 +168,7 @@ export function DigSessionsView({
           <p className="pane__subtitle tnum">
             {open.entries.length} {open.entries.length === 1 ? 'entry' : 'entries'}
             {' · '}{open.sources.length} {open.sources.length === 1 ? 'source' : 'sources'}
-            {' · started '}{ago(open.createdAt)}
+            {' · started '}{since(open.createdAt)}
             {open.closed ? '' : ' · still collecting'}
           </p>
           <div className="browse__form dig-session__actions">

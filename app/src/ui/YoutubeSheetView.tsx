@@ -25,7 +25,7 @@ import { useCallback, useRef, useState } from 'react';
 import type { YoutubeSession } from '../data/youtubeStore.ts';
 import type { YoutubeRow, YoutubeSheet } from '../../../shared/protocol.ts';
 import {
-  YT_COLUMN_SET, YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns,
+  YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns,
 } from '../domain/youtubeColumns.ts';
 import type { YtColumnId } from '../domain/youtubeColumns.ts';
 import { cleanForDiscogs, discogsQuery } from '../domain/youtubeMatch.ts';
@@ -243,7 +243,7 @@ export function YoutubeSheetView({
             <ViewMenu<YtColumnId>
               columns={columns}
               onColumns={changeColumns}
-              columnSet={YT_COLUMN_SET}
+              columnSet={YT_COLUMNS}
               density="table"
             />
             <button

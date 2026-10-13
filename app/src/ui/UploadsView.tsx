@@ -24,7 +24,7 @@ import { useMemo, useState } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
 import { fileName, isActive, isFailed } from '../data/transferStore.ts';
 import { fileSize, integer, speed as fmtSpeed } from '../domain/format.ts';
-import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
+import { Bar, etaLabel, groupEta, releaseOf } from './transferBits.tsx';
 import { PeerHistory } from './PeerHistory.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
 import { IconArrowUp, IconClose, IconEmpty } from '../icons/index.tsx';
@@ -79,7 +79,7 @@ function Row({
         <span>{integer(group.transfers.length)} {group.transfers.length === 1 ? 'file' : 'files'}</span>
         <span>{fileSize(group.size)}</span>
         {group.speed > 0 && <span className="up__speed">{fmtSpeed(group.speed)}</span>}
-        {running.length > 0 && remaining !== null && <span>{eta(remaining)} left</span>}
+        {running.length > 0 && remaining !== null && <span>{etaLabel(remaining)} left</span>}
         {group.failed > 0 && (
           <span className="up__failed">
             {group.failed} {group.failed === 1 ? 'failed' : 'failed'}

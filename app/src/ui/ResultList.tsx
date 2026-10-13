@@ -40,7 +40,8 @@ import { useRootFontSize } from './useColumnFit.ts';
 import { ColumnHeaderRow, useColumnWidths } from './columnHeaders.tsx';
 import { IconArrowUp } from '../icons/index.tsx';
 import { integer } from '../domain/format.ts';
-import { SPRING_DEFAULT, Spring } from '../motion/spring.ts';
+import { driveSpring } from '../motion/spring.ts';
+import type { SpringHandle } from '../motion/spring.ts';
 import { useReducedMotion } from '../motion/prefs.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
@@ -287,14 +288,8 @@ export function ResultList({
   let staggerIndex = 0;
 
   /* ---- spring-driven scroll to top, interruptible ---- */
-  const springRef = useRef<Spring | null>(null);
-  const rafRef = useRef(0);
-
-  const cancelScroll = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = 0;
-    springRef.current = null;
-  }, []);
+  const scrollSpring = useRef<SpringHandle | null>(null);
+  const cancelScroll = useCallback(() => scrollSpring.current?.stop(), []);
 
   const springToTop = useCallback(() => {
     const el = scrollRef.current;
@@ -303,21 +298,12 @@ export function ResultList({
       el.scrollTop = 0;
       return;
     }
-    const s = new Spring(el.scrollTop, SPRING_DEFAULT);
-    s.setTarget(0);
-    springRef.current = s;
-    let last = performance.now();
-    const step = (now: number) => {
-      const cur = springRef.current;
-      if (!cur || !scrollRef.current) return;
-      const dt = Math.min((now - last) / 1000, 1 / 30);
-      last = now;
-      scrollRef.current.scrollTop = cur.advance(dt);
-      if (!cur.settled) rafRef.current = requestAnimationFrame(step);
-      else cancelScroll();
-    };
-    rafRef.current = requestAnimationFrame(step);
-  }, [reduced, cancelScroll]);
+    scrollSpring.current?.stop();
+    const h = driveSpring((v) => { if (scrollRef.current) scrollRef.current.scrollTop = v; });
+    h.set(el.scrollTop);
+    h.to(0);
+    scrollSpring.current = h;
+  }, [reduced]);
 
   // Any real input grabs the animation away from us — a scroll the user cannot
   // interrupt is a scroll that has taken control from them.
@@ -341,6 +327,69 @@ export function ResultList({
     onFoldIn();
     springToTop();
   }, [onFoldIn, springToTop]);
+
+  const renderRow = (row: Row) => {
+    switch (row.kind) {
+      case 'track':
+        return (
+          <TrackRow
+            track={row.track}
+            expanded={expanded.has(row.id)}
+            onToggle={() => onToggle(row.id)}
+            onQueue={() => onQueue(row)}
+              queueStates={queueStates}
+          />
+        );
+      case 'release': {
+        // A lone copy has nothing to compare against, so the card offers nothing.
+        const group = copies ? copiesOf(row.release, copies) : [row.release];
+        return (
+          <ReleaseCard
+            art={artwork?.get(row.release.id)}
+            owned={library?.hasRelease(row.release.artist, row.release.title)}
+            release={row.release}
+            expanded={expanded.has(row.id)}
+            onToggle={() => onToggle(row.id)}
+            onQueue={() => onQueue(row)}
+            // 'grid' renders as GridCard, never here — narrow it away for the card.
+            density={density === 'grid' ? 'comfortable' : density}
+            peers={peers}
+            copyCount={group.length}
+            onCompare={onCompare ? () => onCompare(row.release) : undefined}
+            queueBadge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
+          />
+        );
+      }
+      case 'user':
+        return (
+          <UserRow
+            group={row.group}
+            expanded={expanded.has(row.id)}
+            onToggle={() => onToggle(row.id)}
+              onBrowse={onBrowse}
+          />
+        );
+      case 'source':
+        return (
+          <SourceRow
+            source={row.source}
+            last={row.last}
+            context={row.context}
+            onQueue={() => onQueue(row)}
+            peers={peers}
+            queueStates={queueStates}
+          />
+        );
+      case 'file':
+        return (
+          <FileRow
+            source={row.source}
+            onQueue={() => onQueue(row)}
+            queueStates={queueStates}
+          />
+        );
+    }
+  };
 
   return (
     <div className="results" ref={resultsRef} style={columnStyle}>
@@ -429,8 +478,7 @@ export function ResultList({
                     animationDelay: delay ? `${delay}ms` : undefined,
                   }}
                 >
-                  {renderRow(row, expanded, onToggle, onQueue, density, onBrowse, artwork, peers,
-                    library, copies, onCompare, queueStates, folderStates)}
+                  {renderRow(row)}
                 </div>
               );
             })}
@@ -439,85 +487,6 @@ export function ResultList({
       </div>
     </div>
   );
-}
-
-function renderRow(
-  row: Row,
-  expanded: Set<string>,
-  onToggle: (id: string) => void,
-  onQueue: (row: Row) => void,
-  density: SearchDensity,
-  onBrowse?: (username: string) => void,
-  artwork?: ArtworkSession,
-  peers?: PeerLookup,
-  library?: LibrarySession,
-  copies?: Map<string, Release[]>,
-  onCompare?: (release: Release) => void,
-  queueStates?: Map<string, TransferState>,
-  folderStates?: Map<string, QueueBadge>,
-) {
-  switch (row.kind) {
-    case 'track':
-      return (
-        <TrackRow
-          track={row.track}
-          expanded={expanded.has(row.id)}
-          onToggle={() => onToggle(row.id)}
-          onQueue={() => onQueue(row)}
-          selected={false}
-          queueStates={queueStates}
-        />
-      );
-    case 'release': {
-      // A lone copy has nothing to compare against, so the card offers nothing.
-      const group = copies ? copiesOf(row.release, copies) : [row.release];
-      return (
-        <ReleaseCard
-          art={artwork?.get(row.release.id)}
-          owned={library?.hasRelease(row.release.artist, row.release.title)}
-          release={row.release}
-          expanded={expanded.has(row.id)}
-          onToggle={() => onToggle(row.id)}
-          onQueue={() => onQueue(row)}
-          // 'grid' renders as GridCard, never here — narrow it away for the card.
-          density={density === 'grid' ? 'comfortable' : density}
-          peers={peers}
-          copyCount={group.length}
-          onCompare={onCompare ? () => onCompare(row.release) : undefined}
-          queueBadge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
-        />
-      );
-    }
-    case 'user':
-      return (
-        <UserRow
-          group={row.group}
-          expanded={expanded.has(row.id)}
-          onToggle={() => onToggle(row.id)}
-          selected={false}
-          onBrowse={onBrowse}
-        />
-      );
-    case 'source':
-      return (
-        <SourceRow
-          source={row.source}
-          last={row.last}
-          context={row.context}
-          onQueue={() => onQueue(row)}
-          peers={peers}
-          queueStates={queueStates}
-        />
-      );
-    case 'file':
-      return (
-        <FileRow
-          source={row.source}
-          onQueue={() => onQueue(row)}
-          queueStates={queueStates}
-        />
-      );
-  }
 }
 
 /**

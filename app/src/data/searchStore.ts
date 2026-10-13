@@ -29,14 +29,13 @@ import { reliabilityFrom } from '../domain/score.ts';
 import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import type { SidecarConnection } from './connectionStore.ts';
-import type { ConnectionPhase, SidecarClient } from './sidecarClient.ts';
 import { GLOBAL_SCOPE } from './mockSidecar.ts';
 import type { SearchScope } from './mockSidecar.ts';
 
 export const TICK_MS = 250;
 
 /** Set on a tab that was still searching when you switched away from it. */
-export const SWITCHED_REASON = 'switched';
+const SWITCHED_REASON = 'switched';
 
 /**
  * How a finished search ended, in words. Each reason is a different fact:
@@ -186,7 +185,10 @@ export interface SearchSessionOptions {
   reliability?(username: string): number;
 }
 
-export interface SearchSession {
+/** The bridge fields (phase, isMock, serverState, client, startupError) come
+ * straight from the connection. */
+export interface SearchSession
+  extends Pick<SidecarConnection, 'phase' | 'isMock' | 'serverState' | 'client' | 'startupError'> {
   query: string;
   setQuery(q: string): void;
   /** Where the next search goes. Kept with the tab, like the query. */
@@ -208,7 +210,6 @@ export interface SearchSession {
 
   totalFiles: number;
   matchedFiles: number;
-  peerCount: number;
   /** Newest ingest tick — the list uses it to decide which rows may animate in. */
   tick: number;
 
@@ -224,19 +225,6 @@ export interface SearchSession {
 
   /** Formats present in the current result set, for the filter chips. */
   availableFormats: string[];
-
-  /* ---- the bridge ---- */
-
-  /** Socket state. 'closed' with a null client means deliberate offline/mock. */
-  phase: ConnectionPhase;
-  /** True when replaying the fixture rather than talking to a real sidecar. */
-  isMock: boolean;
-  /** Soulseek login state, distinct from the socket. Null until reported. */
-  serverState: string | null;
-  /** The live client, for Settings. Null in mock mode. */
-  client: SidecarClient | null;
-  /** Why the Tauri shell could not start a sidecar, if it could not. */
-  startupError: string | null;
 
   /* ---- tabs ---- */
 
@@ -475,7 +463,6 @@ export function useSearchSession(
       });
     }
     return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextRows, sort]);
 
   /* ---- expansion: source rows are flattened in, so one virtualiser sees all ---- */
@@ -486,34 +473,17 @@ export function useSearchSession(
     for (const row of ordered) {
       out.push(row);
       if (!expanded.has(row.id)) continue;
-      if (row.kind === 'track') {
-        const srcs = row.track.sources;
-        srcs.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === srcs.length - 1, tick: s.tick,
-            context: 'peers',
-          }),
-        );
-      } else if (row.kind === 'release') {
-        const files = row.release.files;
-        files.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === files.length - 1, tick: s.tick,
-            context: 'files',
-          }),
-        );
-      } else if (row.kind === 'user') {
-        const files = row.group.files;
-        files.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === files.length - 1, tick: s.tick,
-            context: 'files',
-          }),
-        );
-      }
+      const children = row.kind === 'track' ? row.track.sources
+        : row.kind === 'release' ? row.release.files
+          : row.kind === 'user' ? row.group.files : null;
+      if (!children) continue;
+      const context = row.kind === 'track' ? 'peers' : 'files';
+      children.forEach((s, i) =>
+        out.push({
+          kind: 'source', id: `${row.id}/${s.id}`, source: s,
+          parentId: row.id, last: i === children.length - 1, tick: s.tick, context,
+        }),
+      );
     }
     return out;
   }, [ordered, expanded]);
@@ -615,7 +585,6 @@ export function useSearchSession(
     tick: Math.floor(tick),
     totalFiles: grouper.size(),
     matchedFiles,
-    peerCount: peers.current.size,
     filters, setFilters, resetFilters,
     groupBy, setGroupBy,
     sort, setSort,

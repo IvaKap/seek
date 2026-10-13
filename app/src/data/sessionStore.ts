@@ -20,7 +20,7 @@ import type { SidecarClient } from './sidecarClient.ts';
 import type { WantEntry, WantStatus } from './wantStore.ts';
 import { readUntilAnswered, reportFailure } from './failures.ts';
 
-export interface DigSession {
+interface DigSession {
   id: string;
   /** Empty until renamed. Use `sessionName` rather than reading this. */
   name: string;
@@ -42,7 +42,6 @@ export interface SessionsSession {
   rename(id: string, name: string): void;
   close(id: string): void;
   remove(id: string): void;
-  enabled: boolean;
 }
 
 const EMPTY_COUNTS: Record<WantStatus, number> = {
@@ -125,6 +124,5 @@ export function useSessions(
     rename: useCallback((id: string, name: string) => send('session.rename', { id, name }), [send]),
     close: useCallback((id: string) => send('session.close', { id }), [send]),
     remove: useCallback((id: string) => send('session.delete', { id }), [send]),
-    enabled: Boolean(client),
   };
 }

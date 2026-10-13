@@ -45,6 +45,4 @@ export const YT_DEFAULT_COLUMNS: YtColumnId[] = [
 const ENGINE = makeColumns<YtColumnId>(SPECS, YT_DEFAULT_COLUMNS);
 
 export const YT_COLUMNS = ENGINE;
-export const ytTemplateFor = ENGINE.template;
 export const ytNormaliseColumns = ENGINE.normalise;
-export const YT_COLUMN_SET = ENGINE;

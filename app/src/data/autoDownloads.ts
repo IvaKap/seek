@@ -27,7 +27,6 @@ import type { WishHits } from './wishHits.ts';
 import type { Transfer } from './transferStore.ts';
 import { isCancelled, isFailed } from './transferStore.ts';
 import { planAutoDownloads, skipKey } from '../domain/autoWishlist.ts';
-import type { SourceFile } from '../domain/types.ts';
 import type { DownloadPrefs } from '../domain/preferences.ts';
 import type { AutoClaim, AutoClaimList, Wish, WishlistState } from '../../../shared/protocol.ts';
 import { readUntilAnswered, reportFailure } from './failures.ts';
@@ -186,10 +185,9 @@ export function useAutoDownloads(
       claims.filter((c) => c.status === SKIPPED).map((c) => skipKey(c.query, c.user, c.path)),
     );
 
-    const sourcesByQuery: Record<string, SourceFile[]> = {};
-    for (const [query, hit] of Object.entries(wishHits.byQuery)) {
-      sourcesByQuery[query] = hit.sources;
-    }
+    const sourcesByQuery = Object.fromEntries(
+      Object.entries(wishHits.byQuery).map(([query, hit]) => [query, hit.sources]),
+    );
 
     const plan = planAutoDownloads(wishes, sourcesByQuery, claimed, slotsFree, skipped, rules);
     if (plan.length === 0) return;

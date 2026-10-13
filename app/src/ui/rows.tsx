@@ -200,16 +200,37 @@ export function QueueButton({
   );
 }
 
+const UNPARSED_PATH = 'Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it.';
+const UNPARSED_FILE = 'Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it.';
+
+/** Artist — title, or the raw filename flagged "unparsed" when neither could be read. */
+function TitleLine({ of, unparsed = UNPARSED_PATH }: {
+  of: { displayArtist: string | null; displayTitle: string; fallback: boolean };
+  unparsed?: string;
+}) {
+  return (
+    <span className="row__title">
+      {of.displayArtist && (
+        <>
+          <span className="row__artist">{of.displayArtist}</span>
+          <span className="row__dash" aria-hidden> — </span>
+        </>
+      )}
+      <span className="row__name" data-raw={of.fallback ? 'true' : undefined}>{of.displayTitle}</span>
+      {of.fallback && <span className="row__unparsed" title={unparsed}>unparsed</span>}
+    </span>
+  );
+}
+
 /* ------------------------------------------------------------- track row */
 
 export function TrackRow({
-  track, expanded, onToggle, onQueue, selected, queueStates,
+  track, expanded, onToggle, onQueue, queueStates,
 }: {
   track: TrackCluster;
   expanded: boolean;
   onToggle(): void;
   onQueue(): void;
-  selected: boolean;
   /** File states from the transfer store, so Get reflects what happened. */
   queueStates?: Map<string, TransferState>;
 }) {
@@ -220,7 +241,6 @@ export function TrackRow({
   return (
     <div
       className="row"
-      data-selected={selected ? 'true' : undefined}
       data-expanded={expanded ? 'true' : undefined}
     >
       {/* role="button", not <button>: these rows contain the quality
@@ -235,25 +255,7 @@ export function TrackRow({
         aria-label={`${track.displayArtist ? `${track.displayArtist}, ` : ''}${track.displayTitle}. ${best.quality.description}. ${count(sources, 'source')}.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {track.displayArtist && (
-              <>
-                <span className="row__artist">{track.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={track.fallback ? 'true' : undefined}>
-              {track.displayTitle}
-            </span>
-            {track.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={track} />
 
           <span className="meta">
             <Meta col="format">
@@ -339,25 +341,7 @@ export function FileRow({
         aria-label={`${source.parsed.displayArtist ? `${source.parsed.displayArtist}, ` : ''}${source.parsed.displayTitle}. ${source.user}. ${source.quality.description}. ${source.peer.queueLength} queued.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {source.parsed.displayArtist && (
-              <>
-                <span className="row__artist">{source.parsed.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={source.parsed.fallback ? 'true' : undefined}>
-              {source.parsed.displayTitle}
-            </span>
-            {source.parsed.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={source.parsed} />
 
           <span className="meta">
             <Meta col="format">
@@ -407,12 +391,11 @@ export function FileRow({
 /* --------------------------------------------------------------- user row */
 
 export function UserRow({
-  group, expanded, onToggle, selected, onBrowse,
+  group, expanded, onToggle, onBrowse,
 }: {
   group: UserGroup;
   expanded: boolean;
   onToggle(): void;
-  selected: boolean;
   /** Open this peer's whole share — the vision note's "show me everything
    *  this person has", which is the point of grouping by user at all. */
   onBrowse?(username: string): void;
@@ -421,7 +404,6 @@ export function UserRow({
   return (
     <div
       className="row row--user"
-      data-selected={selected ? 'true' : undefined}
       data-expanded={expanded ? 'true' : undefined}
     >
       {/* role="button", not <button>: these rows contain the quality
@@ -629,25 +611,7 @@ export function BrowseFileRow({
         aria-label={`${parsed.displayArtist ? `${parsed.displayArtist}, ` : ''}${parsed.displayTitle}. ${file.quality.description}.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {parsed.displayArtist && (
-              <>
-                <span className="row__artist">{parsed.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={parsed.fallback ? 'true' : undefined}>
-              {parsed.displayTitle}
-            </span>
-            {parsed.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={parsed} unparsed={UNPARSED_FILE} />
           <span className="meta">
             {/* The badge shows the FORMAT (what kind of file this is — the one
                 thing that still matters in a folder mixing FLAC and MP3 rips),

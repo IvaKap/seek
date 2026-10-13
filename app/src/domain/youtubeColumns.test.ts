@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns, ytTemplateFor,
+  YT_COLUMNS, YT_DEFAULT_COLUMNS, ytNormaliseColumns,
 } from './youtubeColumns.ts';
 
 describe('youtube columns', () => {
@@ -46,7 +46,7 @@ describe('youtube columns', () => {
 
   it('builds one fixed, resizable track per column — nothing fills', () => {
     // The sheet scrolls sideways instead of stretching a column to fit.
-    expect(ytTemplateFor(['title', 'search', 'duration'])).toBe(
+    expect(YT_COLUMNS.template(['title', 'search', 'duration'])).toBe(
       'var(--w-title, 16.25rem) var(--w-search, 3.25rem) var(--w-duration, 4.25rem)',
     );
   });

@@ -49,7 +49,6 @@ function fakeSidecar(): Sidecar {
       setTimeout(() => { if (live) h.onResult(batch(query)); }, 10);
     },
     stop() { live = false; },
-    setRate() {},
   } as unknown as Sidecar;
 }
 

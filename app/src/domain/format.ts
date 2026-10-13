@@ -93,16 +93,6 @@ export function audioSpec(sampleRate: number | null, bitDepth: number | null): s
   return bitDepth ? `${rate}/${bitDepth}` : `${rate} kHz`;
 }
 
-export function bitrate(kbps: number | null, vbr: boolean): string {
-  if (!kbps) return '—';
-  return `${Math.round(kbps)}${vbr ? ' VBR' : ''}`;
-}
-
-/** `0 queued` / `1 queued` / `40 queued`. */
-export function queued(n: number): string {
-  return `${n} queued`;
-}
-
 export function count(n: number, singular: string, plural = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }

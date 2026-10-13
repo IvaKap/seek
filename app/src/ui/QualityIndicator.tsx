@@ -22,8 +22,9 @@
  * reachable by keyboard and on a trackpad without hover intent.
  */
 
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useDismiss } from './useDismiss.ts';
 import type { Assessment, QualityGlyph } from '../domain/assessment.ts';
 
 const GRID = 24;
@@ -153,26 +154,9 @@ export function QualityIndicator({
     return () => cancelAnimationFrame(frame);
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      // The card is no longer inside the wrapper, so a click on it must be
-      // recognised separately or reading the arithmetic would dismiss it.
-      if (!wrapRef.current?.contains(target) && !popRef.current?.contains(target)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  // The card is no longer inside the wrapper, so a click on it must be
+  // recognised separately or reading the arithmetic would dismiss it.
+  useDismiss(open, [wrapRef, popRef], () => setOpen(false));
 
   return (
     <span className="quality" ref={wrapRef} data-state={assessment.state}>
@@ -226,5 +210,3 @@ export function QualityIndicator({
     </span>
   );
 }
-
-export { Mark as QualityMark };

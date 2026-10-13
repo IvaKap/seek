@@ -14,6 +14,7 @@
 
 import type { TransferGroup } from '../data/transferStore.ts';
 import { parsePath } from '../domain/parsePath.ts';
+import { duration } from '../domain/format.ts';
 
 export function releaseOf(g: TransferGroup): { artist: string; release: string } {
   const first = g.transfers[0];
@@ -26,15 +27,10 @@ export function releaseOf(g: TransferGroup): { artist: string; release: string }
   };
 }
 
-/** Seconds → `3:07` or `1:02:44`. An em dash where it cannot be known. */
-export function eta(seconds: number | null): string {
-  if (seconds === null || seconds <= 0 || !Number.isFinite(seconds)) return '—';
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  return h > 0
-    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-    : `${m}:${String(s).padStart(2, '0')}`;
+/** Seconds left → `3:07` or `1:02:44`. An em dash where it cannot be known:
+ * 0 means no estimate, and `duration` alone would print 0:00. */
+export function etaLabel(seconds: number | null): string {
+  return duration(seconds || null);
 }
 
 /** The longest remaining file decides when the group is done. */

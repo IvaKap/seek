@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lostInTransit } from './sidecarClient.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
-export type SpectralAssessment =
+type SpectralAssessment =
   | 'likely_lossless'
   | 'possible_transcode'
   | 'strong_signs_of_lossy_source'
@@ -65,7 +65,7 @@ export interface SpectralAnalysis {
   analysedSeconds: number;
 }
 
-export interface AnalysisEntry {
+interface AnalysisEntry {
   state: 'running' | 'done' | 'failed';
   result?: SpectralAnalysis;
   reason?: string;
@@ -104,20 +104,15 @@ export function explain(a: SpectralAnalysis): string {
 }
 
 export interface AnalysisSession {
-  /** Keyed by absolute local path. */
-  byPath: Map<string, AnalysisEntry>;
   /** Keyed by transfer id, so the downloads view need not assemble paths. */
   byTransfer: Map<string, AnalysisEntry>;
-  analyse(path: string): void;
   analyseTransfer(transferId: string): void;
-  available: boolean;
 }
 
 export function useAnalysis(client: SidecarClient | null): AnalysisSession {
-  const [byPath, setByPath] = useState<Map<string, AnalysisEntry>>(() => new Map());
   const [byTransfer, setByTransfer] = useState<Map<string, AnalysisEntry>>(() => new Map());
-  /** requestId -> {path, transferId}, so a failure lands on the right file. */
-  const pending = useRef<Map<string, { path: string | null; transferId: string | null }>>(new Map());
+  /** requestId -> transferId, so a failure lands on the right file. */
+  const pending = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!client) return;
@@ -126,66 +121,42 @@ export function useAnalysis(client: SidecarClient | null): AnalysisSession {
       const a = data as SpectralAnalysis;
       const waiting = pending.current.get(a.requestId);
       pending.current.delete(a.requestId);
-      const entry: AnalysisEntry = { state: 'done', result: a };
-      setByPath((prev) => new Map(prev).set(a.path, entry));
-      const tid = a.transferId ?? waiting?.transferId ?? null;
-      if (tid) setByTransfer((prev) => new Map(prev).set(tid, entry));
+      const tid = a.transferId ?? waiting ?? null;
+      if (tid) setByTransfer((prev) => new Map(prev).set(tid, { state: 'done', result: a }));
     });
 
     const offFailed = client.on('analysis.failed', (data) => {
-      const f = data as { requestId: string; path: string | null; reason: string };
+      const f = data as { requestId: string; reason: string };
       const waiting = pending.current.get(f.requestId);
       pending.current.delete(f.requestId);
-      const entry: AnalysisEntry = { state: 'failed', reason: f.reason };
-      const path = f.path ?? waiting?.path ?? null;
-      if (path) setByPath((prev) => new Map(prev).set(path, entry));
-      if (waiting?.transferId) {
-        setByTransfer((prev) => new Map(prev).set(waiting.transferId!, entry));
-      }
+      if (waiting) setByTransfer((prev) => new Map(prev).set(waiting, { state: 'failed', reason: f.reason }));
     });
 
     return () => { offResult(); offFailed(); };
   }, [client]);
 
-  const start = useCallback((params: { path: string | null; transferId: string | null }) => {
+  const analyseTransfer = useCallback((transferId: string) => {
     if (!client) return;
     // Mark running immediately so the button cannot be pressed twice — a second
     // decode of the same file costs real CPU for an answer we already asked for.
-    if (params.path) {
-      setByPath((prev) => (prev.get(params.path!)?.state === 'running'
-        ? prev : new Map(prev).set(params.path!, { state: 'running' })));
-    }
-    if (params.transferId) {
-      setByTransfer((prev) => (prev.get(params.transferId!)?.state === 'running'
-        ? prev : new Map(prev).set(params.transferId!, { state: 'running' })));
-    }
-    void client.request<{ requestId: string }>('analysis.spectral', params)
-      .then((r) => pending.current.set(r.requestId, params))
+    setByTransfer((prev) => (prev.get(transferId)?.state === 'running'
+      ? prev : new Map(prev).set(transferId, { state: 'running' })));
+    // The sidecar's schema requires both keys; only the transfer form is used.
+    void client.request<{ requestId: string }>('analysis.spectral', { path: null, transferId })
+      .then((r) => pending.current.set(r.requestId, transferId))
       .catch((e: Error) => {
         /* Never answered (a dropped connection): put the button back rather
            than a "could not analyse" that stays for the session. */
-        const drop = <K,>(prev: Map<K, AnalysisEntry>, k: K) => {
+        setByTransfer((prev) => {
           const next = new Map(prev);
-          next.delete(k);
+          if (lostInTransit(e)) next.delete(transferId);
+          else next.set(transferId, { state: 'failed', reason: e.message });
           return next;
-        };
-        const entry: AnalysisEntry = { state: 'failed', reason: e.message };
-        const lost = lostInTransit(e);
-        if (params.path) {
-          setByPath((prev) => (lost ? drop(prev, params.path!) : new Map(prev).set(params.path!, entry)));
-        }
-        if (params.transferId) {
-          setByTransfer((prev) => (lost ? drop(prev, params.transferId!) : new Map(prev).set(params.transferId!, entry)));
-        }
+        });
       });
   }, [client]);
 
   // Memoised: every Downloads row reads this, and a fresh object per render
   // made each of them redraw on every tick.
-  return useMemo(() => ({
-    byPath, byTransfer,
-    analyse: (path: string) => start({ path, transferId: null }),
-    analyseTransfer: (transferId: string) => start({ path: null, transferId }),
-    available: Boolean(client),
-  }), [byPath, byTransfer, start, client]);
+  return useMemo(() => ({ byTransfer, analyseTransfer }), [byTransfer, analyseTransfer]);
 }

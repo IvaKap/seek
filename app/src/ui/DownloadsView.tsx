@@ -23,7 +23,7 @@ import type { Mods } from '../domain/select.ts';
 import { copyText } from '../data/clipboard.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
-import { Bar, eta, groupEta, releaseOf } from './transferBits.tsx';
+import { Bar, etaLabel, groupEta, releaseOf } from './transferBits.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
@@ -60,7 +60,7 @@ import { Placeholder } from './ReleaseCard.tsx';
 import { useNearViewport } from './useNearViewport.ts';
 
 /** Everything the Related shelf needs, bundled so it threads as one prop. */
-export interface RelatedDiscovery {
+interface RelatedDiscovery {
   related: RelatedSession;
   artwork?: ArtworkSession;
   library?: LibrarySession;
@@ -118,12 +118,6 @@ function Verdict({
   );
 }
 
-/** Last segment of a Soulseek virtual path (backslash-separated). */
-function basename(path: string): string {
-  const parts = path.split(/[\\/]/);
-  return parts[parts.length - 1] || path;
-}
-
 /**
  * The auto-download review section: candidates Seek fetched on its own, each
  * held here with its spectrogram until a person approves or rejects it. The
@@ -152,7 +146,7 @@ function AutoReview({
           <div key={c.query} className="autorev">
             <div className="autorev__head">
               <div className="autorev__meta">
-                <span className="autorev__title" title={c.path}>{basename(c.path)}</span>
+                <span className="autorev__title" title={c.path}>{fileName(c.path)}</span>
                 <span className="autorev__sub">
                   for \u201c{c.query}\u201d \u00b7 from {c.user}
                 </span>
@@ -537,7 +531,7 @@ function TableRow({
         <span className="dl__cell tnum">{g.speed > 0 ? fmtSpeed(g.speed) : '—'}</span>
       )}
       {filter === 'active' && (
-        <span className="dl__cell tnum">{eta(groupEta(g))}</span>
+        <span className="dl__cell tnum">{etaLabel(groupEta(g))}</span>
       )}
       {filter === 'failed' && (
         <span className="dl__cell dl__cell--reason" title={firstError ?? undefined}>
@@ -734,7 +728,7 @@ const Group = memo(function Group({
             {g.state === 'active' && (
               <>
                 <span className="tnum">↓ {fmtSpeed(g.speed)}</span>
-                <span className="tnum">{eta(groupEta(g))}</span>
+                <span className="tnum">{etaLabel(groupEta(g))}</span>
               </>
             )}
             {/* The number, not the word. "Stalled" is a state; "no movement
@@ -1099,7 +1093,6 @@ export function DownloadsView({
         && (filter !== 'finished' || withinFinishedWindow(g, finishedWindow, Date.now()))),
       sort, descending,
     ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [lens, query, sort, descending, finishedWindow, filter, minute],
   );
 
@@ -1109,7 +1102,6 @@ export function DownloadsView({
     () => (filter === 'finished'
       ? completedSections(groups, completedGroupBy, Date.now())
       : [{ key: '_all', label: '', groups }]),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [filter, groups, completedGroupBy, minute],
   );
 

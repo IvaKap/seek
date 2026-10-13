@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Classic Nicotine+: every folder visible at once, disclosure triangles,
- * arrow keys move the highlight. `buildFolderTree` walks the same trie
- * `FolderView.tsx` builds for its Finder-style drill-down — a peer's flat
+ * arrow keys move the highlight. `buildFolderTree` is also what
+ * `FolderView.tsx` walks for its Finder-style drill-down — a peer's flat
  * path list resolves to one hierarchy; only the two views read it
  * differently.
  */
