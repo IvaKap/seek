@@ -2076,9 +2076,9 @@
 .dl__chev { color: var(--text-tertiary); transition: transform var(--dur-base) var(--ease-out); }
 .dl__chev[data-open='true'] { transform: rotate(180deg); }
 
-.prog { height: 3px; background: var(--bg-sunken); overflow: hidden; }
+.prog { display: block; height: 3px; background: var(--bg-sunken); overflow: hidden; }
 .prog__fill {
-  height: 100%; width: 100%; transform-origin: left center;
+  display: block; height: 100%; width: 100%; transform-origin: left center;
   background: var(--accent);
   /* transform, never width — width animates layout on every packet. */
   transition: transform var(--dur-base) var(--ease-out);
@@ -4115,3 +4115,89 @@
 @media (hover: hover) and (pointer: fine) { .simple__compare:hover { background: var(--bg-active); } }
 /* "Get" in words, like the picks above: wider than the icon it replaces. */
 .row--simple .row__actions { width: auto; min-width: 4.5rem; }
+
+/* =================================================== downloads · simple == */
+/* Simple's Downloads (ui/DownloadsSimple.tsx): one release on a card, then
+   the rest in sections by what each needs from you. */
+
+.dlsimple {
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  width: 100%; max-width: 55rem; padding-top: var(--sp-2);
+}
+
+.dlsimple__lead {
+  display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: var(--sp-4) var(--sp-5);
+  padding: var(--sp-4);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised); box-shadow: var(--shadow-raised);
+}
+.art--lead { width: 7rem; height: 7rem; margin: 0; border-radius: var(--radius-md); }
+.dlsimple__lead-body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.dlsimple__lead-top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+}
+.dlsimple__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dlsimple__eyebrow { font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--accent); }
+.dlsimple__title {
+  font-size: var(--fs-section); font-weight: var(--fw-semibold); letter-spacing: -0.014em;
+  overflow-wrap: anywhere;
+}
+.dlsimple__facts { font-size: var(--fs-secondary); color: var(--text-secondary); }
+.dlsimple__pct { font-size: var(--fs-title); font-weight: var(--fw-semibold); letter-spacing: -0.021em; }
+.dlsimple__lead .prog { height: 6px; border-radius: 3px; }
+.dlsimple__stats {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+.dlsimple__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.dlsimple__open { grid-column: 1 / -1; min-width: 0; }
+
+/* Five minutes of speed. Drawn once per sample, never animated. */
+.speed { margin: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.speed__chart { display: block; width: 100%; height: 4rem; }
+.speed__grid { fill: none; stroke: var(--separator); stroke-width: 1; }
+.speed__area { fill: var(--accent); opacity: 0.14; }
+.speed__line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; }
+.speed__axis {
+  display: flex; justify-content: space-between; gap: var(--sp-2);
+  font-size: var(--fs-micro); color: var(--text-tertiary);
+}
+
+.dlsimple__section { display: flex; flex-direction: column; gap: var(--sp-1); }
+.dlsimple__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); color: var(--text-secondary); }
+.dlsimple__rows { list-style: none; margin: 0; padding: 0; }
+.dlsimple__more { padding: var(--sp-2) 0; }
+
+.dlrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  border-bottom: 0.5px solid var(--separator);
+}
+.dlrow__hit {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: center; gap: var(--sp-3);
+  min-width: 0; padding: var(--sp-2) 0;
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: default;
+}
+.art--row { width: 2.5rem; height: 2.5rem; margin: 0; }
+.dlrow__main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dlrow__title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.dlrow__name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlrow .prog { height: 4px; border-radius: 2px; }
+.dlrow__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlrow[data-tone='refused'] .dlrow__line { color: var(--danger); }
+.dlrow[data-tone='broken'] .dlrow__line { color: var(--warn); }
+.prog[data-state='trouble'] .prog__fill { background: var(--warn); }
+.dlrow__open { grid-column: 1 / -1; min-width: 0; padding-bottom: var(--sp-2); }
+
+.dlsimple__review {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--accent-soft);
+}
+.dlsimple__review-text { flex: 1 1 15rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dlsimple__review h2 { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.dlsimple__review p { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+@media (max-width: 34rem) {
+  .dlsimple__lead { grid-template-columns: 4rem minmax(0, 1fr); }
+  .art--lead { width: 4rem; height: 4rem; }
+}

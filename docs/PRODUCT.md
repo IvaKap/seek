@@ -273,6 +273,17 @@ Note `RECON.md` §5: **upstream has no stall detection at all** — no event, no
 timer, no status. Every "stalled" affordance in this spec is ours to build from
 progress deltas.
 
+**Downloads · Simple** (0.4.0) is its own layout, after its canvas board. One
+release leads as a card: progress, rate, time left in minutes rather than a
+countdown, and the last five minutes of speed. It keeps the card while it is
+still coming down, because a card that followed the fastest release would jump
+every second. The rest sit in sections by what each needs from you (Also
+downloading, Waiting, Needs attention, Just finished), sorted by the corner
+panel's own `kindOf` so the two never disagree. Simple keeps Failed behind More,
+so a stalled or refused release shows here under Needs attention, with *Find
+another copy*: a search the person picks from, never a substitute chosen for
+them. `app/src/ui/DownloadsSimple.tsx`.
+
 ---
 
 ## 8. Sources ranked, with the reasoning shown

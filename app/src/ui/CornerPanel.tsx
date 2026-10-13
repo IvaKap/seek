@@ -18,7 +18,7 @@ import { useMemo, useState } from 'react';
 import type { TransferGroup } from '../data/transferStore.ts';
 import { isAudioPath } from '../data/adapt.ts';
 import { groupStatus } from '../domain/transferStatus.ts';
-import { count, fileSize, ordinal, speed } from '../domain/format.ts';
+import { count, fileSize, ordinal, spanWords, speed } from '../domain/format.ts';
 import { IconMinus } from '../icons/index.tsx';
 import { Bar, releaseOf } from './transferBits.tsx';
 import type { Mode } from './viewMode.ts';
@@ -26,7 +26,7 @@ import type { Mode } from './viewMode.ts';
 /** Rows on the card. The rest are a "Show all" away. */
 const MAX_ROWS = 3;
 
-type Kind = 'moving' | 'waiting' | 'trouble' | 'finished';
+export type Kind = 'moving' | 'waiting' | 'trouble' | 'finished';
 
 export interface CornerRow {
   group: TransferGroup;
@@ -39,46 +39,72 @@ export interface CornerRow {
 
 const ORDER: Record<Kind, number> = { moving: 0, waiting: 1, trouble: 2, finished: 3 };
 
-function row(g: TransferGroup, since: number): CornerRow | null {
+/**
+ * What a release is doing. Downloads · Simple sorts by the same answer, so the
+ * panel and the screen never disagree about which release needs you. Null for
+ * one you paused or cancelled (you did that), and for one that finished at or
+ * before `since` (epoch seconds).
+ */
+export function kindOf(g: TransferGroup, since: number): Kind | null {
   if (g.state === 'paused' || g.state === 'cancelled') return null;
-
-  if (g.state === 'finished') {
-    const done = Math.max(...g.transfers.map((t) => t.finishedAt ?? 0));
-    if (done <= since) return null;
-    const tracks = g.transfers.filter((t) => isAudioPath(t.path)).length;
-    const what = tracks > 0 ? count(tracks, 'track') : count(g.transfers.length, 'file');
-    return { group: g, kind: 'finished', line: `Finished · ${what} now in Completed`, sub: null, position: null };
-  }
-
+  if (g.state === 'finished') return finishedAt(g) > since ? 'finished' : null;
   const status = groupStatus(g.transfers);
   if (g.state === 'failed' || g.state === 'stalled' || status?.tone === 'refused' || status?.tone === 'broken') {
-    const line = status?.text
-      ?? (g.state === 'stalled' ? 'Stalled — nothing received for a while' : 'Stopped');
-    return { group: g, kind: 'trouble', line, sub: null, position: null };
+    return 'trouble';
   }
+  return g.transfers.some((t) => t.state === 'transferring' || t.state === 'getting_status')
+    ? 'moving' : 'waiting';
+}
 
-  const moving = g.transfers.some((t) => t.state === 'transferring' || t.state === 'getting_status');
-  if (moving) {
-    const rate = g.speed > 0 ? speed(g.speed) : 'Starting';
-    return {
-      group: g, kind: 'moving',
-      line: `${rate} · ${fileSize(g.bytesDone)} of ${fileSize(g.size)}`, sub: null, position: null,
-    };
-  }
+/** When a release's last file landed, in epoch seconds. */
+export function finishedAt(g: TransferGroup): number {
+  return Math.max(0, ...g.transfers.map((t) => t.finishedAt ?? 0));
+}
 
+/** Its place in the peer's queue: its first file's. Null until the peer says. */
+export function queuePlace(g: TransferGroup): number | null {
   const positions = g.transfers
     .filter((t) => t.state === 'queued' && t.queuePosition !== null)
     .map((t) => t.queuePosition as number);
-  // Queued with no place in line: asked, not yet answered. Not news yet.
-  if (positions.length === 0) return null;
-  const position = Math.min(...positions);
+  return positions.length > 0 ? Math.min(...positions) : null;
+}
+
+export function startsWhen(position: number): string {
   const ahead = position - 1;
+  return ahead === 0 ? 'Starts next'
+    : `Starts when the ${ahead.toLocaleString('en-US')} ahead of you ${ahead === 1 ? 'finishes' : 'finish'}`;
+}
+
+/** Why a release in trouble is not coming down, in the shared wording. */
+export function troubleLine(g: TransferGroup): string {
+  // Given up on by the stall threshold: the number is what decides a retry.
+  if (g.state === 'stalled') return `Stalled · nothing has arrived for ${spanWords(g.quietFor)}`;
+  return groupStatus(g.transfers)?.text ?? 'Stopped';
+}
+
+function row(g: TransferGroup, since: number): CornerRow | null {
+  const kind = kindOf(g, since);
+  if (kind === null) return null;
+
+  if (kind === 'finished') {
+    const tracks = g.transfers.filter((t) => isAudioPath(t.path)).length;
+    const what = tracks > 0 ? count(tracks, 'track') : count(g.transfers.length, 'file');
+    return { group: g, kind, line: `Finished · ${what} now in Completed`, sub: null, position: null };
+  }
+  if (kind === 'trouble') return { group: g, kind, line: troubleLine(g), sub: null, position: null };
+  if (kind === 'moving') {
+    const rate = g.speed > 0 ? speed(g.speed) : 'Starting';
+    return { group: g, kind, line: `${rate} · ${fileSize(g.bytesDone)} of ${fileSize(g.size)}`, sub: null, position: null };
+  }
+
+  const position = queuePlace(g);
+  // Queued with no place in line: asked, not yet answered. Not news yet.
+  if (position === null) return null;
   return {
     group: g,
-    kind: 'waiting',
+    kind,
     line: `Waiting in ${g.username}'s queue · ${ordinal(position)} in line`,
-    sub: ahead === 0 ? 'Starts next'
-      : `Starts when the ${ahead.toLocaleString('en-US')} ahead of you ${ahead === 1 ? 'finishes' : 'finish'}`,
+    sub: startsWhen(position),
     position,
   };
 }

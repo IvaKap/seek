@@ -1103,6 +1103,9 @@ export default function App() {
             onApproveAuto={autoDownloads.approve}
             onRejectAuto={autoDownloads.reject}
             discovery={downloadsDiscovery}
+            simple={mode === 'simple'}
+            onFindAnother={(q) => { go('search'); searchTabs.openWith(q); }}
+            onShowCompleted={() => go('completed')}
           />
         ) : section === 'settings' ? (
           <SettingsView

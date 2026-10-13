@@ -23,7 +23,8 @@ import type { Mods } from '../domain/select.ts';
 import { copyText } from '../data/clipboard.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
-import { Bar, etaLabel, groupEta, releaseOf } from './transferBits.tsx';
+import { Bar, Cover, ReleaseName, etaLabel, groupEta, releaseOf } from './transferBits.tsx';
+import { SimpleDownloads } from './DownloadsSimple.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
@@ -53,11 +54,9 @@ import type { RelatedSession } from '../data/relatedStore.ts';
 import type { CatalogEntry } from '../data/catalogStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { LibrarySession } from '../data/libraryStore.ts';
-import { IconChevronDown, IconDownload, IconEmpty, IconRelease } from '../icons/index.tsx';
+import { IconChevronDown, IconDownload, IconEmpty } from '../icons/index.tsx';
 import { ChecksumPanel } from './ChecksumPanel.tsx';
 import { summarise } from '../domain/checksums.ts';
-import { Placeholder } from './ReleaseCard.tsx';
-import { useNearViewport } from './useNearViewport.ts';
 
 /** Everything the Related shelf needs, bundled so it threads as one prop. */
 interface RelatedDiscovery {
@@ -373,6 +372,45 @@ function FileRow({
   );
 }
 
+/** A release's files, opened beneath it. Both layouts use it. */
+function Files({ g, session, analysis, client, preview, selected, onFileSelect, onFileContext }: {
+  g: TransferGroup;
+  session: TransferSession;
+  analysis: AnalysisSession;
+  client: SidecarClient | null;
+  preview: PreviewSession;
+  selected: ReadonlySet<string>;
+  onFileSelect(id: string, order: string[], mods: Mods): void;
+  onFileContext(t: Transfer, e: React.MouseEvent): void;
+}) {
+  /** Which file's spectrum is expanded. Only one at a time — the chart is the
+   *  evidence for a single claim, and two side by side invite comparison the
+   *  data does not support. */
+  const [spectrumFor, setSpectrumFor] = useState<string | null>(null);
+  /* The id order a shift-range is measured in — this release's files, in the
+     order they render. Range selection is within a group by design (select.ts). */
+  const order = g.transfers.map((t) => t.id);
+  return (
+    <ul className="dl__files">
+      {g.transfers.map((t) => (
+        <FileRow
+          key={t.id}
+          t={t}
+          session={session}
+          analysis={analysis}
+          client={client}
+          spectrumOpen={spectrumFor === t.id}
+          onToggleSpectrum={() => setSpectrumFor((cur) => (cur === t.id ? null : t.id))}
+          preview={preview}
+          selected={selected.has(t.id)}
+          onSelect={(mods) => onFileSelect(t.id, order, mods)}
+          onContext={(e) => onFileContext(t, e)}
+        />
+      ))}
+    </ul>
+  );
+}
+
 /** The longest ETA in a group — the release is done when its slowest file is. */
 /**
  * The actions a group offers. Shared by both densities so the table cannot
@@ -598,10 +636,6 @@ const Group = memo(function Group({
   /** Whether the checksum report is showing. Separate from Related: they are
    *  different questions and closing one must not close the other. */
   const [hashOpen, setHashOpen] = useState(false);
-  /** Which file's spectrum is expanded. Only one at a time — the chart is the
-   *  evidence for a single claim, and two side by side invite comparison the
-   *  data does not support. */
-  const [spectrumFor, setSpectrumFor] = useState<string | null>(null);
   const pct = g.size > 0 ? Math.round((g.bytesDone / g.size) * 100) : 0;
 
   const { artist, release } = releaseOf(g);
@@ -649,27 +683,11 @@ const Group = memo(function Group({
     <ChecksumPanel report={hashEntry.report!} />
   );
 
-  /* The id order a shift-range is measured in — this release's files, in the
-     order they render. Range selection is within a group by design (select.ts). */
-  const fileOrder = g.transfers.map((t) => t.id);
   const files = open && (
-    <ul className="dl__files">
-      {g.transfers.map((t) => (
-        <FileRow
-          key={t.id}
-          t={t}
-          session={session}
-          analysis={analysis}
-          client={client}
-          spectrumOpen={spectrumFor === t.id}
-          onToggleSpectrum={() => setSpectrumFor((cur) => (cur === t.id ? null : t.id))}
-          preview={preview}
-          selected={selected.has(t.id)}
-          onSelect={(mods) => onFileSelect(t.id, fileOrder, mods)}
-          onContext={(e) => onFileContext(t, e)}
-        />
-      ))}
-    </ul>
+    <Files
+      g={g} session={session} analysis={analysis} client={client} preview={preview}
+      selected={selected} onFileSelect={onFileSelect} onFileContext={onFileContext}
+    />
   );
 
   if (density === 'table') {
@@ -773,74 +791,6 @@ const Group = memo(function Group({
   );
 }, sameRow);
 
-/**
- * The cover and the real name, for a row you are REVIEWING rather than watching.
- *
- * `g.title` is the last segment of the remote folder, which is a filename and
- * often looks like one: `[HDA002] Seafoam - Lost In The Archives Vol. 2 [2025]`.
- * That is the right thing to show while a download is running, because it is
- * literally what is arriving — but a Failed list exists to be triaged, and
- * triage needs the record, not the path it came down.
- *
- * `releaseOf` already parses artist and release out of the path (the same
- * `parsePath` the whole app uses), and it is exactly the pair `artwork.want`
- * takes, so the cover costs no new lookup path.
- *
- * Only rendered when NEAR the viewport. These lists are not virtualised, so a
- * Completed section with four hundred releases would otherwise queue four
- * hundred rate-limited MusicBrainz requests the moment it opened.
- */
-/**
- * `Artist — Release`, falling back to the folder name.
- *
- * Falls back rather than guessing: `parsePath` reports what it could actually
- * read, and a folder it cannot parse is shown verbatim instead of being
- * rendered as an empty artist and a mangled title. Half a parse looks like a
- * bug; the raw name at least matches what is on disk.
- */
-function ReleaseName({ g }: { g: TransferGroup }) {
-  const { artist, release } = releaseOf(g);
-  if (!artist) return <>{release || g.title}</>;
-  /* Some folders name the artist twice — `Revenge Of The Jaguar - The Aztec
-   * Mystic` parses to an artist that is also the start of the release, and
-   * rendering both gives "Revenge Of The Jaguar — Revenge Of The Jaguar - …".
-   * The release alone is the more complete of the two, so it wins. Observed on
-   * real completed downloads, not imagined. */
-  if (release.toLowerCase().startsWith(artist.toLowerCase())) {
-    return <>{release}</>;
-  }
-  return (
-    <>
-      <span className="dl__artist">{artist}</span>
-      <span className="dl__dash" aria-hidden> — </span>
-      {release}
-    </>
-  );
-}
-
-function Cover({ g, artwork }: { g: TransferGroup; artwork?: ArtworkSession }) {
-  const { artist, release } = releaseOf(g);
-  const key = `dl:${g.key}`;
-  const [ref, near] = useNearViewport();
-
-  // In an effect, not in render: React double-invokes render in development and
-  // a network request is not something to fire while deciding what to draw.
-  useEffect(() => {
-    if (near) artwork?.want(key, artist, release);
-  }, [near, artwork, key, artist, release]);
-
-  const art = artwork?.get(key);
-  return (
-    <span className="art art--dl" ref={ref} aria-hidden>
-      <Placeholder seed={`${artist}${release}`} />
-      <IconRelease size={13} painted={1.3} className="art__fallback" />
-      {art?.state === 'ready' && (
-        <img className="art__img" src={art.dataUri} alt="" loading="lazy" />
-      )}
-    </span>
-  );
-}
-
 const TITLES: Record<'active' | 'finished' | 'failed', string> = {
   active: 'Downloads', finished: 'Completed', failed: 'Failed',
 };
@@ -877,11 +827,17 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
 export function DownloadsView({
   session, signedIn, filter, analysis, checksums, client, preview, density,
   onDensity, discovery, autoClaims, onApproveAuto, onRejectAuto,
+  simple = false, onFindAnother, onShowCompleted,
 }: {
   session: TransferSession;
   signedIn: boolean;
   /** Which section this is rendering — the same list, three lenses. */
   filter: 'active' | 'finished' | 'failed';
+  /** Simple mode: Downloads becomes DownloadsSimple.tsx's layout. */
+  simple?: boolean;
+  /** Search for another copy of a release that will not come down. */
+  onFindAnother?(query: string): void;
+  onShowCompleted?(): void;
   analysis: AnalysisSession;
   checksums: ChecksumSession;
   client: SidecarClient | null;
@@ -1231,6 +1187,65 @@ export function DownloadsView({
     </header>
   );
 
+  /* Built once and shown in EVERY return: cancelling the last download in a
+     lens empties it, and Undo used to live only in the non-empty one — so
+     the one Cancel most worth undoing had no Undo at all. */
+  const undo = session.cancelled && (
+    <p className="dls__note dls__undo" role="status">
+      Cancelled {session.cancelled.length}{' '}
+      {session.cancelled.length === 1 ? 'file' : 'files'}.
+      <button
+        type="button"
+        className="verify pressable"
+        title="Ask for them again. The peer decides where in their queue they go."
+        onClick={session.undoCancel}
+      >
+        Undo
+      </button>
+    </p>
+  );
+  const said = (
+    <>
+      {session.note && !session.error && (
+        <p className="dls__note" role="status">{session.note}</p>
+      )}
+      {session.error && (
+        <p className="dls__error" role="alert">{session.error}</p>
+      )}
+    </>
+  );
+
+  /* Simple's Downloads is its own layout, after its canvas board, and it
+     carries the failed and the just finished too: Simple keeps those lenses
+     behind More. The files beneath a release are the same either way. */
+  if (simple && filter === 'active') {
+    return (
+      <>
+        <SimpleDownloads
+          session={session}
+          artwork={discovery?.artwork}
+          awaiting={awaiting}
+          signedIn={signedIn}
+          openKeys={openKeys}
+          onOpen={setOpenFor}
+          renderOpen={(g, actions) => (
+            <>
+              {actions && <div className="dl__actions"><Actions g={g} session={session} /></div>}
+              <Files
+                g={g} session={session} analysis={analysis} client={client} preview={preview}
+                selected={selected} onFileSelect={onFileSelect} onFileContext={onFileContext}
+              />
+            </>
+          )}
+          notices={<>{undo}{said}</>}
+          onFindAnother={onFindAnother}
+          onShowCompleted={onShowCompleted}
+        />
+        <ContextMenu request={menu} onClose={() => setMenu(null)} />
+      </>
+    );
+  }
+
   /* A filter that matches nothing is NOT an empty section, and saying "no
    * completed downloads yet" over twenty of them is the confidently-wrong
    * answer this app exists not to give. Caught by driving the real thing: the
@@ -1264,24 +1279,6 @@ export function DownloadsView({
       </>
     );
   }
-
-  /* Built once and shown in BOTH returns: cancelling the last download in a
-     lens empties it, and Undo used to live only in the non-empty one — so
-     the one Cancel most worth undoing had no Undo at all. */
-  const undo = session.cancelled && (
-    <p className="dls__note dls__undo" role="status">
-      Cancelled {session.cancelled.length}{' '}
-      {session.cancelled.length === 1 ? 'file' : 'files'}.
-      <button
-        type="button"
-        className="verify pressable"
-        title="Ask for them again. The peer decides where in their queue they go."
-        onClick={session.undoCancel}
-      >
-        Undo
-      </button>
-    </p>
-  );
 
   if (groups.length === 0) {
     return (
@@ -1330,12 +1327,7 @@ export function DownloadsView({
           }}
         >
           {undo}
-          {session.note && !session.error && (
-            <p className="dls__note" role="status">{session.note}</p>
-          )}
-          {session.error && (
-            <p className="dls__error" role="alert">{session.error}</p>
-          )}
+          {said}
           {filter === 'finished' && awaiting.length > 0 && (
             <AutoReview
               claims={awaiting}
