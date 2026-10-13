@@ -502,6 +502,11 @@ class TransferFolderParams(TypedDict):
     recurse: Optional[bool]
     # Absolute local folder. Null uses the default.
     destination: Optional[str]
+    # Hold the folder back instead of queueing it when it holds more files
+    # than this, and say so in `folder.contents` `held`. Only the sidecar sees
+    # the real count: a search shows a fraction of a folder. Null queues
+    # whatever arrives.
+    confirmAbove: Optional[int]
 
 
 class TransferFolderResult(TypedDict):
@@ -2252,10 +2257,24 @@ class UserInfoResultEvent(TypedDict):
     freeSlots: bool
 
 
+class HeldFolder(TypedDict):
+    """
+    A folder request held back because the folder holds more files than its
+    `confirmAbove`. Nothing was queued for it: ask, then send
+    `transfer.enqueueFolder` again with these values and `confirmAbove:
+    null`.
+    """
+    # Files the request would have queued.
+    count: int
+    recurse: bool
+    destination: Optional[str]
+
+
 class FolderContentsEvent(TypedDict):
     """
     Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted
-    before the resulting `transfer.added` events.
+    before the resulting `transfer.added` events. One answer settles every
+    request still waiting on that folder, oldest first.
     """
     # Matches TransferFolderResult.requestId.
     requestId: str
@@ -2264,6 +2283,8 @@ class FolderContentsEvent(TypedDict):
     folders: List["FolderRef"]
     # How many files were queued as a result.
     enqueued: int
+    # The oldest request held back by its `confirmAbove`, if any.
+    held: Optional["HeldFolder"]
 
 
 class FolderContentsFailedEvent(TypedDict):
@@ -2968,6 +2989,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("folderPath", "str", False, False),
         ("recurse", "bool", False, True),
         ("destination", "str", False, True),
+        ("confirmAbove", "int", False, True),
     ),
     "TransferFolderResult": (
         ("requestId", "str", False, False),
@@ -3694,12 +3716,18 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("queueSize", "int", False, False),
         ("freeSlots", "bool", False, False),
     ),
+    "HeldFolder": (
+        ("count", "int", False, False),
+        ("recurse", "bool", False, False),
+        ("destination", "str", False, True),
+    ),
     "FolderContentsEvent": (
         ("requestId", "str", False, False),
         ("username", "str", False, False),
         ("folderPath", "str", False, False),
         ("folders", "FolderRef", True, False),
         ("enqueued", "int", False, False),
+        ("held", "HeldFolder", False, True),
     ),
     "FolderContentsFailedEvent": (
         ("requestId", "str", False, True),

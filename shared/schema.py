@@ -524,6 +524,14 @@ STRUCTS = {
             ("folderPath", "str", "Full remote folder path."),
             ("recurse", "bool?", "Include subfolders. Defaults false."),
             ("destination", "str?", "Absolute local folder. Null uses the default."),
+            (
+                "confirmAbove",
+                "int?",
+                "Hold the folder back instead of queueing it when it holds more "
+                "files than this, and say so in `folder.contents` `held`. Only "
+                "the sidecar sees the real count: a search shows a fraction of "
+                "a folder. Null queues whatever arrives.",
+            ),
         ],
     ),
     "TransferFolderResult": (
@@ -2325,15 +2333,32 @@ STRUCTS = {
             ("freeSlots", "bool", ""),
         ],
     ),
+    "HeldFolder": (
+        "A folder request held back because the folder holds more files than "
+        "its `confirmAbove`. Nothing was queued for it: ask, then send "
+        "`transfer.enqueueFolder` again with these values and "
+        "`confirmAbove: null`.",
+        [
+            ("count", "int", "Files the request would have queued."),
+            ("recurse", "bool", ""),
+            ("destination", "str?", ""),
+        ],
+    ),
     "FolderContentsEvent": (
         "Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted "
-        "before the resulting `transfer.added` events.",
+        "before the resulting `transfer.added` events. One answer settles every "
+        "request still waiting on that folder, oldest first.",
         [
             ("requestId", "str", "Matches TransferFolderResult.requestId."),
             ("username", "str", ""),
             ("folderPath", "str", ""),
             ("folders", "FolderRef[]", ""),
             ("enqueued", "int", "How many files were queued as a result."),
+            (
+                "held",
+                "HeldFolder?",
+                "The oldest request held back by its `confirmAbove`, if any.",
+            ),
         ],
     ),
     "FolderContentsFailedEvent": (
