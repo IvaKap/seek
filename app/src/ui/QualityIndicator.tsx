@@ -89,11 +89,13 @@ function Mark({ glyph, size = 13, painted = 1.6 }: { glyph: QualityGlyph; size?:
 }
 
 export function QualityIndicator({
-  assessment, size = 13, showLabel = false,
+  assessment, size = 13, showLabel = false, text,
 }: {
   assessment: Assessment;
   size?: number;
   showLabel?: boolean;
+  /** Words to show beside the mark in place of the state's name. */
+  text?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
@@ -180,7 +182,9 @@ export function QualityIndicator({
         }}
       >
         <Mark glyph={assessment.glyph} size={size} />
-        {showLabel && <span className="quality__label">{assessment.label}</span>}
+        {(text ?? (showLabel ? assessment.label : null)) && (
+          <span className="quality__label">{text ?? assessment.label}</span>
+        )}
       </button>
 
       {open && createPortal(

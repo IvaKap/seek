@@ -23,7 +23,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
-import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/format.ts';
+import { audioSpec, count, duration, fileSize, integer, slotWords, speed } from '../domain/format.ts';
 import {
   IconCheck, IconChevronDown, IconDownload, IconHistory, IconUser, IconWarning,
 } from '../icons/index.tsx';
@@ -160,7 +160,7 @@ const QBTN_TEXT: Record<QueueBadge, string> = {
  * queued; `failed` re-queues; `done` is inert.
  */
 export function QueueButton({
-  badge, onQueue, label, className = 'action pressable qbtn', withText = false,
+  badge, onQueue, label, className = 'action pressable qbtn', withText = false, texts,
 }: {
   badge: QueueBadge;
   onQueue(): void;
@@ -169,6 +169,8 @@ export function QueueButton({
   className?: string;
   /** Show a short text label beside the icon (the release card's "Get"). */
   withText?: boolean;
+  /** Words to say instead of the defaults, per state. A best pick says who it is asking. */
+  texts?: Partial<Record<QueueBadge, string>>;
 }) {
   const [pressed, setPressed] = useState(false);
   // Once the store reflects any real state, stop being optimistic and follow it.
@@ -195,7 +197,7 @@ export function QueueButton({
       onClick={(e) => { e.stopPropagation(); act(); }}
     >
       {QBTN_ICON[shown]}
-      {withText && <span>{QBTN_TEXT[shown]}</span>}
+      {withText && <span>{texts?.[shown] ?? QBTN_TEXT[shown]}</span>}
     </button>
   );
 }
@@ -204,9 +206,11 @@ const UNPARSED_PATH = 'Seek could not read an artist and title from this path, s
 const UNPARSED_FILE = 'Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it.';
 
 /** Artist — title, or the raw filename flagged "unparsed" when neither could be read. */
-function TitleLine({ of, unparsed = UNPARSED_PATH }: {
+export function TitleLine({ of, unparsed = UNPARSED_PATH, word = 'unparsed' }: {
   of: { displayArtist: string | null; displayTitle: string; fallback: boolean };
   unparsed?: string;
+  /** The flag's own words. Simple says it plainly. */
+  word?: string;
 }) {
   return (
     <span className="row__title">
@@ -217,7 +221,7 @@ function TitleLine({ of, unparsed = UNPARSED_PATH }: {
         </>
       )}
       <span className="row__name" data-raw={of.fallback ? 'true' : undefined}>{of.displayTitle}</span>
-      {of.fallback && <span className="row__unparsed" title={unparsed}>unparsed</span>}
+      {of.fallback && <span className="row__unparsed" title={unparsed}>{word}</span>}
     </span>
   );
 }
@@ -473,13 +477,15 @@ function bestLabel(group: UserGroup): string {
 /* ------------------------------------------------------------- source row */
 
 export function SourceRow({
-  source, last, onQueue, context = 'peers', peers, queueStates,
+  source, last, onQueue, context = 'peers', peers, queueStates, plain = false,
 }: {
   source: SourceFile;
   last: boolean;
   onQueue(): void;
   /** What the surrounding list is grouping by. See the Row union's note. */
   context?: 'peers' | 'files';
+  /** Simple's words for the queue: "slot free", "3 waiting". */
+  plain?: boolean;
   /** How this peer has actually treated you. Absent means never met. */
   peers?: PeerLookup;
   queueStates?: Map<string, TransferState>;
@@ -531,8 +537,8 @@ export function SourceRow({
             <Meta col="time"><span className="tnum">{duration(source.duration)}</span></Meta>
             <Meta col="size"><span className="tnum">{fileSize(source.size)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={source.peer.advertisedSpeed} />
-            <Meta col="queue" dim={source.peer.queueLength === 0}>
-              <span className="tnum">{source.peer.queueLength}</span> queued
+            <Meta col="queue" dim={!plain && source.peer.queueLength === 0}>
+              {plain ? slotWords(source.peer) : <><span className="tnum">{source.peer.queueLength}</span> queued</>}
             </Meta>
             <Meta col="check"><Quality file={source} /></Meta>
             <Meta col="user" dim>
@@ -550,7 +556,7 @@ export function SourceRow({
         </span>
         <span className="row__tail">
           {source.private && <PrivateMark />}
-          {source.peer.freeSlots && <span className="row__free">free</span>}
+          {source.peer.freeSlots && !plain && <span className="row__free">free</span>}
         </span>
       </div>
       <span className="row__actions">

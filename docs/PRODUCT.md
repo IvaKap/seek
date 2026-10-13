@@ -115,6 +115,12 @@ Behaviour is unchanged from this document: client-side, instant, re-applies to
 still-streaming results, animates rows out rather than blanking, per-tab, and
 survives restart. Presets ("my usual") in one click.
 
+**Simple keeps the pills one click away** (0.4.0), behind a *Filters* button
+beside *Wishlist*, the way its sidebar keeps the rest behind More. The same
+pills open, never a menu, and the button reads *Filters on* whenever any filter
+applies, so a filtered list never passes for the whole one. Collector shows the
+pill row as it always did.
+
 ---
 
 ## 4. Results — release cards, not a spreadsheet
@@ -152,6 +158,20 @@ trying to remove.
 
 Table density preserves the full power-user column set. **Do not hide Soulseek's
 power-user nature — that is part of its charm.** Comfortable is the default.
+
+**Simple's one list: every version, in plain words** (0.4.0). Below the best
+picks (§8), Search · Simple shows *All copies · N versions · N copies* and a
+sort menu. A version is one track in one format at one size (within 5%, which
+re-tagging never leaves and a relabelled or doubted file never enters) from
+however many people, or one record in one format, every folder of it. Each row
+says what it is (format, length, size, slots, the size check's verdict as a
+phrase such as *Likely lossless* or *Numbers don't add up*) and how many copies
+exist. Get takes the copy the row shows, the best-ranked one, and its copies
+open beneath it (a record's open as the comparison) for anyone who wants a
+particular person's. Grouping and density are Collector's choices, where the same
+list is the **Version** grouping. A status line counts the *people* who have
+answered, because that is the number that grows. `domain/group.ts`
+(`versions`), `domain/bestSources.ts` (`releaseVersions`), `ui/AllCopies.tsx`.
 
 ---
 
@@ -272,6 +292,15 @@ note is explicit and correct about this: never pretend to know things the
 protocol doesn't expose. "97% successful transfers" means *with us*, and the UI
 should say so rather than implying a global reputation we cannot see.
 
+**Best picks** (Simple, 0.4.0) put the ranking in front as two or three cards
+above the results: *Best overall* is the best-scoring copy of the track the most
+people have, *Fastest* is that track's copy likely to arrive soonest (never below
+320 or V0), and *Whole release* is the best copy of the most-copied folder. A
+pick is one peer's file or folder, and Get takes exactly that copy: the ranking
+orders, it never chooses. Picks honour the filters and the download rules
+("Prefer lossless" included), are never a suspected transcode or buddy-only, and
+hold still under the pointer while results stream in. `app/src/domain/bestPicks.ts`.
+
 ---
 
 ## 9. Deferred, with reasons
@@ -280,7 +309,9 @@ should say so rather than implying a global reputation we cannot see.
 reason it was first deferred still holds and shaped it: a toggle that splits the interface in
 two, or forces a choice before the user knows what they want, would be wrong.
 So Simple and Collector change only what is *in front* — each screen's density,
-and how much of the sidebar shows — never what exists. Every feature is reachable
+and how much of the sidebar shows — never what exists. Search · Simple is the
+one place the preset is a whole look: always the list of versions (§4), with
+grouping and density left to Collector, which offers that list as **Version**. Every feature is reachable
 in both; Simple's sidebar keeps the rest one click away behind More, and an entry
 with news (a badge) or the screen you are on never hides there. A first launch
 opens in Simple with no question asked; an install from before the switch opens

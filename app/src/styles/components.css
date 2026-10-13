@@ -840,7 +840,9 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row__artist { color: var(--text-primary); font-weight: var(--fw-medium); }
-.row__dash { color: var(--text-quaternary); }
+/* `pre`: the title is a flex row, and a flex item drops the spaces at either
+   end of its text, which ran "Burial—Archangel" together. */
+.row__dash { color: var(--text-quaternary); white-space: pre; }
 .row__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; }
 .row__name[data-raw='true'] { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .row__unparsed {
@@ -849,7 +851,7 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro); color: var(--text-tertiary);
   cursor: help; flex: none;
 }
-.row__free {
+.row__free, .row__tag {
   margin-left: var(--sp-2); padding: 0 var(--sp-1);
   border-radius: var(--radius-sm); background: var(--bg-sunken);
   font-size: var(--fs-micro); color: var(--text-secondary);
@@ -3999,3 +4001,117 @@
   font-size: var(--fs-caption); color: var(--text-primary); text-align: left; cursor: default;
 }
 .corner__pill-text { display: flex; flex-direction: column; }
+
+/* ========================================================== best picks == */
+
+/* Simple's lead: two or three cards above the results, titles two sizes above
+   the list's file names. They scroll away with the list. */
+.picks { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5) var(--sp-4); }
+.picks__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.picks__row {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+}
+.pick {
+  container-type: inline-size;
+  display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0;
+  padding: var(--sp-3);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-raised);
+}
+.pick__kind {
+  font-size: var(--fs-micro); font-weight: var(--fw-semibold); letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.pick__head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.pick__art { position: relative; width: 2.75rem; height: 2.75rem; border-radius: var(--radius-md); }
+.pick__body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.pick__title {
+  margin: 0; font-size: var(--fs-body-lg); line-height: 1.3; letter-spacing: var(--tr-body-lg);
+  font-weight: var(--fw-semibold);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.pick__title [data-raw='true'] { font-weight: 400; color: var(--text-secondary); }
+.pick__dash { color: var(--text-quaternary); font-weight: 400; }
+.pick__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+/* Pinned to the bottom so the Gets line up across a row of cards. */
+.pick__foot {
+  margin-top: auto;
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-2);
+}
+.pick__about {
+  flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.pick__about .quality__label { font-size: var(--fs-caption); white-space: nowrap; }
+.pick__peer { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick__get { flex: none; max-width: 100%; margin-left: auto; }
+.pick__get span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Too narrow for the details and "Get all 13" side by side: every card in the
+   row is the same width, so they all stack alike. */
+@container (max-width: 17rem) {
+  .pick__foot { flex-direction: column; align-items: stretch; }
+}
+
+/* ========================================================== all copies == */
+
+/* Simple's status line: who has answered, the number that grows, in place of
+   Collector's file count. */
+.answered {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.answered[data-live='true']::before {
+  content: ''; flex: none;
+  width: 0.375rem; height: 0.375rem; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* "All copies · 8 versions · 19 copies", and the sort. Scrolls with the list. */
+.copies-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.copies-head__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.copies-head__count { margin-left: var(--sp-2); font-weight: 400; color: var(--text-tertiary); }
+
+/* One version: a title, then one line of facts in plain words. */
+.row--simple {
+  box-sizing: border-box; min-height: 3.25rem;
+  padding-top: var(--sp-2); padding-bottom: var(--sp-2);
+}
+.simple__art { position: relative; width: 2rem; height: 2rem; }
+.simple__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3);
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.simple__facts .quality__label { font-size: var(--fs-caption); }
+/* The verdict is the words here, not a glyph beside a column, so it is read
+   at reading contrast. */
+.simple__facts .quality[data-state='good'] .quality__trigger,
+.pick__about .quality[data-state='good'] .quality__trigger { color: var(--text-secondary); }
+.simple__facts .quality[data-state='unverified'] .quality__trigger,
+.pick__about .quality[data-state='unverified'] .quality__trigger { color: var(--text-tertiary); }
+.simple__copies {
+  flex: none; display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.simple__compare {
+  padding: 2px var(--sp-1); margin: -2px calc(var(--sp-1) * -1);
+  border-radius: var(--radius-sm); color: var(--accent); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) { .simple__compare:hover { background: var(--bg-active); } }
+/* "Get" in words, like the picks above: wider than the icon it replaces. */
+.row--simple .row__actions { width: auto; min-width: 4.5rem; }

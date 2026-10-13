@@ -242,11 +242,13 @@ export interface UserGroup {
 
 /**
  * `'file'` is the classic Nicotine+ flat list — one row per file, no grouping.
+ * `'version'` is one row per version of a track (same format, same size, from
+ * however many people) and per record in one format: Simple's only list.
  * `'user'` is retired from the picker (see GROUPS in SearchView) but kept in the
  * type: a saved tab may still carry it, and the store's derive/rowValue keep the
  * branch so restoring such a tab does not crash.
  */
-export type GroupBy = 'track' | 'release' | 'file' | 'user';
+export type GroupBy = 'track' | 'release' | 'version' | 'file' | 'user';
 export type SortKey = 'best' | 'quality' | 'speed' | 'queue' | 'size' | 'name';
 
 export interface Filters {

@@ -109,3 +109,9 @@ export function count(n: number, singular: string, plural = `${singular}s`): str
 export function integer(n: number): string {
   return n.toLocaleString('en-US');
 }
+
+/** A peer's upload slots in words: "slot free", "3 waiting" or "no free slot". */
+export function slotWords(peer: { freeSlots: boolean; queueLength: number }): string {
+  if (peer.freeSlots) return 'slot free';
+  return peer.queueLength > 0 ? `${integer(peer.queueLength)} waiting` : 'no free slot';
+}

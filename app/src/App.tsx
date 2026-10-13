@@ -205,7 +205,9 @@ export default function App() {
   const prefs = usePrefs(prefsClient);
   /* One connection, shared. The search session is per-tab and takes it. */
   const conn = useSidecarConnection();
-  const session = useSearchSession(conn, { reliability: prefs.reliability });
+  /* Simple groups by version whatever the tab's own grouping says, which stays
+     put for Collector (data/searchStore.ts). */
+  const session = useSearchSession(conn, { reliability: prefs.reliability, versions: mode === 'simple' });
   /* Several searches open at once. One runs at a time — the transport allows no
    * more — so a tab is a search put away with everything needed to bring it
    * back. See data/searchTabs.ts. */
@@ -716,6 +718,7 @@ export default function App() {
       },
       { id: 'group.track', group: 'Group by', label: 'Track', run: () => session.setGroupBy('track') },
       { id: 'group.release', group: 'Group by', label: 'Release', run: () => session.setGroupBy('release') },
+      { id: 'group.version', group: 'Group by', label: 'Version', run: () => session.setGroupBy('version') },
       // "Files" is the classic flat list; like the pane's own control it forces
       // table density, the only one it reads right in.
       { id: 'group.file', group: 'Group by', label: 'Files (classic list)',
@@ -937,6 +940,7 @@ export default function App() {
             searchRef={searchRef}
             density={views.search}
             onDensity={onDensity.search}
+            simple={mode === 'simple'}
             columns={columns}
             onColumns={changeColumns}
             tabs={searchTabs}

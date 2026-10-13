@@ -29,6 +29,7 @@ import type { Release } from '../domain/types.ts';
 import { copiesOf } from '../domain/bestSources.ts';
 import { FileRow, QueueButton, SourceRow, TrackRow, UserRow } from './rows.tsx';
 import { Placeholder, ReleaseCard } from './ReleaseCard.tsx';
+import { SimpleReleaseRow, SimpleTrackRow } from './AllCopies.tsx';
 import { useNearViewport } from './useNearViewport.ts';
 import type { PeerLookup } from './PeerHistory.tsx';
 import type { SearchDensity } from './ViewMenu.tsx';
@@ -75,7 +76,7 @@ const STAGGER_MAX = 130;
 export function ResultList({
   rows, currentTick, expanded, onToggle, onQueue, onBrowse, onContext, pendingCount, onFoldIn,
   onViewport, emptyState, density, columns = DEFAULT_COLUMNS, onColumns, artwork, library, peers,
-  copies, onCompare, queueStates, folderStates,
+  copies, onCompare, queueStates, folderStates, lead, simple = false,
 }: {
   rows: Row[];
   currentTick: number;
@@ -105,11 +106,16 @@ export function ResultList({
   onFoldIn(): void;
   onViewport(first: number, atTop: boolean): void;
   emptyState: React.ReactNode;
+  /** Shown above the rows and scrolled with them: Simple's best picks. */
+  lead?: React.ReactNode;
+  /** Simple's rows: one line of plain words per version (AllCopies.tsx). */
+  simple?: boolean;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const theadRef = useRef<HTMLDivElement>(null);
+  const leadRef = useRef<HTMLDivElement>(null);
   const reduced = useReducedMotion();
   const rootPx = useRootFontSize();
   /* Hand-set widths live as `--w-<id>` on `.results`, the one element above
@@ -196,30 +202,23 @@ export function ResultList({
    * The header now sits INSIDE the scroller, sticky at its top, so it is always
    * exactly as wide as the rows — outside, it was wider by the scrollbar, and
    * the flexible Name column resolved differently in each. Rows therefore start
-   * below it, which the virtualiser is told as `scrollMargin`. */
+   * below it, which the virtualiser is told as `scrollMargin` — and below the
+   * lead too, which sits above the header and scrolls away. */
   const showHead = density === 'table' && display.length > 0;
-  const [headH, setHeadH] = useState(0);
-  useLayoutEffect(() => {
-    const el = theadRef.current;
-    if (!showHead || !el) { setHeadH(0); return; }
-    const read = () => setHeadH(el.offsetHeight);
-    read();
-    if (typeof ResizeObserver !== 'function') return;
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [showHead]);
+  const headH = useHeight(theadRef, showHead);
+  const leadH = useHeight(leadRef, lead !== undefined && display.length > 0);
+  const above = leadH + headH;
 
   /* ---- virtualiser ---- */
   const virtualizer = useVirtualizer({
-    scrollMargin: headH,
+    scrollMargin: above,
     count: display.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {
       const kind = display[i]?.kind;
       const rem = kind === 'source'
         ? H_SOURCE_REM
-        : kind === 'release'
+        : kind === 'release' && !simple
           ? H_CARD_REM[density]
           : H_ROW_REM[density];
       return Math.round(rem * rootPx);
@@ -250,11 +249,11 @@ export function ResultList({
     if (density === 'grid') return;
     for (const item of items) {
       const row = display[item.index];
-      if (row?.kind === 'release') {
-        artwork.want(row.release.id, row.release.artist, row.release.title);
-      }
+      // Simple shows a track's cover too: the folder its copy sits in.
+      const cover = row?.kind === 'release' ? row.release : simple && row?.kind === 'track' ? row.folder : null;
+      if (cover) artwork.want(cover.id, cover.artist, cover.title);
     }
-  }, [items, display, artwork, density]);
+  }, [items, display, artwork, density, simple]);
 
   /* ---- report the viewport so the store knows what it must not reorder ---- */
   useEffect(() => {
@@ -329,6 +328,36 @@ export function ResultList({
   }, [onFoldIn, springToTop]);
 
   const renderRow = (row: Row) => {
+    if (simple && row.kind === 'track') {
+      return (
+        <SimpleTrackRow
+          track={row.track}
+          folder={row.folder}
+          art={row.folder ? artwork?.get(row.folder.id) : undefined}
+          expanded={expanded.has(row.id)}
+          onToggle={() => onToggle(row.id)}
+          // The copy the row shows, by name: never a pick made at press time.
+          onQueue={(copy) => onQueue({ kind: 'file', id: copy.id, source: copy, tick: copy.tick })}
+          queueStates={queueStates}
+        />
+      );
+    }
+    if (simple && row.kind === 'release') {
+      const group = row.copies ?? [row.release];
+      const badges = group.map((r) => folderStates?.get(folderKey(r.peer.username, r.folderPath)) ?? 'idle');
+      return (
+        <SimpleReleaseRow
+          copies={group}
+          art={artwork?.get(row.release.id)}
+          expanded={expanded.has(row.id)}
+          onToggle={() => onToggle(row.id)}
+          onQueue={(copy) => onQueue({ kind: 'release', id: copy.id, release: copy, tick: copy.tick })}
+          // The record is what you took, so a copy queued from the comparison counts too.
+          badge={badges.find((b) => b !== 'idle') ?? 'idle'}
+          onCompare={onCompare}
+        />
+      );
+    }
     switch (row.kind) {
       case 'track':
         return (
@@ -342,7 +371,7 @@ export function ResultList({
         );
       case 'release': {
         // A lone copy has nothing to compare against, so the card offers nothing.
-        const group = copies ? copiesOf(row.release, copies) : [row.release];
+        const group = row.copies ?? (copies ? copiesOf(row.release, copies) : [row.release]);
         return (
           <ReleaseCard
             art={artwork?.get(row.release.id)}
@@ -378,6 +407,7 @@ export function ResultList({
             onQueue={() => onQueue(row)}
             peers={peers}
             queueStates={queueStates}
+            plain={simple}
           />
         );
       case 'file':
@@ -407,6 +437,7 @@ export function ResultList({
       </div>
 
       <div className="scroller" ref={scrollRef} tabIndex={-1} data-density={density}>
+        {lead !== undefined && display.length > 0 && <div ref={leadRef}>{lead}</div>}
         {/* A table without a header row cannot be read: nothing tells you
             whether a bare number is a queue depth or a file count. Drag a
             header to move its column, drag its edge to resize it. */}
@@ -473,8 +504,8 @@ export function ResultList({
                     onContext(row, e.clientX, e.clientY);
                   }}
                   style={{
-                    // `start` counts from the scroller's top, header included.
-                    transform: `translate3d(0, ${item.start - headH}px, 0)`,
+                    // `start` counts from the scroller's top, lead and header included.
+                    transform: `translate3d(0, ${item.start - above}px, 0)`,
                     animationDelay: delay ? `${delay}ms` : undefined,
                   }}
                 >
@@ -487,6 +518,22 @@ export function ResultList({
       </div>
     </div>
   );
+}
+
+/** An element's height while `on`, kept current as it resizes. 0 otherwise. */
+function useHeight(ref: React.RefObject<HTMLElement | null>, on: boolean): number {
+  const [h, setH] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!on || !el) { setH(0); return; }
+    const read = () => setH(el.offsetHeight);
+    read();
+    if (typeof ResizeObserver !== 'function') return;
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [on, ref]);
+  return h;
 }
 
 /**

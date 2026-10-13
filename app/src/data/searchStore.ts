@@ -26,6 +26,8 @@ import { EMPTY_FILTERS } from '../domain/types.ts';
 import { createGrouper, matches, terms } from '../domain/group.ts';
 import { TIER_RANK } from '../domain/quality.ts';
 import { reliabilityFrom } from '../domain/score.ts';
+import { releaseVersions } from '../domain/bestSources.ts';
+import type { PickPool } from '../domain/bestPicks.ts';
 import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import type { SidecarConnection } from './connectionStore.ts';
@@ -72,8 +74,11 @@ export function isSignedIn(serverState: string | null): boolean {
 }
 
 export type Row =
-  | { kind: 'track'; id: string; track: TrackCluster; tick: number }
-  | { kind: 'release'; id: string; release: Release; tick: number }
+  /* `folder`, grouped by version only: the folder the copy shown sits in, for its cover. */
+  | { kind: 'track'; id: string; track: TrackCluster; tick: number; folder?: Release | null }
+  /* `copies`, grouped by version only: every folder of this record in this
+   * format, best first. `release` is the first, the one the row shows. */
+  | { kind: 'release'; id: string; release: Release; tick: number; copies?: Release[] }
   | { kind: 'user'; id: string; group: UserGroup; tick: number }
   /* One row per file — the classic Nicotine+ flat list. A leaf, like a source
    * row, but top-level: it never expands and it participates in the column
@@ -183,6 +188,8 @@ export interface SearchSnapshot {
 
 export interface SearchSessionOptions {
   reliability?(username: string): number;
+  /** Group by version whatever the tab's own grouping says: Simple's one list. */
+  versions?: boolean;
 }
 
 /** The bridge fields (phase, isMock, serverState, client, startupError) come
@@ -210,12 +217,15 @@ export interface SearchSession
 
   totalFiles: number;
   matchedFiles: number;
+  /** How many people have answered, audio or not. */
+  peerCount: number;
   /** Newest ingest tick — the list uses it to decide which rows may animate in. */
   tick: number;
 
   filters: Filters;
   setFilters(next: Filters): void;
   resetFilters(): void;
+  /** The tab's own grouping, kept while `versions` overrides what is shown. */
   groupBy: GroupBy;
   setGroupBy(g: GroupBy): void;
   sort: SortKey;
@@ -225,6 +235,12 @@ export interface SearchSession
 
   /** Formats present in the current result set, for the filter chips. */
   availableFormats: string[];
+  /**
+   * The filtered results grouped both by track and by release, for best
+   * picks. Built when called, because only Simple shows picks; its identity
+   * changes whenever the filtered results do, so it can key a memo.
+   */
+  pickPool(): PickPool;
 
   /* ---- tabs ---- */
 
@@ -369,7 +385,16 @@ export function useSearchSession(
 
   /* ---- derive: filter → group → sort ---- */
 
-  const { rows: nextRows, matchedFiles, availableFormats } = useMemo(() => {
+  const group: GroupBy = options.versions ? 'version' : groupBy;
+  /* Switching mode regroups the list, which re-sorts it like choosing a
+     grouping does. The tab's own grouping is untouched, for Collector. */
+  const shownGroup = useRef(group);
+  if (shownGroup.current !== group) {
+    shownGroup.current = group;
+    resortAll.current = true;
+  }
+
+  const { rows: nextRows, kept, matchedFiles, availableFormats } = useMemo(() => {
     void tick;
     const all = grouper.all;
     const inc = terms(filters.include);
@@ -383,11 +408,21 @@ export function useSearchSession(
     }
 
     const out: Row[] = [];
-    if (groupBy === 'track') {
+    if (group === 'version') {
+      const folders = grouper.releases(kept);
+      const folderOf = new Map(folders.map((r) => [r.files[0].releaseKey, r]));
+      for (const t of grouper.versions(kept)) {
+        out.push({ kind: 'track', id: t.id, track: t, tick: t.tick, folder: folderOf.get(t.best.releaseKey) ?? null });
+      }
+      for (const v of releaseVersions(folders)) {
+        const tick = Math.min(...v.copies.map((r) => r.tick));
+        out.push({ kind: 'release', id: v.id, release: v.copies[0], copies: v.copies, tick });
+      }
+    } else if (group === 'track') {
       for (const t of grouper.tracks(kept)) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
-    } else if (groupBy === 'release') {
+    } else if (group === 'release') {
       for (const r of grouper.releases(kept)) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
-    } else if (groupBy === 'file') {
+    } else if (group === 'file') {
       // No grouper method — one row per kept file, already the filtered list.
       for (const s of kept) out.push({ kind: 'file', id: s.id, source: s, tick: s.tick });
     } else {
@@ -398,10 +433,16 @@ export function useSearchSession(
 
     return {
       rows: out,
+      kept,
       matchedFiles: kept.length,
       availableFormats: [...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
     };
-  }, [grouper, filters, groupBy, tick]);
+  }, [grouper, filters, group, tick]);
+
+  const pickPool = useCallback(
+    (): PickPool => ({ tracks: grouper.tracks(kept), releases: grouper.releases(kept) }),
+    [grouper, kept],
+  );
 
   /* ---- order: frozen prefix + free suffix + queued ---- */
 
@@ -585,11 +626,13 @@ export function useSearchSession(
     tick: Math.floor(tick),
     totalFiles: grouper.size(),
     matchedFiles,
+    peerCount: peers.current.size,
     filters, setFilters, resetFilters,
     groupBy, setGroupBy,
     sort, setSort,
     expanded, toggleExpanded,
     availableFormats,
+    pickPool,
     phase, isMock: client === null, serverState, client, startupError,
   };
 }
