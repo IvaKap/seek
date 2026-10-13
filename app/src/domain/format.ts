@@ -93,6 +93,14 @@ export function audioSpec(sampleRate: number | null, bitDepth: number | null): s
   return bitDepth ? `${rate}/${bitDepth}` : `${rate} kHz`;
 }
 
+/** 1 → `1st`, 22 → `22nd`, 1433 → `1,433rd`: a place in someone's queue. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th'
+    : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
+  return `${integer(n)}${suffix}`;
+}
+
 export function count(n: number, singular: string, plural = `${singular}s`): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }

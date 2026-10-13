@@ -3945,3 +3945,57 @@
 .peer__menu { flex: none; align-self: flex-start; }
 .up__user--link { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .up__user--link:hover { color: var(--accent); text-decoration: underline; }
+
+/* ================================================================ corner == */
+/* The corner panel (ui/CornerPanel.tsx). Inside the pane, so it floats over
+   the list and never over the sidebar; under sheets and popovers. */
+
+.corner {
+  position: absolute; right: var(--sp-4); bottom: var(--sp-4); z-index: 35;
+  width: 20rem;
+  display: flex; flex-direction: column;
+  border: 0.5px solid var(--separator-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  animation: cornerIn var(--dur-base) var(--ease-out) both;
+}
+@keyframes cornerIn { from { opacity: 0; transform: translateY(8px); } }
+
+.corner__head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.corner__title { flex: 1; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.corner__dim { color: var(--text-tertiary); font-weight: 400; }
+.corner__link {
+  padding: 0; border: 0; background: none; cursor: default;
+  font: inherit; font-size: var(--fs-caption); color: var(--accent);
+}
+.corner__fold {
+  display: grid; place-items: center; width: 1.25rem; height: 1.25rem;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
+}
+.corner__fold:hover { background: var(--bg-hover); }
+
+.corner__rows { list-style: none; margin: 0; padding: 0; }
+.corner__row {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 0.5px solid var(--separator);
+}
+.corner__name { font-size: var(--fs-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.corner__name b { font-weight: var(--fw-medium); }
+.corner__dash { color: var(--text-quaternary); }
+.corner__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.corner__sub { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.corner__row[data-kind='finished'] .corner__line { color: var(--success); }
+.corner__row[data-kind='trouble'] .corner__line { color: var(--warn); }
+.corner__row .corner__link { align-self: flex-start; }
+
+/* Folded: two lines of summary, a pill in the same corner. */
+.corner--pill {
+  width: auto; flex-direction: row; align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption); color: var(--text-primary); text-align: left; cursor: default;
+}
+.corner__pill-text { display: flex; flex-direction: column; }

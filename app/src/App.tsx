@@ -11,6 +11,7 @@ import type { SearchSession } from './data/searchStore.ts';
 import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
 import { SettingsView } from './ui/SettingsView.tsx';
+import { CornerPanel } from './ui/CornerPanel.tsx';
 import type { Density } from './ui/ViewMenu.tsx';
 import { MODE_KEY, densityKey, initialMode, loadViews } from './ui/viewMode.ts';
 import type { DensityScreen, Mode, Views } from './ui/viewMode.ts';
@@ -521,6 +522,15 @@ export default function App() {
   /* Written at once, so a first launch's Simple sticks: the next launch would
      otherwise find the sidebar's key and take this for an older install. */
   useEffect(() => remember(MODE_KEY, mode), [mode]);
+
+  /* What the corner panel counts as already seen: anything that finished
+     before this launch, or before you last left Downloads or Completed. */
+  const [seenUntil, setSeenUntil] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    if (screenOf(section) !== 'downloads') return;
+    setSeenUntil(Date.now() / 1000);
+    return () => setSeenUntil(Date.now() / 1000);
+  }, [section]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1103,6 +1113,17 @@ export default function App() {
           />
         ) : null}
         </ErrorBoundary>
+        {/* Not on the Downloads screens: the list it summarises is right there. */}
+        {screenOf(section) !== 'downloads' && (
+          <CornerPanel
+            key={mode}
+            groups={transfers.groups}
+            since={seenUntil}
+            mode={mode}
+            onShowAll={() => go('downloads')}
+            onShowCompleted={() => go('completed')}
+          />
+        )}
       </main>
       <Failures />
     </div>
