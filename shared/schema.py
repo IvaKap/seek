@@ -2569,10 +2569,17 @@ STRUCTS = {
         [("requestId", "str", "Correlates the later analysis.result event.")],
     ),
     "AnalysisFailedEvent": (
-        "",
+        "A post-download check (spectral or checksums) could not run.",
         [
             ("requestId", "str", ""),
             ("path", "str?", ""),
+            (
+                "transferId",
+                "str?",
+                "The transfer the check was asked for. A check that fails at "
+                "once can be announced before its request's reply, which is "
+                "the only other way the app learns which row asked.",
+            ),
             ("reason", "str", "Developer-facing text. Not for display."),
         ],
     ),

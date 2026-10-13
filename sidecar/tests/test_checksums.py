@@ -19,7 +19,7 @@ import os
 
 import pytest
 
-from seek_sidecar import checksums
+from seek_sidecar import checksums, protocol
 
 
 # -- building FLAC headers ---------------------------------------------------
@@ -475,9 +475,13 @@ def test_a_folder_that_cannot_be_read_fails_the_request_not_the_pool(tmp_path, m
     monkeypatch.setattr(checksums, "verify_folder",
                         lambda _f: (_ for _ in ()).throw(RuntimeError("disk on fire")))
     host = _Host()
-    host._run_checksums("req-1", str(tmp_path), "/x/a.flac", None)
+    host._run_checksums("req-1", str(tmp_path), "/x/a.flac", "tr-9")
 
     (name, payload) = host.broadcasts[0]
     assert name == "checksums.failed"
     assert payload["requestId"] == "req-1"
     assert "disk on fire" in payload["reason"]
+    # A fast failure can reach the app before the request's own reply, which
+    # is the only other way it learns which row asked. The event names it.
+    assert payload["transferId"] == "tr-9"
+    protocol.validate_event(name, payload)

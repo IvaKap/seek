@@ -2452,8 +2452,13 @@ class SpectralRequestResult(TypedDict):
 
 
 class AnalysisFailedEvent(TypedDict):
+    """A post-download check (spectral or checksums) could not run."""
     requestId: str
     path: Optional[str]
+    # The transfer the check was asked for. A check that fails at once can be
+    # announced before its request's reply, which is the only other way the
+    # app learns which row asked.
+    transferId: Optional[str]
     # Developer-facing text. Not for display.
     reason: str
 
@@ -3763,6 +3768,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
     "AnalysisFailedEvent": (
         ("requestId", "str", False, False),
         ("path", "str", False, True),
+        ("transferId", "str", False, True),
         ("reason", "str", False, False),
     ),
     "ChecksumSidecar": (

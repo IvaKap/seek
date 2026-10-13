@@ -3067,9 +3067,17 @@ export interface SpectralRequestResult {
   requestId: string;
 }
 
+/** A post-download check (spectral or checksums) could not run. */
 export interface AnalysisFailedEvent {
   requestId: string;
   path: string | null;
+
+  /**
+   * The transfer the check was asked for. A check that fails at once can be
+   * announced before its request's reply, which is the only other way the app
+   * learns which row asked.
+   */
+  transferId: string | null;
 
   /** Developer-facing text. Not for display. */
   reason: string;

@@ -4372,7 +4372,8 @@ class CoreHost:
             # reports, and a path is a list of what someone downloads.
             log.warning("spectral analysis failed: %s", type(error).__name__)
             self.bridge.broadcast("analysis.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         self.bridge.broadcast("analysis.result", payload)
@@ -4431,7 +4432,8 @@ class CoreHost:
         except Exception as error:
             log.warning("checksum check failed: %s", type(error).__name__)
             self.bridge.broadcast("checksums.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         report["requestId"] = request_id

@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lostInTransit } from './sidecarClient.ts';
 import type { SidecarClient } from './sidecarClient.ts';
+import type { AnalysisFailedEvent } from '../../../shared/protocol.ts';
 
 type SpectralAssessment =
   | 'likely_lossless'
@@ -126,10 +127,12 @@ export function useAnalysis(client: SidecarClient | null): AnalysisSession {
     });
 
     const offFailed = client.on('analysis.failed', (data) => {
-      const f = data as { requestId: string; reason: string };
-      const waiting = pending.current.get(f.requestId);
+      const f = data as AnalysisFailedEvent;
+      /* The event names its transfer: a decode that fails at once can arrive
+         before the reply that would have filled `pending`. */
+      const tid = f.transferId ?? pending.current.get(f.requestId) ?? null;
       pending.current.delete(f.requestId);
-      if (waiting) setByTransfer((prev) => new Map(prev).set(waiting, { state: 'failed', reason: f.reason }));
+      if (tid) setByTransfer((prev) => new Map(prev).set(tid, { state: 'failed', reason: f.reason }));
     });
 
     return () => { offResult(); offFailed(); };

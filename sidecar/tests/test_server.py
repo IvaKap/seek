@@ -364,7 +364,8 @@ def _event_samples():
             "fftSize": 8192, "windowCount": 96, "analysedSeconds": 17.8,
         },
         "analysis.failed": {
-            "requestId": "r", "path": "/tmp/a.flac", "reason": "decode failed",
+            "requestId": "r", "path": "/tmp/a.flac", "transferId": "t",
+            "reason": "decode failed",
         },
         "checksums.result": {
             "requestId": "r", "folderPath": "/tmp/release", "transferId": None,
@@ -385,7 +386,7 @@ def _event_samples():
             ],
         },
         "checksums.failed": {
-            "requestId": "r", "path": "/tmp/release/01.flac",
+            "requestId": "r", "path": "/tmp/release/01.flac", "transferId": None,
             "reason": "no such folder",
         },
         "chat.message": {

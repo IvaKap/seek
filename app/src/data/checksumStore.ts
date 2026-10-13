@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lostInTransit } from './sidecarClient.ts';
-import type { ChecksumReport } from '../../../shared/protocol.ts';
+import type { AnalysisFailedEvent, ChecksumReport } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
 interface ChecksumEntryState {
@@ -53,8 +53,9 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
     });
 
     const offFailed = client.on('checksums.failed', (data) => {
-      const f = data as { requestId: string; reason: string };
-      const id = pending.current.get(f.requestId);
+      const f = data as AnalysisFailedEvent;
+      // Echoed for the same reason as the report's: a failure can beat the reply.
+      const id = f.transferId ?? pending.current.get(f.requestId) ?? null;
       pending.current.delete(f.requestId);
       if (id) {
         setByTransfer((prev) => new Map(prev).set(id, {
