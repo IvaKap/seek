@@ -8,6 +8,9 @@
  *
  * `Browsing` appears only while a browse session is open — a permanently
  * visible nav item that is usually empty is dead chrome.
+ *
+ * In Simple mode the groups give way to one short list, with everything else
+ * one click away behind More; Collector shows every group (ui/viewMode.ts).
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -20,6 +23,10 @@ import {
 import { speed } from '../domain/format.ts';
 import { useThroughput } from '../data/throughputStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
+import { SegmentedControl } from './controls.tsx';
+import type { Segment } from './controls.tsx';
+import { splitSimple } from './viewMode.ts';
+import type { Mode } from './viewMode.ts';
 
 export type Section =
   | 'search'
@@ -45,7 +52,14 @@ interface Group {
   items: Item[];
 }
 
-const STORAGE_KEY = 'seek.sidebar.collapsed';
+export const SIDEBAR_KEY = 'seek.sidebar.collapsed';
+/* Kept with the collapsed groups, but its presence means OPEN: More starts shut. */
+const MORE_OPEN = 'simple.more.open';
+
+const MODES: Segment<Mode>[] = [
+  { value: 'simple', label: 'Simple' },
+  { value: 'collector', label: 'Collector' },
+];
 
 /**
  * The socket being open and being signed in to Soulseek are different things,
@@ -82,7 +96,7 @@ function Rate({ direction, bytesPerSec }: { direction: 'down' | 'up'; bytesPerSe
 export function Sidebar({
   active, onSelect, downloadCount, browsingUser, status, client,
   roomUnread = 0, privateUnread = 0, wantPending = 0, hasSessions = false,
-  hasLabels = false, uploadCount = 0, wishFound = 0,
+  hasLabels = false, uploadCount = 0, wishFound = 0, mode, onMode,
 }: {
   active: Section;
   onSelect(s: Section): void;
@@ -106,10 +120,12 @@ export function Sidebar({
    *  is addressed to you and deserves its own badge. */
   roomUnread?: number;
   privateUnread?: number;
+  mode: Mode;
+  onMode(m: Mode): void;
 }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(SIDEBAR_KEY);
       return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
     } catch {
       return new Set<string>();
@@ -118,7 +134,7 @@ export function Sidebar({
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...collapsed]));
+      localStorage.setItem(SIDEBAR_KEY, JSON.stringify([...collapsed]));
     } catch {
       /* Private mode or a full quota — the UI still works, it just forgets. */
     }
@@ -222,7 +238,15 @@ export function Sidebar({
       <div className="sidebar__brand">Seek</div>
 
       <div className="sidebar__scroll" data-tauri-drag-region="false">
-        {groups.map((g) => {
+        {mode === 'simple' ? (
+          <SimpleList
+            items={groups.flatMap((g) => g.items)}
+            active={active}
+            onSelect={onSelect}
+            open={collapsed.has(MORE_OPEN)}
+            onToggle={() => toggle(MORE_OPEN)}
+          />
+        ) : groups.map((g) => {
           const isCollapsed = g.title !== null && collapsed.has(g.id);
           return (
             <div className="sidebar__group" key={g.id}>
@@ -245,22 +269,7 @@ export function Sidebar({
               {!isCollapsed && (
                 <div className="sidebar__items">
                   {g.items.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="nav-item"
-                      aria-current={active === item.id ? 'page' : undefined}
-                      onClick={() => onSelect(item.id)}
-                    >
-                      <span className="nav-item__icon">{item.icon}</span>
-                      <span className="nav-item__label">{item.label}</span>
-                      {item.badge !== undefined && (
-                        <span className="nav-item__badge tnum">{item.badge}</span>
-                      )}
-                      {item.badge === undefined && item.shortcut && (
-                        <span className="nav-item__key">{item.shortcut}</span>
-                      )}
-                    </button>
+                    <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
                   ))}
                 </div>
               )}
@@ -286,6 +295,10 @@ export function Sidebar({
         </div>
       </div>
 
+      <div className="sidebar__mode" data-tauri-drag-region="false" title={'Switch any time with ⌘\\'}>
+        <SegmentedControl label="Mode" value={mode} onChange={onMode} segments={MODES} />
+      </div>
+
       <div className="sidebar__status" data-tauri-drag-region="false">
         <span className="sidebar__conn" title={status.detail}>
           <span className="status-dot" data-state={status.dot} aria-hidden />
@@ -294,6 +307,67 @@ export function Sidebar({
         <LiveRate client={client ?? null} />
       </div>
     </nav>
+  );
+}
+
+function NavButton({ item, active, onSelect }: {
+  item: Item;
+  active: Section;
+  onSelect(s: Section): void;
+}) {
+  return (
+    <button
+      type="button"
+      className="nav-item"
+      aria-current={active === item.id ? 'page' : undefined}
+      onClick={() => onSelect(item.id)}
+    >
+      <span className="nav-item__icon">{item.icon}</span>
+      <span className="nav-item__label">{item.label}</span>
+      {item.badge !== undefined && (
+        <span className="nav-item__badge tnum">{item.badge}</span>
+      )}
+      {item.badge === undefined && item.shortcut && (
+        <span className="nav-item__key">{item.shortcut}</span>
+      )}
+    </button>
+  );
+}
+
+/** Simple's one short list. What waits behind More is still one click away. */
+function SimpleList({ items, active, onSelect, open, onToggle }: {
+  items: Item[];
+  active: Section;
+  onSelect(s: Section): void;
+  open: boolean;
+  onToggle(): void;
+}) {
+  const { front, more } = splitSimple(items, active);
+  return (
+    <div className="sidebar__group">
+      <div className="sidebar__items">
+        {front.map((item) => (
+          <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
+        ))}
+        {more.length > 0 && (
+          <button type="button" className="nav-item" aria-expanded={open} onClick={onToggle}>
+            <span className="nav-item__icon">
+              <IconChevronDown
+                size={12}
+                painted={1.7}
+                className="sidebar__caret"
+                data-collapsed={open ? undefined : 'true'}
+              />
+            </span>
+            <span className="nav-item__label">More</span>
+            <span className="nav-item__key tnum">{more.length} more</span>
+          </button>
+        )}
+        {open && more.map((item) => (
+          <NavButton key={item.id} item={item} active={active} onSelect={onSelect} />
+        ))}
+      </div>
+    </div>
   );
 }
 

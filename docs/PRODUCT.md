@@ -276,11 +276,16 @@ should say so rather than implying a global reputation we cannot see.
 
 ## 9. Deferred, with reasons
 
-**Collector Mode (note §24)** — the note itself is unsure, and it should be cut.
-A mode toggle bifurcates the interface and forces a choice before the user knows
-what they want. Progressive disclosure achieves the same goal without the fork:
-the collector features are always present, just not always in front. This is
-also what this document §10 and Apple's own patterns argue for.
+**Collector Mode (note §24)** — built in 0.4.0 as a preset, not a fork. The
+reason it was first deferred still holds and shaped it: a toggle that splits the interface in
+two, or forces a choice before the user knows what they want, would be wrong.
+So Simple and Collector change only what is *in front* — each screen's density,
+and how much of the sidebar shows — never what exists. Every feature is reachable
+in both; Simple's sidebar keeps the rest one click away behind More, and an entry
+with news (a badge) or the screen you are on never hides there. A first launch
+opens in Simple with no question asked; an install from before the switch opens
+in Collector, which is the view it already had. Switch any time in the sidebar
+or with ⌘\. `app/src/ui/viewMode.ts` holds the rules.
 
 **Boolean/rule-engine download preferences (note §26)** — the simple preference
 list ("prefer FLAC", "reject below 256", "reject suspicious transcodes") is Tier

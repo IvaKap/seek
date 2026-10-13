@@ -34,6 +34,10 @@
   background: var(--accent); color: var(--text-on-accent);
   font-size: var(--fs-micro); text-align: center;
 }
+/* Simple / Collector, above the status row: full width, two equal halves. */
+.sidebar__mode { padding: var(--sp-2) var(--sp-4); }
+.sidebar__mode .segmented { display: flex; }
+.sidebar__mode .segmented__item { flex: 1; justify-content: center; }
 
 /* =============================================================== header == */
 
