@@ -31,7 +31,7 @@ import { readUntilAnswered } from './failures.ts';
 
 /** `Settings` on the wire. Bytes/sec throughout; upstream's KiB/s is the
  * sidecar's problem, not ours. */
-export interface EngineSettings {
+interface EngineSettings {
   downloadFolder: string | null;
   incompleteFolder: string | null;
   listenPort: number;
@@ -57,9 +57,9 @@ export interface EngineSettings {
   buddiesUnlimited: boolean;
 }
 
-export type EngineSettingsPatch = Partial<EngineSettings>;
+type EngineSettingsPatch = Partial<EngineSettings>;
 
-export type ShareConsent = 'unset' | 'granted' | 'declined';
+type ShareConsent = 'unset' | 'granted' | 'declined';
 
 export interface SharedFolder {
   virtualName: string;
@@ -67,7 +67,7 @@ export interface SharedFolder {
   exists: boolean;
 }
 
-export interface ShareState {
+interface ShareState {
   consent: ShareConsent;
   folders: SharedFolder[];
   scanning: boolean;

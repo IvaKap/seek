@@ -115,6 +115,12 @@ Behaviour is unchanged from this document: client-side, instant, re-applies to
 still-streaming results, animates rows out rather than blanking, per-tab, and
 survives restart. Presets ("my usual") in one click.
 
+**Simple keeps the pills one click away** (0.4.0), behind a *Filters* button
+beside *Wishlist*, the way its sidebar keeps the rest behind More. The same
+pills open, never a menu, and the button reads *Filters on* whenever any filter
+applies, so a filtered list never passes for the whole one. Collector shows the
+pill row as it always did.
+
 ---
 
 ## 4. Results — release cards, not a spreadsheet
@@ -152,6 +158,20 @@ trying to remove.
 
 Table density preserves the full power-user column set. **Do not hide Soulseek's
 power-user nature — that is part of its charm.** Comfortable is the default.
+
+**Simple's one list: every version, in plain words** (0.4.0). Below the best
+picks (§8), Search · Simple shows *All copies · N versions · N copies* and a
+sort menu. A version is one track in one format at one size (within 5%, which
+re-tagging never leaves and a relabelled or doubted file never enters) from
+however many people, or one record in one format, every folder of it. Each row
+says what it is (format, length, size, slots, the size check's verdict as a
+phrase such as *Likely lossless* or *Numbers don't add up*) and how many copies
+exist. Get takes the copy the row shows, the best-ranked one, and its copies
+open beneath it (a record's open as the comparison) for anyone who wants a
+particular person's. Grouping and density are Collector's choices, where the same
+list is the **Version** grouping. A status line counts the *people* who have
+answered, because that is the number that grows. `domain/group.ts`
+(`versions`), `domain/bestSources.ts` (`releaseVersions`), `ui/AllCopies.tsx`.
 
 ---
 
@@ -253,6 +273,17 @@ Note `RECON.md` §5: **upstream has no stall detection at all** — no event, no
 timer, no status. Every "stalled" affordance in this spec is ours to build from
 progress deltas.
 
+**Downloads · Simple** (0.4.0) is its own layout, after its canvas board. One
+release leads as a card: progress, rate, time left in minutes rather than a
+countdown, and the last five minutes of speed. It keeps the card while it is
+still coming down, because a card that followed the fastest release would jump
+every second. The rest sit in sections by what each needs from you (Also
+downloading, Waiting, Needs attention, Just finished), sorted by the corner
+panel's own `kindOf` so the two never disagree. Simple keeps Failed behind More,
+so a stalled or refused release shows here under Needs attention, with *Find
+another copy*: a search the person picks from, never a substitute chosen for
+them. `app/src/ui/DownloadsSimple.tsx`.
+
 ---
 
 ## 8. Sources ranked, with the reasoning shown
@@ -272,15 +303,31 @@ note is explicit and correct about this: never pretend to know things the
 protocol doesn't expose. "97% successful transfers" means *with us*, and the UI
 should say so rather than implying a global reputation we cannot see.
 
+**Best picks** (Simple, 0.4.0) put the ranking in front as two or three cards
+above the results: *Best overall* is the best-scoring copy of the track the most
+people have, *Fastest* is that track's copy likely to arrive soonest (never below
+320 or V0), and *Whole release* is the best copy of the most-copied folder. A
+pick is one peer's file or folder, and Get takes exactly that copy: the ranking
+orders, it never chooses. Picks honour the filters and the download rules
+("Prefer lossless" included), are never a suspected transcode or buddy-only, and
+hold still under the pointer while results stream in. `app/src/domain/bestPicks.ts`.
+
 ---
 
 ## 9. Deferred, with reasons
 
-**Collector Mode (note §24)** — the note itself is unsure, and it should be cut.
-A mode toggle bifurcates the interface and forces a choice before the user knows
-what they want. Progressive disclosure achieves the same goal without the fork:
-the collector features are always present, just not always in front. This is
-also what this document §10 and Apple's own patterns argue for.
+**Collector Mode (note §24)** — built in 0.4.0 as a preset, not a fork. The
+reason it was first deferred still holds and shaped it: a toggle that splits the interface in
+two, or forces a choice before the user knows what they want, would be wrong.
+So Simple and Collector change only what is *in front* — each screen's density,
+and how much of the sidebar shows — never what exists. Search · Simple is the
+one place the preset is a whole look: always the list of versions (§4), with
+grouping and density left to Collector, which offers that list as **Version**. Every feature is reachable
+in both; Simple's sidebar keeps the rest one click away behind More, and an entry
+with news (a badge) or the screen you are on never hides there. A first launch
+opens in Simple with no question asked; an install from before the switch opens
+in Collector, which is the view it already had. Switch any time in the sidebar
+or with ⌘\. `app/src/ui/viewMode.ts` holds the rules.
 
 **Boolean/rule-engine download preferences (note §26)** — the simple preference
 list ("prefer FLAC", "reject below 256", "reject suspicious transcodes") is Tier

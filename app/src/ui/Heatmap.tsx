@@ -19,6 +19,7 @@
 
 import { useEffect, useRef } from 'react';
 import type { SpectralAnalysis } from '../data/analysisStore.ts';
+import { duration } from '../domain/format.ts';
 
 const DB_FLOOR = -90;
 const DB_CEIL = 0;
@@ -72,12 +73,6 @@ function freqTicks(nyquistKhz: number): number[] {
   return out;
 }
 
-function clock(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds % 60);
-  return `${m}:${String(s === 60 ? 0 : s).padStart(2, '0')}`;
-}
-
 export function Heatmap({ a }: { a: SpectralAnalysis }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const cols = a.heatmapTimeBins;
@@ -113,7 +108,7 @@ export function Heatmap({ a }: { a: SpectralAnalysis }) {
 
   const nyqKhz = a.nyquistHz / 1000;
   const ticks = freqTicks(nyqKhz);
-  const duration = a.durationSeconds || 0;
+  const secs = a.durationSeconds || 0;
   // Quarters: enough to locate yourself in the track, few enough to stay quiet.
   const timeMarks = [0, 0.25, 0.5, 0.75, 1];
   const dbMarks = [0, -20, -40, -60, -80];
@@ -138,7 +133,7 @@ export function Heatmap({ a }: { a: SpectralAnalysis }) {
             ref={ref}
             className="heat__canvas"
             role="img"
-            aria-label={`Spectrogram. Time across ${clock(duration)}, frequency to ${nyqKhz.toFixed(1)} kilohertz.`}
+            aria-label={`Spectrogram. Time across ${duration(secs)}, frequency to ${nyqKhz.toFixed(1)} kilohertz.`}
           />
           {a.cutoffHz !== null && (
             <div
@@ -168,7 +163,7 @@ export function Heatmap({ a }: { a: SpectralAnalysis }) {
         <div className="heat__xaxis" aria-hidden>
           {timeMarks.map((p) => (
             <span key={p} className="heat__time tnum" style={{ left: `${p * 100}%` }}>
-              {clock(duration * p)}
+              {duration(secs * p)}
             </span>
           ))}
         </div>

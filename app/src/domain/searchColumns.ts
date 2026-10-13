@@ -45,10 +45,6 @@ const SPECS: ColumnSpec[] = [
   { id: 'folder', label: 'Folder', width: 12 },
 ];
 
-export const COLUMNS: Record<ColumnId, ColumnSpec> = Object.fromEntries(
-  SPECS.map((c) => [c.id, c]),
-) as Record<ColumnId, ColumnSpec>;
-
 /** Every column, in the order the picker offers them. */
 export const ALL_COLUMNS: ColumnId[] = SPECS.map((c) => c.id);
 
@@ -71,9 +67,6 @@ export const normaliseColumns = ENGINE.normalise;
 
 /** Move `id` to `to`, keeping `name` pinned at the front. */
 export const reorderColumns = ENGINE.reorder;
-
-/** Turn a column on (appended) or off. `name` cannot be turned off. */
-export const toggleColumn = ENGINE.toggle;
 
 /** The whole engine, for the View menu and the header row. */
 export const SEARCH_COLUMN_SET = ENGINE;

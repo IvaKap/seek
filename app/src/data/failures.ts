@@ -15,7 +15,7 @@ import { useSyncExternalStore } from 'react';
 import { readableError } from '../domain/folders.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
-export interface Failure {
+interface Failure {
   id: number;
   text: string;
 }
@@ -39,18 +39,13 @@ export function dismissFailure(id: number): void {
 
 /** `action` is what the person tried, said as they would: "Join #techno". */
 export function reportFailure(action: string, error: unknown): void {
-  const text = `${action} didn't work — ${readableError(error)}`;
-  // The same sentence twice in a row is one notice, not two.
-  if (items.some((f) => f.text === text)) return;
-  const id = ++seq;
-  items = [...items, { id, text }].slice(-MAX_SHOWN);
-  emit();
-  setTimeout(() => dismissFailure(id), SHOW_MS);
+  showNotice(`${action} didn't work — ${readableError(error)}`);
 }
 
 /** A sentence that is not a failure but still has to be seen — a refusal
  *  made on the person's own rules, say. Shown as written. */
 export function showNotice(text: string): void {
+  // The same sentence twice in a row is one notice, not two.
   if (items.some((f) => f.text === text)) return;
   const id = ++seq;
   items = [...items, { id, text }].slice(-MAX_SHOWN);

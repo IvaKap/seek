@@ -89,13 +89,12 @@ function hit(query: string, name: string): WishHit {
     }],
   }, 0, () => 0.5);
   return {
-    query, sources, fresh: sources, releases: [], peerCount: 1,
-    seenCount: 0, foundAt: Date.now(), unseen: true,
+    query, sources, fresh: sources, peerCount: 1, unseen: true,
   };
 }
 
 const wishHitsOf = (h: Record<string, WishHit>): WishHits => ({
-  byQuery: h, unseenCount: 0, markSeen: vi.fn(), forget: vi.fn(),
+  byQuery: h, unseenCount: 0, markSeen: vi.fn(),
 });
 
 describe('useAutoDownloads', () => {

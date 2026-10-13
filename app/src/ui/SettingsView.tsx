@@ -2,8 +2,6 @@
  * Seek — Settings.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * Split out of `views.tsx`, which is otherwise a file of empty states.
- *
  * This screen used to be one long column of Seek's own preferences, and Iva's
  * verdict on it was "the settings section feels empty, we don't provide a lot
  * of use there". The gap was not decoration: there was no way to say WHERE
@@ -25,6 +23,7 @@ import { sidecarDiagnostics } from '../data/sidecarClient.ts';
 import { copyText } from '../data/clipboard.ts';
 import { buildReport } from '../domain/bugReport.ts';
 import { SegmentedControl, Toggle } from './controls.tsx';
+import { useDismiss } from './useDismiss.ts';
 import type { Segment } from './controls.tsx';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SignIn } from './SignIn.tsx';
@@ -99,26 +98,12 @@ export function Row({
  * a handler on the element only fires where focus happens to be, and Escape
  * stopped working the moment anything else held it.
  */
-export function HowTo({ title, steps, note }: { title: string; steps: string[]; note?: string }) {
+function HowTo({ title, steps, note }: { title: string; steps: string[]; note?: string }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
   const id = useId();
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
+  useDismiss(open, [wrapRef], () => setOpen(false));
 
   return (
     <span className="howto" ref={wrapRef}>
@@ -247,59 +232,6 @@ function SecretRow({
   );
 }
 
-/** Bytes/sec on the wire, KB/s in the field — nobody thinks in bytes/sec. */
-function SpeedLimit({
-  label, hint, value, available, onCommit,
-}: {
-  label: string;
-  hint: string;
-  value: number;
-  available: boolean;
-  onCommit(bytesPerSecond: number): void;
-}) {
-  const [draft, setDraft] = useState(() => String(Math.round(value / 1024)));
-  const lastValue = useRef(value);
-
-  // Follow the engine when it changes underneath us — after a save, or after
-  // an import — but never while the field is being typed in.
-  useEffect(() => {
-    if (value !== lastValue.current) {
-      lastValue.current = value;
-      setDraft(String(Math.round(value / 1024)));
-    }
-  }, [value]);
-
-  const commit = () => {
-    const kb = Math.max(0, Math.floor(Number(draft) || 0));
-    setDraft(String(kb));
-    onCommit(kb * 1024);
-  };
-
-  return (
-    <Row
-      label={label}
-      hint={hint}
-      control={(
-        <span className="settings__inline">
-          <input
-            className="settings__input settings__input--num tnum"
-            type="number"
-            min={0}
-            step={64}
-            value={draft}
-            disabled={!available}
-            aria-label={`${label} in kilobytes per second, 0 for unlimited`}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
-          />
-          <span className="settings__unit">KB/s</span>
-        </span>
-      )}
-    />
-  );
-}
-
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsView({
@@ -326,6 +258,15 @@ export function SettingsView({
     setError(null);
     void engine.save(patch).catch((e) => setError(readableError(e)));
   }, [engine]);
+
+  /* A switch for one boolean engine setting, or "Not connected" before the
+     engine has answered. */
+  const engineToggle = (
+    field: 'portMapping' | 'preferBuddies' | 'fifoQueue' | 'buddiesUnlimited',
+    label: string,
+  ) => (engineSettings ? (
+    <Toggle checked={engineSettings[field]} onChange={(v) => saveEngine({ [field]: v })} label={label} />
+  ) : <span className="settings__static">Not connected</span>);
 
   return (
     <>
@@ -658,8 +599,14 @@ export function SettingsView({
                   label="Listening port"
                   hint="Forward this port on your router to be reachable. Changing it takes effect on the next sign-in."
                   control={(
-                    <PortField
+                    <NumberSetting
                       value={engineSettings?.listenPort ?? 0}
+                      /* Below 1024 needs root on macOS, and Soulseek clients
+                       * conventionally sit well above it. */
+                      min={1024}
+                      max={65535}
+                      step={1}
+                      ariaLabel="Listening port"
                       available={engine.available}
                       onCommit={(port) => saveEngine({ listenPort: port })}
                     />
@@ -668,15 +615,7 @@ export function SettingsView({
                 <Row
                   label="Forward the port automatically"
                   hint="Asks your router to open the listening port (NAT-PMP or UPnP), as Nicotine+ does by default. Turn it off if you forward the port by hand or your network forbids it."
-                  control={engineSettings ? (
-                    <Toggle
-                      checked={engineSettings.portMapping}
-                      onChange={(v) => saveEngine({ portMapping: v })}
-                      label="Forward the port automatically"
-                    />
-                  ) : (
-                    <span className="settings__static">Not connected</span>
-                  )}
+                  control={engineToggle('portMapping', 'Forward the port automatically')}
                 />
                 <Row
                   label="Your address"
@@ -693,19 +632,38 @@ export function SettingsView({
                 title="Speed limits"
                 footnote="0 means unlimited. Limiting uploads is usually the wrong instinct — upload speed is what earns queue position on Soulseek."
               >
-                <SpeedLimit
+                {/* Bytes/sec on the wire, KB/s in the field — nobody thinks in bytes/sec. */}
+                <Row
                   label="Maximum download speed"
                   hint="Across all downloads together, not per transfer."
-                  value={engineSettings?.maxDownloadSpeed ?? 0}
-                  available={engine.available}
-                  onCommit={(v) => saveEngine({ maxDownloadSpeed: v })}
+                  control={(
+                    <NumberSetting
+                      value={Math.round((engineSettings?.maxDownloadSpeed ?? 0) / 1024)}
+                      min={0}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={64}
+                      suffix="KB/s"
+                      ariaLabel="Maximum download speed in kilobytes per second, 0 for unlimited"
+                      available={engine.available}
+                      onCommit={(kb) => saveEngine({ maxDownloadSpeed: kb * 1024 })}
+                    />
+                  )}
                 />
-                <SpeedLimit
+                <Row
                   label="Maximum upload speed"
                   hint="Across all uploads together."
-                  value={engineSettings?.maxUploadSpeed ?? 0}
-                  available={engine.available}
-                  onCommit={(v) => saveEngine({ maxUploadSpeed: v })}
+                  control={(
+                    <NumberSetting
+                      value={Math.round((engineSettings?.maxUploadSpeed ?? 0) / 1024)}
+                      min={0}
+                      max={Number.MAX_SAFE_INTEGER}
+                      step={64}
+                      suffix="KB/s"
+                      ariaLabel="Maximum upload speed in kilobytes per second, 0 for unlimited"
+                      available={engine.available}
+                      onCommit={(kb) => saveEngine({ maxUploadSpeed: kb * 1024 })}
+                    />
+                  )}
                 />
                 <Row
                   label="Upload slots"
@@ -733,24 +691,12 @@ export function SettingsView({
                 <Row
                   label="Serve buddies first"
                   hint="People you follow go to the front of your queue."
-                  control={engineSettings ? (
-                    <Toggle
-                      checked={engineSettings.preferBuddies}
-                      onChange={(v) => saveEngine({ preferBuddies: v })}
-                      label="Serve buddies first"
-                    />
-                  ) : <span className="settings__static">Not connected</span>}
+                  control={engineToggle('preferBuddies', 'Serve buddies first')}
                 />
                 <Row
                   label="First come, first served"
                   hint="Off, the default: everyone waiting gets one file in turn, so one big request cannot hold up everybody else."
-                  control={engineSettings ? (
-                    <Toggle
-                      checked={engineSettings.fifoQueue}
-                      onChange={(v) => saveEngine({ fifoQueue: v })}
-                      label="First come, first served"
-                    />
-                  ) : <span className="settings__static">Not connected</span>}
+                  control={engineToggle('fifoQueue', 'First come, first served')}
                 />
                 <Row
                   label="Files one person may queue"
@@ -787,13 +733,7 @@ export function SettingsView({
                 <Row
                   label="No limits for buddies"
                   hint="The two limits above do not apply to people you follow."
-                  control={engineSettings ? (
-                    <Toggle
-                      checked={engineSettings.buddiesUnlimited}
-                      onChange={(v) => saveEngine({ buddiesUnlimited: v })}
-                      label="No limits for buddies"
-                    />
-                  ) : <span className="settings__static">Not connected</span>}
+                  control={engineToggle('buddiesUnlimited', 'No limits for buddies')}
                 />
               </Group>
 
@@ -838,8 +778,15 @@ export function SettingsView({
                     />
                   )}
                 />
-                <GreetingField
+                {/* Committed on blur or Return, never per keystroke: each commit
+                    writes the state file and rebroadcasts every setting. Clearing
+                    the box brings the default back — the sidecar answers '' with
+                    the default text, and the field follows it. */}
+                <TextSetting
+                  label="Message"
+                  hint="One line — Soulseek removes line breaks before delivering it. Clear the box to go back to the default."
                   value={settings.uploadGreeting}
+                  available
                   onCommit={(v) => prefs.patch({ uploadGreeting: v })}
                 />
               </Group>
@@ -1031,7 +978,7 @@ export function SettingsView({
 }
 
 /* A committed-on-blur number, so a half-typed port is never sent. */
-function NumberSetting({
+export function NumberSetting({
   value, min, max, step, suffix, ariaLabel, available, onCommit,
 }: {
   value: number;
@@ -1045,15 +992,26 @@ function NumberSetting({
 }) {
   const [draft, setDraft] = useState(() => String(value));
   const last = useRef(value);
+  /* Only an edit is committed. Before the engine has answered, `value` is a
+     placeholder 0; clamping that to the port's 1024 floor and "saving" it
+     would overwrite the real port with a number nobody typed. A flag rather
+     than comparing draft with value: the two disagree for a frame whenever
+     the engine's answer lands. */
+  const edited = useRef(false);
 
+  // Follow the engine when it changes underneath us — after a save, or after
+  // an import — but never while the field is being typed in.
   useEffect(() => {
     if (value !== last.current) {
       last.current = value;
+      edited.current = false;
       setDraft(String(value));
     }
   }, [value]);
 
   const commit = () => {
+    if (!edited.current) return;
+    edited.current = false;
     const n = Math.min(max, Math.max(min, Math.floor(Number(draft) || 0)));
     setDraft(String(n));
     if (n !== value) onCommit(n);
@@ -1066,7 +1024,7 @@ function NumberSetting({
   pending.current = { draft, value, min, max, onCommit };
   useEffect(() => () => {
     const p = pending.current;
-    if (p.draft.trim() === '') return;
+    if (!edited.current || p.draft.trim() === '') return;
     const n = Math.min(p.max, Math.max(p.min, Math.floor(Number(p.draft) || 0)));
     if (n !== p.value) p.onCommit(n);
   }, []);
@@ -1082,7 +1040,7 @@ function NumberSetting({
         value={draft}
         disabled={!available}
         aria-label={ariaLabel}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => { edited.current = true; setDraft(e.target.value); }}
         onBlur={commit}
         onKeyDown={(e) => { if (e.key === 'Enter') commit(); }}
       />
@@ -1187,84 +1145,6 @@ function PeopleLists({ people, available }: { people: People; available: boolean
         </span>
       </div>
     </Group>
-  );
-}
-
-/*
- * The upload greeting's text. Committed on blur or Enter like `NumberSetting`,
- * never per keystroke: each commit writes the state file and rebroadcasts every
- * setting, and a sentence typed a letter at a time would be a hundred of those.
- *
- * Clearing the box is how you get the default back. The patch echoes `''`
- * optimistically, the sidecar answers with the default text, and the effect
- * below follows both — so the field never sits empty over a stored default.
- */
-function GreetingField({
-  value, onCommit,
-}: {
-  value: string;
-  onCommit(v: string): void;
-}) {
-  const id = useId();
-  const [draft, setDraft] = useState(value);
-  const last = useRef(value);
-
-  useEffect(() => {
-    if (value !== last.current) {
-      last.current = value;
-      setDraft(value);
-    }
-  }, [value]);
-
-  const commit = () => {
-    if (draft !== value) onCommit(draft);
-  };
-
-  return (
-    <div className="settings__row settings__row--block">
-      <div className="folderset__head">
-        <label className="settings__label" htmlFor={id}>Message</label>
-        <span className="settings__hint">
-          One line — Soulseek removes line breaks before delivering it. Clear the
-          box to go back to the default.
-        </span>
-      </div>
-      <input
-        id={id}
-        className="settings__input settings__input--wide"
-        type="text"
-        value={draft}
-        spellCheck
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') commit();
-          if (e.key === 'Escape') setDraft(value);
-        }}
-      />
-    </div>
-  );
-}
-
-function PortField({
-  value, available, onCommit,
-}: {
-  value: number;
-  available: boolean;
-  onCommit(v: number): void;
-}) {
-  return (
-    <NumberSetting
-      value={value}
-      /* Below 1024 needs root on macOS, and Soulseek clients conventionally sit
-       * well above it. */
-      min={1024}
-      max={65535}
-      step={1}
-      ariaLabel="Listening port"
-      available={available}
-      onCommit={onCommit}
-    />
   );
 }
 

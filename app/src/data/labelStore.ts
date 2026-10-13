@@ -43,7 +43,7 @@ import { readUntilAnswered } from './failures.ts';
 
 /** Providers that actually have a catalogue. `discover.browse` serves these
  *  two and refuses the rest, so nothing else can be watched. */
-export type CatalogProvider = Extract<UrlProvider, 'discogs' | 'bandcamp'>;
+type CatalogProvider = Extract<UrlProvider, 'discogs' | 'bandcamp'>;
 
 export interface WatchedLabel {
   id: string;
@@ -71,7 +71,7 @@ export interface WatchedLabel {
   knownIds: string[];
 }
 
-export interface WatchRequest {
+interface WatchRequest {
   sourceKind: CatalogProvider;
   kind: 'label' | 'artist';
   name: string;
@@ -101,7 +101,6 @@ export interface LabelsSession {
   find(request: Partial<WatchRequest>): WatchedLabel | null;
   /** Why the last command failed, for the one-line notice. Null when fine. */
   error: string | null;
-  enabled: boolean;
 }
 
 /**
@@ -188,6 +187,5 @@ export function useLabels(client: SidecarClient | null): LabelsSession {
       [labels],
     ),
     error,
-    enabled: Boolean(client),
   };
 }

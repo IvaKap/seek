@@ -181,7 +181,7 @@ class CoreHost:
         # because they could not be read. Cleared by `shares-scanning`, which
         # only fires when a scan really starts.
         self._share_unavailable = []
-        self._folder_requests = {}   # (username, folderPath) -> request info
+        self._folder_requests = {}   # (username, folderPath) -> [request info], oldest first
         self._peer_extra = {}        # username -> {"files", "folders", "country"}
 
         # Spectral analysis is CPU-bound (decode + FFT) and must never run on
@@ -937,28 +937,43 @@ class CoreHost:
         if msg.dir is None or msg.list is None:
             return
         key = (msg.username, msg.dir)
-        request = self._folder_requests.pop(key, None)
+        # One answer settles every Get still waiting on this folder, oldest
+        # first. A second Get used to REPLACE the first, losing its Download
+        # to… folder; now the first queues, and upstream drops the second's
+        # files as duplicates — what would have happened had the peer answered
+        # between the two clicks.
+        requests = self._folder_requests.pop(key, [])
         folders = translate.folder_refs_from_contents(msg.list)
 
         enqueued = 0
-        if request is not None:
-            enqueued = self._enqueue_folder_files(
-                msg.username, msg.dir, folders,
-                request["destination"], request["recurse"],
+        held = None
+        for request in requests:
+            files = self._folder_files(msg.dir, folders, request["recurse"])
+            limit = request["confirmAbove"]
+            if limit is not None and len(files) > limit:
+                # Only here is the real count known: a search shows a fraction
+                # of a folder. Held, not queued; the app asks and sends again.
+                if held is None:
+                    held = {"count": len(files), "recurse": request["recurse"],
+                            "destination": request["destination"]}
+                continue
+            enqueued += self._enqueue_folder_files(
+                msg.username, msg.dir, files, request["destination"],
             )
 
         self.bridge.broadcast("folder.contents", {
-            "requestId": request["requestId"] if request else "",
+            "requestId": requests[0]["requestId"] if requests else "",
             "username": msg.username,
             "folderPath": msg.dir,
             "folders": folders,
             "enqueued": enqueued,
+            "held": held,
         })
 
     def _on_folder_contents_failed(self, username, folder_path, is_offline=False):
-        request = self._folder_requests.pop((username, folder_path), None)
+        requests = self._folder_requests.pop((username, folder_path), [])
         self.bridge.broadcast("folder.contents.failed", {
-            "requestId": request["requestId"] if request else None,
+            "requestId": requests[0]["requestId"] if requests else None,
             "username": username,
             "folderPath": folder_path,
             "reason": "offline" if is_offline else "failed",
@@ -3906,26 +3921,35 @@ class CoreHost:
                 out[record.direction].append(upstream)
         return out
 
-    def _enqueue_folder_files(self, username, root, folders, destination, recurse):
-        count = 0
+    @staticmethod
+    def _folder_files(root, folders, recurse):
+        """The (folder path, file) pairs a request for `root` takes: the
+        folder's own files, plus its subfolders' when `recurse`."""
+        out = []
         for folder in folders:
             path = folder["path"]
             if not recurse and path != root:
                 continue
             if recurse and path != root and not path.startswith(root + "\\"):
                 continue
+            out.extend((path, file) for file in folder["files"])
+        return out
+
+    def _enqueue_folder_files(self, username, root, files, destination):
+        targets = {}
+        for path, file in files:
             # Into the chosen folder, but with the release's own folders kept,
             # as upstream's Download to does (userbrowse.download_folder). This
             # used to drop every file of every subfolder flat into the target.
-            target = self.core.downloads.get_folder_destination(
-                username, path, root_folder_path=root, download_folder_path=destination or None
-            )
-            for file in folder["files"]:
-                self.core.downloads.enqueue_download(
-                    username, file["path"], folder_path=target, size=file["size"]
+            if path not in targets:
+                targets[path] = self.core.downloads.get_folder_destination(
+                    username, path, root_folder_path=root,
+                    download_folder_path=destination or None,
                 )
-                count += 1
-        return count
+            self.core.downloads.enqueue_download(
+                username, file["path"], folder_path=targets[path], size=file["size"]
+            )
+        return len(files)
 
     def _close_search(self, token, reason):
         for payload in self.searches.flush():
@@ -4175,11 +4199,12 @@ class CoreHost:
         username = params["username"]
         folder_path = params["folderPath"]
         request_id = registries.transfer_id(username, folder_path)
-        self._folder_requests[(username, folder_path)] = {
+        self._folder_requests.setdefault((username, folder_path), []).append({
             "requestId": request_id,
             "destination": params.get("destination"),
             "recurse": bool(params.get("recurse")),
-        }
+            "confirmAbove": params.get("confirmAbove"),
+        })
         self.core.downloads.request_folder(username, folder_path)
         return {"requestId": request_id}
 
@@ -4372,7 +4397,8 @@ class CoreHost:
             # reports, and a path is a list of what someone downloads.
             log.warning("spectral analysis failed: %s", type(error).__name__)
             self.bridge.broadcast("analysis.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         self.bridge.broadcast("analysis.result", payload)
@@ -4431,7 +4457,8 @@ class CoreHost:
         except Exception as error:
             log.warning("checksum check failed: %s", type(error).__name__)
             self.bridge.broadcast("checksums.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         report["requestId"] = request_id

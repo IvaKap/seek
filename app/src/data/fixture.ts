@@ -127,7 +127,7 @@ const chance = (r: () => number, p: number): boolean => r() < p;
 const pad2 = (n: number) => String(n).padStart(2, '0');
 const lc = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
-export interface FixtureOptions {
+interface FixtureOptions {
   seed?: number;
   /** Roughly how many files the whole session should contain. */
   targetFiles?: number;
@@ -135,13 +135,13 @@ export interface FixtureOptions {
   durationMs?: number;
 }
 
-export interface RecordedResponse {
+interface RecordedResponse {
   /** Milliseconds after search start. */
   at: number;
   response: Omit<WireSearchResult, 'searchId'>;
 }
 
-export interface RecordedSession {
+interface RecordedSession {
   query: string;
   responses: RecordedResponse[];
   totalFiles: number;

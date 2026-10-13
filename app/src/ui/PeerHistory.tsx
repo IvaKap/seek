@@ -21,12 +21,9 @@
 import type { PeerRecord } from '../data/prefsStore.ts';
 import { peerTone, peerTitle } from '../domain/score.ts';
 
-/* The tone rule moved to `domain/score.ts`, beside `reliabilityFrom`, when the
-   statistics screen needed to count peers by tone — one threshold, so a peer's
-   own chip and a total can never disagree. Re-exported because this is still
-   where callers expect to find it. */
-export { peerTone, peerTitle } from '../domain/score.ts';
-export type { PeerTone } from '../domain/score.ts';
+/* The tone rule lives in `domain/score.ts`, beside `reliabilityFrom`: the
+   statistics screen counts peers by tone too — one threshold, so a peer's own
+   chip and a total can never disagree. */
 
 /** A lookup the views are handed, so nothing below needs the whole store. */
 export type PeerLookup = (username: string) => PeerRecord | undefined;

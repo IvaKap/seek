@@ -27,6 +27,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { FolderContentsEvent, TransferFolderParams } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import { readUntilAnswered, reportFailure, showNotice } from './failures.ts';
 
@@ -36,7 +37,7 @@ export type TransferState =
   | 'connection_timeout' | 'download_folder_error' | 'local_file_error'
   | 'unknown';
 
-export type TransferDirection = 'download' | 'upload';
+type TransferDirection = 'download' | 'upload';
 
 export interface Transfer {
   id: string;
@@ -182,7 +183,7 @@ const BADGE_RANK: Record<QueueBadge, number> = {
   downloading: 5, queued: 4, paused: 3, failed: 2, done: 1, idle: 0,
 };
 
-export interface QueueMaps {
+interface QueueMaps {
   /** By `transferKey` — one file's exact state, for a track/source/file row. */
   files: Map<string, TransferState>;
   /** By `folderKey` — the liveliest badge across a folder, for a release card. */
@@ -198,7 +199,7 @@ export function buildQueueMaps(all: Transfer[]): QueueMaps {
   const folders = new Map<string, QueueBadge>();
   for (const t of all) {
     files.set(transferKey(t.username, t.path), t.state);
-    const fk = `${t.username}\0${splitPath(t.path).folder}`;
+    const fk = groupOf(t);
     const next = queueBadge(t.state);
     const cur = folders.get(fk);
     if (cur === undefined || BADGE_RANK[next] > BADGE_RANK[cur]) folders.set(fk, next);
@@ -384,7 +385,9 @@ export interface TransferSession {
   enqueue(username: string, path: string, size: number, destination?: string | null): Promise<void>;
   /** `recurse` takes the subfolders too — what a folder whose label counts
    *  everything inside it promises. `count`, when the caller knows it, asks
-   *  first past LARGE_FOLDER_FILES: one click should not queue 3,000 files. */
+   *  first past LARGE_FOLDER_FILES: one click should not queue 3,000 files.
+   *  A folder that turns out bigger than `count` (a search shows a fraction
+   *  of one) is held back by the sidecar and asked about then. */
   enqueueFolder(
     username: string, folderPath: string, recurse?: boolean,
     opts?: { destination?: string | null; count?: number },
@@ -415,9 +418,9 @@ export interface TransferSession {
 
 /** Folders with more files than this ask before queueing — the number
  *  Nicotine+ asks at too (userbrowse.py). */
-export const LARGE_FOLDER_FILES = 1000;
+const LARGE_FOLDER_FILES = 1000;
 
-export interface PendingFolder {
+interface PendingFolder {
   username: string;
   folderPath: string;
   recurse: boolean;
@@ -425,8 +428,13 @@ export interface PendingFolder {
   count: number;
 }
 
+/* Questions wait their turn, once per folder. A held folder is announced
+   whenever its peer answers, so two can arrive while one is on screen. */
+const withQuestion = (q: PendingFolder[], f: PendingFolder) => (
+  q.some((x) => x.username === f.username && x.folderPath === f.folderPath) ? q : [...q, f]);
+
 /** Enough of a cancelled download to queue it again. */
-export interface CancelledFile {
+interface CancelledFile {
   username: string;
   path: string;
   size: number;
@@ -527,10 +535,14 @@ export function useTransfers(
       );
     };
     const onFolder = (data: unknown) => {
-      const d = data as {
-        requestId: string; folderPath: string; enqueued: number;
-        folders?: { path: string; files: unknown[] }[];
-      };
+      const d = data as FolderContentsEvent;
+      if (d.held) {
+        // Bigger than the search showed. The sidecar held it back rather than
+        // queue it, so ask now, with the real count.
+        const held = { username: d.username, folderPath: d.folderPath, ...d.held };
+        setQuestions((q) => withQuestion(q, held));
+        return;
+      }
       if (!d.requestId || d.enqueued !== 0) return;
       const name = d.folderPath.split('\\').pop() || d.folderPath;
       const inSubfolders = (d.folders ?? []).some((f) => f.path !== d.folderPath && f.files.length > 0);
@@ -664,16 +676,23 @@ export function useTransfers(
     }
   }, [client]);
 
-  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+  const [questions, setQuestions] = useState<PendingFolder[]>([]);
+  const pendingFolder = questions[0] ?? null;
 
-  const sendFolder = useCallback(async (f: Omit<PendingFolder, 'count'>) => {
+  /* `confirmAbove` lets the sidecar, the only side that sees the real count,
+     hold back a folder the caller underestimated: a search shows a fraction
+     of one. Null once the person has agreed. */
+  const sendFolder = useCallback(async (
+    f: Omit<PendingFolder, 'count'>, confirmAbove: number | null,
+  ) => {
     if (!client) return;
     setError(null);
+    const params = {
+      username: f.username, folderPath: f.folderPath, recurse: f.recurse,
+      destination: f.destination, confirmAbove,
+    } satisfies TransferFolderParams;
     try {
-      await client.request('transfer.enqueueFolder', {
-        username: f.username, folderPath: f.folderPath, recurse: f.recurse,
-        destination: f.destination,
-      });
+      await client.request('transfer.enqueueFolder', params);
     } catch (e) {
       setError((e as Error).message);
       reportFailure('Download the folder', e);
@@ -686,17 +705,18 @@ export function useTransfers(
   ) => {
     const f = { username, folderPath, recurse, destination: opts.destination ?? null };
     if ((opts.count ?? 0) > LARGE_FOLDER_FILES) {
-      setPendingFolder({ ...f, count: opts.count ?? 0 });
+      const asked = { ...f, count: opts.count ?? 0 };
+      setQuestions((q) => withQuestion(q, asked));
       return;
     }
-    await sendFolder(f);
+    await sendFolder(f, LARGE_FOLDER_FILES);
   }, [sendFolder]);
 
   const confirmFolder = useCallback(() => {
-    if (pendingFolder) void sendFolder(pendingFolder);
-    setPendingFolder(null);
+    if (pendingFolder) void sendFolder(pendingFolder, null);
+    setQuestions((q) => q.slice(1));
   }, [pendingFolder, sendFolder]);
-  const dismissFolder = useCallback(() => setPendingFolder(null), []);
+  const dismissFolder = useCallback(() => setQuestions((q) => q.slice(1)), []);
 
   /* A read first, then an ordinary clear, so anything awaiting review is left
      out: clearing its transfer would leave the review card pointing at nothing. */

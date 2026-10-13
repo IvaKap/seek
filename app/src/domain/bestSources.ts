@@ -172,6 +172,35 @@ export function copiesOf(release: Release, groups: Map<string, Release[]>): Rele
   return groups.get(release.id) ?? [release];
 }
 
+/** One record in one format, every folder of it, best first. */
+export interface ReleaseVersion {
+  /** Stable while results stream in: the record and the format, not a folder. */
+  id: string;
+  copies: Release[];
+}
+
+/**
+ * The folders in Simple's list of versions: the copies of one record in one
+ * format, as one row whose first copy is the one it shows and Get takes. A
+ * folder holding a single matching track is not a release here; that track
+ * is in the list already, as itself.
+ */
+export function releaseVersions(releases: Release[]): ReleaseVersion[] {
+  const byId = new Map<string, Release[]>();
+  for (const record of new Set(groupCopies(releases.filter((r) => r.trackCount >= 2)).values())) {
+    const title = fuzzyKey(record[0].title);
+    const artist = record.map((r) => fuzzyKey(r.artist ?? '')).find(Boolean) ?? '';
+    for (const r of record) {
+      const id = `rv:${artist}\0${title}\0${r.dominantLabel}`;
+      const copies = byId.get(id);
+      if (copies) copies.push(r);
+      else byId.set(id, [r]);
+    }
+  }
+  // Ranked again among themselves: "complete" means complete for this format.
+  return [...byId].map(([id, copies]) => ({ id, copies: rankCopies(copies) }));
+}
+
 /**
  * How complete the copies on offer are, and — the part that matters — how much
  * of that we actually know.

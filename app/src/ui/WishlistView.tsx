@@ -23,6 +23,8 @@ import { readUntilAnswered, reportFailure } from '../data/failures.ts';
 interface Wish { query: string; filters: WishFilters | null; auto: boolean }
 interface WishlistState { items: Wish[]; intervalSeconds: number }
 
+/* Reads after "every", so it keeps seconds and hours where the shared
+   `spanWords` says "less than a minute" or rounds to days. */
 function span(seconds: number): string {
   if (seconds < 120) return `${seconds} seconds`;
   const m = Math.round(seconds / 60);
@@ -36,7 +38,7 @@ function span(seconds: number): string {
  * turn (search.py `_do_next_wishlist_search`), so with 35 wishes each one comes
  * round every 35 intervals — saying "every 12 minutes" promised far more.
  */
-export function wishCadence(intervalSeconds: number, count: number): string {
+function wishCadence(intervalSeconds: number, count: number): string {
   if (intervalSeconds <= 0) return 'Searched automatically once the server says how often, whenever Seek is running.';
   if (count <= 1) return `Searched automatically every ${span(intervalSeconds)}, whenever Seek is running.`;
   return `One wish is searched every ${span(intervalSeconds)}, in turn, so each comes round about every `

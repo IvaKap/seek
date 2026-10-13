@@ -9,8 +9,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_COLUMNS, SEARCH_COLUMN_SET, normaliseColumns, reorderColumns, templateFor,
-  toggleColumn,
 } from './searchColumns.ts';
+
+const toggleColumn = SEARCH_COLUMN_SET.toggle;
 
 describe('normaliseColumns', () => {
   it('drops ids it does not recognise', () => {

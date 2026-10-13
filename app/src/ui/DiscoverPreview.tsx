@@ -29,19 +29,11 @@ import type { PlaylistState } from '../data/discoverStore.ts';
 import type { TitleSource } from '../domain/parseTitle.ts';
 import { useReducedMotion } from '../motion/prefs.ts';
 import {
-  IconBandcamp, IconClose, IconDiscogs, IconLink, IconYouTube,
+  IconClose, SourceIcon,
 } from '../icons/index.tsx';
 
 /** Matches the CSS exit duration. Kept here so the two cannot drift silently. */
 const EXIT_MS = 200;
-
-function SourceIcon({ provider }: { provider: Preview['provider'] }) {
-  const props = { size: 16, painted: 1.5 } as const;
-  if (provider === 'youtube') return <IconYouTube {...props} />;
-  if (provider === 'bandcamp') return <IconBandcamp {...props} />;
-  if (provider === 'discogs') return <IconDiscogs {...props} />;
-  return <IconLink {...props} />;
-}
 
 /**
  * One line saying where the fields came from. The user's first question when a
@@ -145,7 +137,6 @@ export function DiscoverPreviewCard({
     timer.current = window.setTimeout(() => setShown(null), reduced ? 0 : EXIT_MS);
     // `shown` is deliberately not a dependency: reacting to it would restart the
     // exit timer every time the card re-rendered on its way out.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview, reduced]);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -182,12 +173,12 @@ export function DiscoverPreviewCard({
         <div className="dig__art" aria-hidden>
           {shown.artworkUri
             ? <img className="dig__img" src={shown.artworkUri} alt="" />
-            : <span className="dig__placeholder"><SourceIcon provider={shown.provider} /></span>}
+            : <span className="dig__placeholder"><SourceIcon kind={shown.provider} size={16} /></span>}
         </div>
 
         <div className="dig__body">
           <p className="dig__source">
-            <SourceIcon provider={shown.provider} />
+            <SourceIcon kind={shown.provider} size={16} />
             <span>
               {shown.loading
                 ? `Reading the ${shown.provider ? PROVIDER_LABEL[shown.provider] : ''} link…`.replace('  ', ' ')

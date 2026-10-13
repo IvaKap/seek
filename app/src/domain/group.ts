@@ -18,15 +18,26 @@
  *     used to accept every later copy, so a radio edit and an extended mix
  *     shared a row.) The anchor is not the identity — the id is — so filling
  *     it in late moves nothing on screen.
+ *   - a version is one cluster's copies in one format whose sizes agree with
+ *     the first copy's: the same file, shared by several people. Anchored on
+ *     that first size the same way, so a copy joining never splits it.
  */
 
 import type {
   Filters, FormatTier, Release, SourceFile, TrackCluster, UserGroup,
 } from './types.ts';
-import { TIER_RANK, bestTier } from './quality.ts';
+import { bestTier } from './quality.ts';
 
 /** The brief's tolerance for "the same track from a different rip". */
 const DURATION_TOLERANCE = 2;
+
+/**
+ * How far two sizes may differ and still be one version. Re-tagging a file or
+ * embedding a cover moves its size by kilobytes to a megabyte; a lossy file
+ * relabelled as something better, or a lossless one the size check doubts,
+ * is a third of the size or less, so it never joins a real copy.
+ */
+const SAME_FILE = 0.05;
 
 /*
  * One collator, reused. `String.prototype.localeCompare(a, undefined, opts)`
@@ -59,6 +70,8 @@ export interface Grouper {
   readonly all: SourceFile[];
   size(): number;
   tracks(sources: SourceFile[]): TrackCluster[];
+  /** Like `tracks`, one row per version: same track, same format, same size. */
+  versions(sources: SourceFile[]): TrackCluster[];
   releases(sources: SourceFile[]): Release[];
   users(sources: SourceFile[]): UserGroup[];
   reset(): void;
@@ -78,7 +91,13 @@ export function createGrouper(): Grouper {
   /** source id → cluster id. The assignment, made once. */
   const clusterOf = new Map<string, string>();
   const releaseOf = new Map<string, ReleaseState>();
+  /** cluster id + format → the versions under it, each with its anchor size. */
+  const versionsUnder = new Map<string, Array<{ id: string; anchor: number }>>();
+  /** source id → version id. Also made once. */
+  const versionOf = new Map<string, string>();
   let seq = 0;
+  // Its own counter, so cluster and release ids stay what they always were.
+  let vseq = 0;
 
   function assignCluster(s: SourceFile): string {
     const existing = clusterOf.get(s.id);
@@ -111,9 +130,25 @@ export function createGrouper(): Grouper {
     return target.id;
   }
 
+  function assignVersion(s: SourceFile, cluster: string): void {
+    if (versionOf.has(s.id)) return;
+    const key = `${cluster}\0${s.quality.label}`;
+    let under = versionsUnder.get(key);
+    if (!under) {
+      under = [];
+      versionsUnder.set(key, under);
+    }
+    let v = under.find((x) => Math.abs(s.size - x.anchor) <= x.anchor * SAME_FILE);
+    if (!v) {
+      v = { id: `v${vseq++}`, anchor: s.size };
+      under.push(v);
+    }
+    versionOf.set(s.id, v.id);
+  }
+
   function add(s: SourceFile): void {
     all.push(s);
-    assignCluster(s);
+    assignVersion(s, assignCluster(s));
     let rel = releaseOf.get(s.releaseKey);
     if (!rel) {
       rel = {
@@ -132,9 +167,17 @@ export function createGrouper(): Grouper {
   /* --------------------------------------------------------------- views */
 
   function tracks(sources: SourceFile[]): TrackCluster[] {
+    return clustered(sources, clusterOf);
+  }
+
+  function versions(sources: SourceFile[]): TrackCluster[] {
+    return clustered(sources, versionOf);
+  }
+
+  function clustered(sources: SourceFile[], idOf: Map<string, string>): TrackCluster[] {
     const byCluster = new Map<string, SourceFile[]>();
     for (const s of sources) {
-      const id = clusterOf.get(s.id);
+      const id = idOf.get(s.id);
       if (!id) continue;
       const arr = byCluster.get(id);
       if (arr) arr.push(s);
@@ -276,7 +319,10 @@ export function createGrouper(): Grouper {
     buckets.clear();
     clusterOf.clear();
     releaseOf.clear();
+    versionsUnder.clear();
+    versionOf.clear();
     seq = 0;
+    vseq = 0;
   }
 
   return {
@@ -286,6 +332,7 @@ export function createGrouper(): Grouper {
     },
     size: () => all.length,
     tracks,
+    versions,
     releases,
     users,
     reset,
@@ -333,5 +380,3 @@ export function terms(text: string): string[] {
     .map((t) => t.trim())
     .filter(Boolean);
 }
-
-export { TIER_RANK };

@@ -58,7 +58,6 @@ function fakeSidecar(): Sidecar {
       }
     },
     stop() { live = false; },
-    setRate() {},
   } as unknown as Sidecar;
 }
 

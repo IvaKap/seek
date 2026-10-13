@@ -170,7 +170,6 @@ export interface SpringHandle {
   to(target: number, velocity?: number): void;
   set(value: number): void;
   stop(): void;
-  readonly spring: Spring;
 }
 
 /**
@@ -180,10 +179,9 @@ export interface SpringHandle {
  */
 export function driveSpring(
   apply: (value: number) => void,
-  initial = 0,
   config: SpringConfig = SPRING_DEFAULT,
 ): SpringHandle {
-  const spring = new Spring(initial, config);
+  const spring = new Spring(0, config);
   let raf = 0;
   let last = 0;
 
@@ -207,7 +205,6 @@ export function driveSpring(
   }
 
   return {
-    spring,
     to(target, velocity) {
       spring.setTarget(target, velocity);
       kick();

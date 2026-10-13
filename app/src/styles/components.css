@@ -34,6 +34,10 @@
   background: var(--accent); color: var(--text-on-accent);
   font-size: var(--fs-micro); text-align: center;
 }
+/* Simple / Collector, above the status row: full width, two equal halves. */
+.sidebar__mode { padding: var(--sp-2) var(--sp-4); }
+.sidebar__mode .segmented { display: flex; }
+.sidebar__mode .segmented__item { flex: 1; justify-content: center; }
 
 /* =============================================================== header == */
 
@@ -108,7 +112,6 @@
   background: var(--accent); border-color: transparent;
   color: var(--text-on-accent); font-weight: var(--fw-medium);
 }
-.chip__count { opacity: 0.7; }
 
 /* Advanced panel. Height is animated only here, where there is no transform
    equivalent — grid-template-rows 0fr→1fr keeps it off the layout path for the
@@ -306,14 +309,14 @@
 .wants__hint { text-transform: none; letter-spacing: 0; color: var(--text-quaternary); }
 .wants__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
-.want {
+.want, .cat {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
   background: var(--bg-raised);
 }
-@media (hover: hover) and (pointer: fine) { .want:hover { background: var(--bg-hover); } }
+@media (hover: hover) and (pointer: fine) { .want:hover, .cat:hover { background: var(--bg-hover); } }
 .want__art {
   width: 2.5rem; height: 2.5rem; flex: none;
   border-radius: var(--radius-sm); overflow: hidden;
@@ -471,14 +474,6 @@
   display: grid; gap: var(--sp-2);
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
 }
-.cat {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
-  background: var(--bg-raised);
-}
-@media (hover: hover) and (pointer: fine) { .cat:hover { background: var(--bg-hover); } }
 /* Owned records recede rather than disappear: the shape of a catalogue you
    have most of is itself information. */
 .cat[data-owned='true'] { opacity: 0.6; }
@@ -845,7 +840,9 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row__artist { color: var(--text-primary); font-weight: var(--fw-medium); }
-.row__dash { color: var(--text-quaternary); }
+/* `pre`: the title is a flex row, and a flex item drops the spaces at either
+   end of its text, which ran "Burial—Archangel" together. */
+.row__dash { color: var(--text-quaternary); white-space: pre; }
 .row__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; }
 .row__name[data-raw='true'] { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .row__unparsed {
@@ -854,8 +851,7 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro); color: var(--text-tertiary);
   cursor: help; flex: none;
 }
-.row__year { margin-left: var(--sp-2); color: var(--text-tertiary); font-size: var(--fs-secondary); }
-.row__free {
+.row__free, .row__tag {
   margin-left: var(--sp-2); padding: 0 var(--sp-1);
   border-radius: var(--radius-sm); background: var(--bg-sunken);
   font-size: var(--fs-micro); color: var(--text-secondary);
@@ -1397,7 +1393,6 @@
 /* A sentence, not a token: the whole width of a block row. */
 .settings__input--wide { width: 100%; margin-top: var(--sp-2); }
 .settings__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.settings__suffix { font-size: var(--fs-caption); color: var(--text-tertiary); }
 .settings__static { font-size: var(--fs-secondary); color: var(--text-tertiary); }
 /* A filesystem path is long, monospaced and worth selecting. It wraps rather
    than truncating: a path you cannot read all of is a path you cannot use. */
@@ -2081,9 +2076,9 @@
 .dl__chev { color: var(--text-tertiary); transition: transform var(--dur-base) var(--ease-out); }
 .dl__chev[data-open='true'] { transform: rotate(180deg); }
 
-.prog { height: 3px; background: var(--bg-sunken); overflow: hidden; }
+.prog { display: block; height: 3px; background: var(--bg-sunken); overflow: hidden; }
 .prog__fill {
-  height: 100%; width: 100%; transform-origin: left center;
+  display: block; height: 100%; width: 100%; transform-origin: left center;
   background: var(--accent);
   /* transform, never width — width animates layout on every packet. */
   transition: transform var(--dur-base) var(--ease-out);
@@ -2499,7 +2494,6 @@
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   padding-bottom: var(--sp-2); border-bottom: 1px solid var(--separator);
 }
-.browse__who { font-size: var(--fs-body); color: var(--text-primary); }
 .browse__stat { font-size: var(--fs-caption); color: var(--text-secondary); }
 .shares__blocked { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
 .lib__offline { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
@@ -3575,7 +3569,7 @@
   padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
-.libtable__head {
+.libtable__head, .yt__head {
   position: sticky; top: 0; z-index: 1;
   background: var(--material-header);
   backdrop-filter: saturate(180%) blur(20px);
@@ -3648,14 +3642,6 @@
   gap: var(--sp-3); align-items: center;
   padding: var(--sp-2);
   width: max-content; min-width: 100%;
-}
-.yt__head {
-  position: sticky; top: 0; z-index: 1;
-  background: var(--material-header);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 0.5px solid var(--separator);
-  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
-  text-transform: uppercase; color: var(--text-tertiary);
 }
 /* ------------------------------------------------------------- colhead -- */
 /* A table header cell (ui/columnHeaders.tsx), shared by the search table and
@@ -3961,3 +3947,257 @@
 .peer__menu { flex: none; align-self: flex-start; }
 .up__user--link { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .up__user--link:hover { color: var(--accent); text-decoration: underline; }
+
+/* ================================================================ corner == */
+/* The corner panel (ui/CornerPanel.tsx). Inside the pane, so it floats over
+   the list and never over the sidebar; under sheets and popovers. */
+
+.corner {
+  position: absolute; right: var(--sp-4); bottom: var(--sp-4); z-index: 35;
+  width: 20rem;
+  display: flex; flex-direction: column;
+  border: 0.5px solid var(--separator-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  animation: cornerIn var(--dur-base) var(--ease-out) both;
+}
+@keyframes cornerIn { from { opacity: 0; transform: translateY(8px); } }
+
+.corner__head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.corner__title { flex: 1; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.corner__dim { color: var(--text-tertiary); font-weight: 400; }
+.corner__link {
+  padding: 0; border: 0; background: none; cursor: default;
+  font: inherit; font-size: var(--fs-caption); color: var(--accent);
+}
+.corner__fold {
+  display: grid; place-items: center; width: 1.25rem; height: 1.25rem;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
+}
+.corner__fold:hover { background: var(--bg-hover); }
+
+.corner__rows { list-style: none; margin: 0; padding: 0; }
+.corner__row {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 0.5px solid var(--separator);
+}
+.corner__name { font-size: var(--fs-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.corner__name b { font-weight: var(--fw-medium); }
+.corner__dash { color: var(--text-quaternary); }
+.corner__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.corner__sub { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.corner__row[data-kind='finished'] .corner__line { color: var(--success); }
+.corner__row[data-kind='trouble'] .corner__line { color: var(--warn); }
+.corner__row .corner__link { align-self: flex-start; }
+
+/* Folded: two lines of summary, a pill in the same corner. */
+.corner--pill {
+  width: auto; flex-direction: row; align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption); color: var(--text-primary); text-align: left; cursor: default;
+}
+.corner__pill-text { display: flex; flex-direction: column; }
+
+/* ========================================================== best picks == */
+
+/* Simple's lead: two or three cards above the results, titles two sizes above
+   the list's file names. They scroll away with the list. */
+.picks { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5) var(--sp-4); }
+.picks__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.picks__row {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+}
+.pick {
+  container-type: inline-size;
+  display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0;
+  padding: var(--sp-3);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-raised);
+}
+.pick__kind {
+  font-size: var(--fs-micro); font-weight: var(--fw-semibold); letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.pick__head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.pick__art { position: relative; width: 2.75rem; height: 2.75rem; border-radius: var(--radius-md); }
+.pick__body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.pick__title {
+  margin: 0; font-size: var(--fs-body-lg); line-height: 1.3; letter-spacing: var(--tr-body-lg);
+  font-weight: var(--fw-semibold);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.pick__title [data-raw='true'] { font-weight: 400; color: var(--text-secondary); }
+.pick__dash { color: var(--text-quaternary); font-weight: 400; }
+.pick__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+/* Pinned to the bottom so the Gets line up across a row of cards. */
+.pick__foot {
+  margin-top: auto;
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-2);
+}
+.pick__about {
+  flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.pick__about .quality__label { font-size: var(--fs-caption); white-space: nowrap; }
+.pick__peer { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick__get { flex: none; max-width: 100%; margin-left: auto; }
+.pick__get span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Too narrow for the details and "Get all 13" side by side: every card in the
+   row is the same width, so they all stack alike. */
+@container (max-width: 17rem) {
+  .pick__foot { flex-direction: column; align-items: stretch; }
+}
+
+/* ========================================================== all copies == */
+
+/* Simple's status line: who has answered, the number that grows, in place of
+   Collector's file count. */
+.answered {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.answered[data-live='true']::before {
+  content: ''; flex: none;
+  width: 0.375rem; height: 0.375rem; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* "All copies · 8 versions · 19 copies", and the sort. Scrolls with the list. */
+.copies-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.copies-head__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.copies-head__count { margin-left: var(--sp-2); font-weight: 400; color: var(--text-tertiary); }
+
+/* One version: a title, then one line of facts in plain words. */
+.row--simple {
+  box-sizing: border-box; min-height: 3.25rem;
+  padding-top: var(--sp-2); padding-bottom: var(--sp-2);
+}
+.simple__art { position: relative; width: 2rem; height: 2rem; }
+.simple__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3);
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.simple__facts .quality__label { font-size: var(--fs-caption); }
+/* The verdict is the words here, not a glyph beside a column, so it is read
+   at reading contrast. */
+.simple__facts .quality[data-state='good'] .quality__trigger,
+.pick__about .quality[data-state='good'] .quality__trigger { color: var(--text-secondary); }
+.simple__facts .quality[data-state='unverified'] .quality__trigger,
+.pick__about .quality[data-state='unverified'] .quality__trigger { color: var(--text-tertiary); }
+.simple__copies {
+  flex: none; display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.simple__compare {
+  padding: 2px var(--sp-1); margin: -2px calc(var(--sp-1) * -1);
+  border-radius: var(--radius-sm); color: var(--accent); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) { .simple__compare:hover { background: var(--bg-active); } }
+/* "Get" in words, like the picks above: wider than the icon it replaces. */
+.row--simple .row__actions { width: auto; min-width: 4.5rem; }
+
+/* =================================================== downloads · simple == */
+/* Simple's Downloads (ui/DownloadsSimple.tsx): one release on a card, then
+   the rest in sections by what each needs from you. */
+
+.dlsimple {
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  width: 100%; max-width: 55rem; padding-top: var(--sp-2);
+}
+
+.dlsimple__lead {
+  display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: var(--sp-4) var(--sp-5);
+  padding: var(--sp-4);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised); box-shadow: var(--shadow-raised);
+}
+.art--lead { width: 7rem; height: 7rem; margin: 0; border-radius: var(--radius-md); }
+.dlsimple__lead-body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.dlsimple__lead-top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+}
+.dlsimple__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dlsimple__eyebrow { font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--accent); }
+.dlsimple__title {
+  font-size: var(--fs-section); font-weight: var(--fw-semibold); letter-spacing: -0.014em;
+  overflow-wrap: anywhere;
+}
+.dlsimple__facts { font-size: var(--fs-secondary); color: var(--text-secondary); }
+.dlsimple__pct { font-size: var(--fs-title); font-weight: var(--fw-semibold); letter-spacing: -0.021em; }
+.dlsimple__lead .prog { height: 6px; border-radius: 3px; }
+.dlsimple__stats {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+.dlsimple__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.dlsimple__open { grid-column: 1 / -1; min-width: 0; }
+
+/* Five minutes of speed. Drawn once per sample, never animated. */
+.speed { margin: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.speed__chart { display: block; width: 100%; height: 4rem; }
+.speed__grid { fill: none; stroke: var(--separator); stroke-width: 1; }
+.speed__area { fill: var(--accent); opacity: 0.14; }
+.speed__line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; }
+.speed__axis {
+  display: flex; justify-content: space-between; gap: var(--sp-2);
+  font-size: var(--fs-micro); color: var(--text-tertiary);
+}
+
+.dlsimple__section { display: flex; flex-direction: column; gap: var(--sp-1); }
+.dlsimple__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); color: var(--text-secondary); }
+.dlsimple__rows { list-style: none; margin: 0; padding: 0; }
+.dlsimple__more { padding: var(--sp-2) 0; }
+
+.dlrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  border-bottom: 0.5px solid var(--separator);
+}
+.dlrow__hit {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: center; gap: var(--sp-3);
+  min-width: 0; padding: var(--sp-2) 0;
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: default;
+}
+.art--row { width: 2.5rem; height: 2.5rem; margin: 0; }
+.dlrow__main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dlrow__title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.dlrow__name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlrow .prog { height: 4px; border-radius: 2px; }
+.dlrow__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlrow[data-tone='refused'] .dlrow__line { color: var(--danger); }
+.dlrow[data-tone='broken'] .dlrow__line { color: var(--warn); }
+.prog[data-state='trouble'] .prog__fill { background: var(--warn); }
+.dlrow__open { grid-column: 1 / -1; min-width: 0; padding-bottom: var(--sp-2); }
+
+.dlsimple__review {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--accent-soft);
+}
+.dlsimple__review-text { flex: 1 1 15rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dlsimple__review h2 { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.dlsimple__review p { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+@media (max-width: 34rem) {
+  .dlsimple__lead { grid-template-columns: 4rem minmax(0, 1fr); }
+  .art--lead { width: 4rem; height: 4rem; }
+}

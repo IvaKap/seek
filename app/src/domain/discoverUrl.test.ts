@@ -49,20 +49,15 @@ describe('guessUrl — providers', () => {
     }
   });
 
-  it('flags a YouTube playlist', () => {
-    expect(guessUrl('https://www.youtube.com/playlist?list=PLabc')?.playlist).toBe(true);
-    expect(guessUrl('https://www.youtube.com/watch?v=x&list=PLabc')?.playlist).toBe(true);
-    expect(guessUrl('https://youtu.be/x')?.playlist).toBe(false);
+  it('reads a YouTube playlist id', () => {
+    expect(guessUrl('https://www.youtube.com/playlist?list=PLabc')?.playlistId).toBe('PLabc');
+    expect(guessUrl('https://www.youtube.com/watch?v=x&list=PLabc')?.playlistId).toBe('PLabc');
+    expect(guessUrl('https://youtu.be/x')?.playlistId).toBe('');
   });
 
-  it('recognises Bandcamp subdomains and marks albums', () => {
-    const album = guessUrl('https://hyperdub.bandcamp.com/album/untrue');
-    expect(album?.provider).toBe('bandcamp');
-    expect(album?.album).toBe(true);
-
-    const track = guessUrl('https://hyperdub.bandcamp.com/track/archangel');
-    expect(track?.provider).toBe('bandcamp');
-    expect(track?.album).toBe(false);
+  it('recognises Bandcamp subdomains', () => {
+    expect(guessUrl('https://hyperdub.bandcamp.com/album/untrue')?.provider).toBe('bandcamp');
+    expect(guessUrl('https://hyperdub.bandcamp.com/track/archangel')?.provider).toBe('bandcamp');
   });
 
   it('does not mistake a lookalike host for Bandcamp', () => {
@@ -72,9 +67,9 @@ describe('guessUrl — providers', () => {
   });
 
   it('recognises Discogs entities', () => {
-    expect(guessUrl('https://www.discogs.com/release/1082826')?.album).toBe(true);
-    expect(guessUrl('https://www.discogs.com/master/12345')?.album).toBe(true);
-    expect(guessUrl('https://www.discogs.com/label/23604-Hyperdub')?.album).toBe(false);
+    expect(guessUrl('https://www.discogs.com/release/1082826')?.provider).toBe('discogs');
+    expect(guessUrl('https://www.discogs.com/master/12345')?.provider).toBe('discogs');
+    expect(guessUrl('https://www.discogs.com/label/23604-Hyperdub')?.provider).toBe('discogs');
     expect(guessUrl('https://www.discogs.com/artist/12345')?.provider).toBe('discogs');
   });
 

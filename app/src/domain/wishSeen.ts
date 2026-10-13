@@ -55,27 +55,12 @@ export function seenId(source: Pick<SourceFile, 'id'>): string {
     + (b >>> 0).toString(16).padStart(8, '0')).slice(0, 12);
 }
 
-export interface WishSplit {
-  /** Not shown by any previous run. The only thing worth announcing. */
-  fresh: SourceFile[];
-  /** How many of this run's results you have already been shown. */
-  seenCount: number;
-}
-
 /**
- * Split one run's results against what has already been seen.
- *
- * Order is preserved: `fresh` stays in the order the sources arrived, so the
- * ranking the grouper produced survives.
+ * This run's results that no earlier run showed you — the only thing worth
+ * announcing. Order is preserved, so the ranking the grouper produced survives.
  */
-export function splitSeen(sources: SourceFile[], seen: ReadonlySet<string>): WishSplit {
-  const fresh: SourceFile[] = [];
-  let seenCount = 0;
-  for (const s of sources) {
-    if (seen.has(seenId(s))) seenCount += 1;
-    else fresh.push(s);
-  }
-  return { fresh, seenCount };
+export function freshOf(sources: SourceFile[], seen: ReadonlySet<string>): SourceFile[] {
+  return sources.filter((s) => !seen.has(seenId(s)));
 }
 
 /** Every id in a run, for handing to the sidecar when the wish is opened. */

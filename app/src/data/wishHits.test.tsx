@@ -8,7 +8,7 @@
  * is FROZEN when a run's results arrive, and opening a wish is what marks them
  * seen. Judged against the live set instead, a wish would report its own
  * results as old the moment you looked at them — and no pure-logic test can
- * see that, because there is no function to call that has it. `splitSeen` is
+ * see that, because there is no function to call that has it. `freshOf` is
  * correct in isolation either way.
  *
  * Rendered in <StrictMode> like the rest of the component tests here: it is
@@ -107,7 +107,7 @@ describe('a wish only announces what is new', () => {
     const hit = box.hits.byQuery.drexciya;
     expect(hit.sources).toHaveLength(2);
     expect(hit.fresh).toHaveLength(2);
-    expect(hit.seenCount).toBe(0);
+    expect(hit.sources.length - hit.fresh.length).toBe(0);
     expect(box.hits.unseenCount).toBe(1);
   });
 
@@ -129,7 +129,7 @@ describe('a wish only announces what is new', () => {
     const hit = box.hits.byQuery.drexciya;
     expect(hit.sources).toHaveLength(2);
     expect(hit.fresh).toEqual([]);
-    expect(hit.seenCount).toBe(2);
+    expect(hit.sources.length - hit.fresh.length).toBe(2);
     expect(hit.unseen).toBe(false);
     expect(box.hits.unseenCount).toBe(0);
   });
@@ -148,7 +148,7 @@ describe('a wish only announces what is new', () => {
 
     const hit = box.hits.byQuery.drexciya;
     expect(hit.fresh.map((s) => s.path)).toEqual(['music\\Drexciya\\02.flac']);
-    expect(hit.seenCount).toBe(1);
+    expect(hit.sources.length - hit.fresh.length).toBe(1);
     expect(box.hits.unseenCount).toBe(1);
   });
 
@@ -203,7 +203,7 @@ describe('opening a wish', () => {
     // One run, one baseline: both are new relative to where it started.
     expect(box.hits.byQuery.drexciya.sources).toHaveLength(2);
     expect(box.hits.byQuery.drexciya.fresh).toHaveLength(2);
-    expect(box.hits.byQuery.drexciya.seenCount).toBe(0);
+    expect(box.hits.byQuery.drexciya.fresh).toHaveLength(2);
   });
 
   it('stops it counting as news', async () => {
@@ -219,7 +219,7 @@ describe('opening a wish', () => {
     await act(async () => { box.hits.markSeen('drexciya'); });
     expect(box.hits.unseenCount).toBe(0);
     expect(box.hits.byQuery.drexciya.fresh).toEqual([]);
-    expect(box.hits.byQuery.drexciya.seenCount).toBe(1);
+    expect(box.hits.byQuery.drexciya.sources).toHaveLength(1);
   });
 
   it('tells the sidecar, with every result and not only the new ones', async () => {
@@ -366,20 +366,34 @@ describe('what the wishlist ignores', () => {
     expect(box.hits.byQuery).toEqual({});
   });
 
-  it('forgetting a wish drops what it knew', async () => {
+  it('removing a wish drops what it knew', async () => {
     const { client, emit } = fakeClient();
     const box = mount(client);
     await act(async () => {
       emit('search.started', started());
       emit('search.result', results(7, 'peer-a', ['01.flac']));
     });
-    // Marked first, or there is nothing for `forget` to fail to drop.
+    // Marked first, or there is nothing for the removal to fail to drop.
     await act(async () => { box.hits.markSeen('drexciya'); });
-    await act(async () => { box.hits.forget('drexciya'); });
+    await act(async () => { emit('wishlist.state', { items: [] }); });
     expect(box.hits.byQuery.drexciya).toBeUndefined();
 
     // And the seen-set with it: re-adding the same text must not begin life
     // believing it has already shown you things you have never seen.
+    await act(async () => {
+      emit('search.started', started());
+      emit('search.result', results(7, 'peer-a', ['01.flac']));
+    });
+    expect(box.hits.byQuery.drexciya.fresh).toHaveLength(1);
+  });
+
+  it('removing a wish that has not run yet forgets what it had seen too', async () => {
+    // Loaded from the sidecar at mount, never run this session: the removal
+    // must still drop it, or re-adding the text inherits stale ids.
+    const { client, emit } = fakeClient([{ query: 'drexciya', ids: [idFor('peer-a', '01.flac')] }]);
+    const box = mount(client);
+    await act(async () => {});   // let seenList resolve
+    await act(async () => { emit('wishlist.state', { items: [] }); });
     await act(async () => {
       emit('search.started', started());
       emit('search.result', results(7, 'peer-a', ['01.flac']));

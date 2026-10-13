@@ -23,7 +23,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import type { SourceFile, TrackCluster, UserGroup } from '../domain/types.ts';
 import type { ColumnId } from '../domain/searchColumns.ts';
-import { audioSpec, count, duration, fileSize, integer, speed } from '../domain/format.ts';
+import { audioSpec, count, duration, fileSize, integer, slotWords, speed } from '../domain/format.ts';
 import {
   IconCheck, IconChevronDown, IconDownload, IconHistory, IconUser, IconWarning,
 } from '../icons/index.tsx';
@@ -160,7 +160,7 @@ const QBTN_TEXT: Record<QueueBadge, string> = {
  * queued; `failed` re-queues; `done` is inert.
  */
 export function QueueButton({
-  badge, onQueue, label, className = 'action pressable qbtn', withText = false,
+  badge, onQueue, label, className = 'action pressable qbtn', withText = false, texts,
 }: {
   badge: QueueBadge;
   onQueue(): void;
@@ -169,6 +169,8 @@ export function QueueButton({
   className?: string;
   /** Show a short text label beside the icon (the release card's "Get"). */
   withText?: boolean;
+  /** Words to say instead of the defaults, per state. A best pick says who it is asking. */
+  texts?: Partial<Record<QueueBadge, string>>;
 }) {
   const [pressed, setPressed] = useState(false);
   // Once the store reflects any real state, stop being optimistic and follow it.
@@ -195,21 +197,44 @@ export function QueueButton({
       onClick={(e) => { e.stopPropagation(); act(); }}
     >
       {QBTN_ICON[shown]}
-      {withText && <span>{QBTN_TEXT[shown]}</span>}
+      {withText && <span>{texts?.[shown] ?? QBTN_TEXT[shown]}</span>}
     </button>
+  );
+}
+
+const UNPARSED_PATH = 'Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it.';
+const UNPARSED_FILE = 'Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it.';
+
+/** Artist — title, or the raw filename flagged "unparsed" when neither could be read. */
+export function TitleLine({ of, unparsed = UNPARSED_PATH, word = 'unparsed' }: {
+  of: { displayArtist: string | null; displayTitle: string; fallback: boolean };
+  unparsed?: string;
+  /** The flag's own words. Simple says it plainly. */
+  word?: string;
+}) {
+  return (
+    <span className="row__title">
+      {of.displayArtist && (
+        <>
+          <span className="row__artist">{of.displayArtist}</span>
+          <span className="row__dash" aria-hidden> — </span>
+        </>
+      )}
+      <span className="row__name" data-raw={of.fallback ? 'true' : undefined}>{of.displayTitle}</span>
+      {of.fallback && <span className="row__unparsed" title={unparsed}>{word}</span>}
+    </span>
   );
 }
 
 /* ------------------------------------------------------------- track row */
 
 export function TrackRow({
-  track, expanded, onToggle, onQueue, selected, queueStates,
+  track, expanded, onToggle, onQueue, queueStates,
 }: {
   track: TrackCluster;
   expanded: boolean;
   onToggle(): void;
   onQueue(): void;
-  selected: boolean;
   /** File states from the transfer store, so Get reflects what happened. */
   queueStates?: Map<string, TransferState>;
 }) {
@@ -220,7 +245,6 @@ export function TrackRow({
   return (
     <div
       className="row"
-      data-selected={selected ? 'true' : undefined}
       data-expanded={expanded ? 'true' : undefined}
     >
       {/* role="button", not <button>: these rows contain the quality
@@ -235,25 +259,7 @@ export function TrackRow({
         aria-label={`${track.displayArtist ? `${track.displayArtist}, ` : ''}${track.displayTitle}. ${best.quality.description}. ${count(sources, 'source')}.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {track.displayArtist && (
-              <>
-                <span className="row__artist">{track.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={track.fallback ? 'true' : undefined}>
-              {track.displayTitle}
-            </span>
-            {track.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={track} />
 
           <span className="meta">
             <Meta col="format">
@@ -339,25 +345,7 @@ export function FileRow({
         aria-label={`${source.parsed.displayArtist ? `${source.parsed.displayArtist}, ` : ''}${source.parsed.displayTitle}. ${source.user}. ${source.quality.description}. ${source.peer.queueLength} queued.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {source.parsed.displayArtist && (
-              <>
-                <span className="row__artist">{source.parsed.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={source.parsed.fallback ? 'true' : undefined}>
-              {source.parsed.displayTitle}
-            </span>
-            {source.parsed.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this path, so the filename is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={source.parsed} />
 
           <span className="meta">
             <Meta col="format">
@@ -407,12 +395,11 @@ export function FileRow({
 /* --------------------------------------------------------------- user row */
 
 export function UserRow({
-  group, expanded, onToggle, selected, onBrowse,
+  group, expanded, onToggle, onBrowse,
 }: {
   group: UserGroup;
   expanded: boolean;
   onToggle(): void;
-  selected: boolean;
   /** Open this peer's whole share — the vision note's "show me everything
    *  this person has", which is the point of grouping by user at all. */
   onBrowse?(username: string): void;
@@ -421,7 +408,6 @@ export function UserRow({
   return (
     <div
       className="row row--user"
-      data-selected={selected ? 'true' : undefined}
       data-expanded={expanded ? 'true' : undefined}
     >
       {/* role="button", not <button>: these rows contain the quality
@@ -491,13 +477,15 @@ function bestLabel(group: UserGroup): string {
 /* ------------------------------------------------------------- source row */
 
 export function SourceRow({
-  source, last, onQueue, context = 'peers', peers, queueStates,
+  source, last, onQueue, context = 'peers', peers, queueStates, plain = false,
 }: {
   source: SourceFile;
   last: boolean;
   onQueue(): void;
   /** What the surrounding list is grouping by. See the Row union's note. */
   context?: 'peers' | 'files';
+  /** Simple's words for the queue: "slot free", "3 waiting". */
+  plain?: boolean;
   /** How this peer has actually treated you. Absent means never met. */
   peers?: PeerLookup;
   queueStates?: Map<string, TransferState>;
@@ -549,8 +537,8 @@ export function SourceRow({
             <Meta col="time"><span className="tnum">{duration(source.duration)}</span></Meta>
             <Meta col="size"><span className="tnum">{fileSize(source.size)}</span></Meta>
             <AdvertisedSpeed bytesPerSec={source.peer.advertisedSpeed} />
-            <Meta col="queue" dim={source.peer.queueLength === 0}>
-              <span className="tnum">{source.peer.queueLength}</span> queued
+            <Meta col="queue" dim={!plain && source.peer.queueLength === 0}>
+              {plain ? slotWords(source.peer) : <><span className="tnum">{source.peer.queueLength}</span> queued</>}
             </Meta>
             <Meta col="check"><Quality file={source} /></Meta>
             <Meta col="user" dim>
@@ -568,7 +556,7 @@ export function SourceRow({
         </span>
         <span className="row__tail">
           {source.private && <PrivateMark />}
-          {source.peer.freeSlots && <span className="row__free">free</span>}
+          {source.peer.freeSlots && !plain && <span className="row__free">free</span>}
         </span>
       </div>
       <span className="row__actions">
@@ -629,25 +617,7 @@ export function BrowseFileRow({
         aria-label={`${parsed.displayArtist ? `${parsed.displayArtist}, ` : ''}${parsed.displayTitle}. ${file.quality.description}.`}
       >
         <span className="row__main">
-          <span className="row__title">
-            {parsed.displayArtist && (
-              <>
-                <span className="row__artist">{parsed.displayArtist}</span>
-                <span className="row__dash" aria-hidden> — </span>
-              </>
-            )}
-            <span className="row__name" data-raw={parsed.fallback ? 'true' : undefined}>
-              {parsed.displayTitle}
-            </span>
-            {parsed.fallback && (
-              <span
-                className="row__unparsed"
-                title="Seek could not read an artist and title from this filename, so it is shown exactly as the peer sent it."
-              >
-                unparsed
-              </span>
-            )}
-          </span>
+          <TitleLine of={parsed} unparsed={UNPARSED_FILE} />
           <span className="meta">
             {/* The badge shows the FORMAT (what kind of file this is — the one
                 thing that still matters in a folder mixing FLAC and MP3 rips),

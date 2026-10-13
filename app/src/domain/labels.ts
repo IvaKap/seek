@@ -15,7 +15,7 @@
  * transfers: a number with no reading behind it is decoration.
  */
 
-import { since } from './format.ts';
+import { count, since } from './format.ts';
 
 export interface LabelProgress {
   /** Has this catalogue ever been read? */
@@ -77,7 +77,7 @@ export function describeProgress(label: LabelCounts): LabelProgress {
     read: true,
     summary: owned > 0
       ? `${owned} of ${total} in your library`
-      : `${total} ${total === 1 ? 'release' : 'releases'}`,
+      : count(total, 'release'),
     when,
     fraction: accounted / total,
     remaining,

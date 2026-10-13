@@ -17,7 +17,7 @@ import type { SidecarClient } from './sidecarClient.ts';
 import { readableError } from '../domain/folders.ts';
 import { readUntilAnswered } from './failures.ts';
 
-export interface Profile {
+interface Profile {
   username: string;
   description: string;
   picturePath: string;
@@ -35,7 +35,7 @@ export interface Profile {
   queueSize: number;
 }
 
-export interface ProfilePatch {
+interface ProfilePatch {
   description?: string;
   picturePath?: string;
   pictureVisible?: boolean;
@@ -90,7 +90,7 @@ export function useProfile(client: SidecarClient | null): ProfileSession {
 
 /* --------------------------------------------------------------- connections */
 
-export interface PeerConnection {
+interface PeerConnection {
   username: string;
   country: string | null;
   downloading: number;
@@ -99,7 +99,7 @@ export interface PeerConnection {
   uploadQueued: number;
 }
 
-export interface ConnectionSnapshot {
+interface ConnectionSnapshot {
   /** Open sockets. Far larger than `peers` — see the view. */
   socketCount: number;
   peers: PeerConnection[];

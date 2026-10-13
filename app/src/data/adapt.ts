@@ -52,8 +52,14 @@ export interface WireSearchResultData {
   private?: boolean;
 }
 
-export type SearchCloseReason = 'timeout' | 'result_cap' | 'stopped' | 'disconnected';
+type SearchCloseReason = 'timeout' | 'result_cap' | 'stopped' | 'disconnected';
 
+/**
+ * NOT a network event. Soulseek has no completion signal — peers answer a
+ * broadcast whenever they like and stragglers arrive minutes later. This is the
+ * sidecar telling us it has stopped accepting responses for a token. The UI must
+ * never block on it; the list is usable from the first result onward.
+ */
 export interface WireSearchClosedData {
   searchId: number;
   /** 'failed' is the client's own: the search was refused or never sent. */
@@ -75,7 +81,7 @@ export type WireFrame =
  */
 export type ReliabilityLookup = (username: string) => number;
 
-export function adaptPeer(p: WirePeerStats, reliability: ReliabilityLookup): PeerStats {
+function adaptPeer(p: WirePeerStats, reliability: ReliabilityLookup): PeerStats {
   return {
     username: p.username,
     // Forwarded raw. Upstream's GTK client rewrites queueLength to 0 whenever
@@ -92,7 +98,7 @@ export function adaptPeer(p: WirePeerStats, reliability: ReliabilityLookup): Pee
   };
 }
 
-export function adaptFile(f: WireFileRef, user: string, isPrivate = false): RawFile {
+function adaptFile(f: WireFileRef, user: string, isPrivate = false): RawFile {
   return {
     user,
     private: isPrivate,

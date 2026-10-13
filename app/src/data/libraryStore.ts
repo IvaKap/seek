@@ -20,7 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { SidecarClient } from './sidecarClient.ts';
 import { readUntilAnswered, reportFailure } from './failures.ts';
 
-export interface LibraryState {
+interface LibraryState {
   scannedAt: number;
   roots: string[];
   releaseCount: number;
@@ -91,14 +91,14 @@ export function trackKey(artist: string | null, title: string): string {
   return `${normalise(artist)}|${normalise(title)}`.replace(/^\||\|$/g, '');
 }
 
-export interface LibraryGap {
+interface LibraryGap {
   position: number;
   title: string;
   artist: string;
   have: boolean;
 }
 
-export interface LibraryGaps {
+interface LibraryGaps {
   key: string;
   matched: boolean;
   releaseTitle: string;

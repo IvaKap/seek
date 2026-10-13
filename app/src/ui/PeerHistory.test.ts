@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { peerTone, peerTitle } from './PeerHistory.tsx';
+import { peerTone, peerTitle } from '../domain/score.ts';
 
 describe('peerTone', () => {
   it('is unwilling to judge on almost no evidence', () => {

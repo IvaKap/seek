@@ -28,7 +28,7 @@ import type { DiscogsWant } from '../domain/wantlistImport.ts';
 import { parseTitle, searchQuery } from '../domain/parseTitle.ts';
 import type { TitleSource } from '../domain/parseTitle.ts';
 
-export type DiscoverKind = 'track' | 'release' | 'artist' | 'label';
+type DiscoverKind = 'track' | 'release' | 'artist' | 'label';
 
 /** What the sidecar sends. Mirrors DiscoverParsed in shared/schema.py. */
 export interface WireParsed {
@@ -84,7 +84,7 @@ export interface DiscoverPreview {
 }
 
 /** A tracklist line, with `parseTitle` already applied to its text. */
-export interface TracklistTrack {
+interface TracklistTrack {
   position: number;
   offsetSeconds: number;
   /** The line exactly as the uploader typed it. */

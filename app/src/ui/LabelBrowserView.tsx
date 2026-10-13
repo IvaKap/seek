@@ -184,7 +184,6 @@ export function LabelBrowserView({
     });
     // ownedCount and wantedCount are read at the moment the key changes, which
     // is the reading. They are deliberately not dependencies.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readingKey, onSeen]);
 
   /** Only offered on an artist discography, where Discogs annotates the role. */

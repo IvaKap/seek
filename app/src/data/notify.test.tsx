@@ -68,8 +68,8 @@ describe('useChatNotifications', () => {
 
 describe('useWishNotifications', () => {
   const hit = (unseen: boolean, fresh = 3): WishHit => ({
-    query: 'drexciya', sources: [], fresh: Array(fresh).fill({}), releases: [],
-    peerCount: 2, seenCount: 0, foundAt: 1, unseen,
+    query: 'drexciya', sources: [], fresh: Array(fresh).fill({}),
+    peerCount: 2, unseen,
   } as unknown as WishHit);
 
   it('announces a wish once when it finds something new, until you look', async () => {

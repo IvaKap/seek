@@ -561,6 +561,14 @@ export interface TransferFolderParams {
 
   /** Absolute local folder. Null uses the default. */
   destination: string | null;
+
+  /**
+   * Hold the folder back instead of queueing it when it holds more files than
+   * this, and say so in `folder.contents` `held`. Only the sidecar sees the
+   * real count: a search shows a fraction of a folder. Null queues whatever
+   * arrives.
+   */
+  confirmAbove: number | null;
 }
 
 export interface TransferFolderResult {
@@ -2795,8 +2803,21 @@ export interface UserInfoResultEvent {
 }
 
 /**
+ * A folder request held back because the folder holds more files than its
+ * `confirmAbove`. Nothing was queued for it: ask, then send
+ * `transfer.enqueueFolder` again with these values and `confirmAbove: null`.
+ */
+export interface HeldFolder {
+  /** Files the request would have queued. */
+  count: number;
+  recurse: boolean;
+  destination: string | null;
+}
+
+/**
  * Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted
- * before the resulting `transfer.added` events.
+ * before the resulting `transfer.added` events. One answer settles every
+ * request still waiting on that folder, oldest first.
  */
 export interface FolderContentsEvent {
   /** Matches TransferFolderResult.requestId. */
@@ -2807,6 +2828,9 @@ export interface FolderContentsEvent {
 
   /** How many files were queued as a result. */
   enqueued: number;
+
+  /** The oldest request held back by its `confirmAbove`, if any. */
+  held: HeldFolder | null;
 }
 
 export interface FolderContentsFailedEvent {
@@ -3067,9 +3091,17 @@ export interface SpectralRequestResult {
   requestId: string;
 }
 
+/** A post-download check (spectral or checksums) could not run. */
 export interface AnalysisFailedEvent {
   requestId: string;
   path: string | null;
+
+  /**
+   * The transfer the check was asked for. A check that fails at once can be
+   * announced before its request's reply, which is the only other way the app
+   * learns which row asked.
+   */
+  transferId: string | null;
 
   /** Developer-facing text. Not for display. */
   reason: string;

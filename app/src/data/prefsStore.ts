@@ -96,7 +96,7 @@ const DEFAULTS: AppSettings = {
  * (is one stored?) while a patch carries the string itself, and intersecting
  * those two leaves nothing assignable.
  */
-export interface AppSettingsPatch {
+interface AppSettingsPatch {
   autoConnect?: boolean;
   externalLookups?: boolean;
   discogsToken?: string;

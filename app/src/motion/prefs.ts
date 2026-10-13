@@ -7,25 +7,16 @@
  * straight to their target instead of animating.
  */
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
-function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(() =>
-    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-      ? window.matchMedia(query).matches
-      : false,
-  );
+const REDUCED = '(prefers-reduced-motion: reduce)';
+// jsdom has no matchMedia; there, motion is simply not reduced.
+const query = () => (typeof window.matchMedia === 'function' ? window.matchMedia(REDUCED) : null);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia(query);
-    const onChange = () => setMatches(mq.matches);
-    onChange();
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [query]);
-
-  return matches;
+function subscribe(onChange: () => void): () => void {
+  const mq = query();
+  mq?.addEventListener('change', onChange);
+  return () => mq?.removeEventListener('change', onChange);
 }
 
-export const useReducedMotion = () => useMediaQuery('(prefers-reduced-motion: reduce)');
+export const useReducedMotion = () => useSyncExternalStore(subscribe, () => query()?.matches ?? false);

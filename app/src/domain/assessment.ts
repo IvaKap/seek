@@ -37,6 +37,8 @@ export interface Assessment {
   glyph: QualityGlyph;
   /** One hedged line. Used as the accessible label. */
   summary: string;
+  /** The same verdict in a few plain words, for Simple's best picks. */
+  short: string;
   /** Paragraphs of actual arithmetic, shown when the indicator is clicked. */
   detail: string[];
   /** Sort weight, best first. */
@@ -51,9 +53,9 @@ const STATE_META: Record<QualityState, { label: string; glyph: QualityGlyph; ran
   'likely-transcode': { label: 'Likely transcode', glyph: 'cross', rank: 4 },
 };
 
-function build(state: QualityState, summary: string, detail: string[]): Assessment {
+function build(state: QualityState, short: string, summary: string, detail: string[]): Assessment {
   const meta = STATE_META[state];
-  return { state, label: meta.label, glyph: meta.glyph, rank: meta.rank, summary, detail };
+  return { state, label: meta.label, glyph: meta.glyph, rank: meta.rank, short, summary, detail };
 }
 
 /**
@@ -72,6 +74,7 @@ export function assess(file: AssessableFile): Assessment {
   if (t.verdict === 'unchecked') {
     return build(
       'unverified',
+      "Can't be checked",
       'Not enough information to check this file',
       [
         t.explanation,
@@ -86,6 +89,7 @@ export function assess(file: AssessableFile): Assessment {
     return build(
       'likely-transcode',
       'Strong signs of a lossy source',
+      'Strong signs of a lossy source',
       [
         t.explanation,
         'Sizes can be off for innocent reasons — a trimmed intro, an unusual ' +
@@ -99,6 +103,7 @@ export function assess(file: AssessableFile): Assessment {
   if (t.verdict === 'inferred-transcode') {
     return build(
       'suspicious',
+      "Numbers don't add up",
       'Lossless container, but the numbers do not add up',
       [
         t.explanation,
@@ -116,6 +121,7 @@ export function assess(file: AssessableFile): Assessment {
   if (hiRes) {
     return build(
       'excellent',
+      'Likely lossless, high resolution',
       `Likely lossless, high resolution — ${q.label} ${(file.sampleRate ?? 0) / 1000} kHz / ${file.bitDepth}-bit`,
       [t.explanation, 'Both the format and the file size are consistent with a high-resolution lossless encode.'],
     );
@@ -124,6 +130,7 @@ export function assess(file: AssessableFile): Assessment {
   if (q.lossless) {
     return build(
       'good',
+      'Likely lossless',
       `Likely lossless — ${q.label}${file.sampleRate && file.bitDepth ? `, ${file.sampleRate / 1000} kHz / ${file.bitDepth}-bit` : ''}`,
       [t.explanation, 'The file size is consistent with a standard-resolution lossless encode.'],
     );
@@ -134,6 +141,7 @@ export function assess(file: AssessableFile): Assessment {
   // verified 320 despite sharing a state.
   return build(
     'good',
+    'Size matches the label',
     `Lossy at ${q.label} kbps, size consistent with the claim`,
     [t.explanation, 'Lossy, but honestly labelled — the bytes match the advertised bitrate.'],
   );
@@ -146,5 +154,5 @@ export function worstAssessment(files: SourceFile[]): Assessment {
     const a = assess(f);
     if (!worst || a.rank > worst.rank) worst = a;
   }
-  return worst ?? build('unverified', 'No files to assess', ['']);
+  return worst ?? build('unverified', "Can't be checked", 'No files to assess', ['']);
 }
