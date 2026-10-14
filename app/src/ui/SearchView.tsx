@@ -30,6 +30,8 @@ import { copiesOf, groupCopies } from '../domain/bestSources.ts';
 import { CopiesSheet } from './CopiesSheet.tsx';
 import { BestPicks } from './BestPicks.tsx';
 import { Answered, CopiesHeading } from './AllCopies.tsx';
+import { SavedViews } from './SavedViews.tsx';
+import type { SavedView } from '../domain/savedViews.ts';
 import type { DownloadPrefs } from '../domain/preferences.ts';
 import { useSpringNumber } from '../motion/useSpring.ts';
 import { DiscoverPreviewCard } from './DiscoverPreview.tsx';
@@ -245,9 +247,9 @@ export function SearchView({
   const rules: DownloadPrefs = prefs
     ?? { preferLossless: false, minBitrate: 0, rejectTranscodes: false };
 
-  /* Only when shown: grouping the results both ways is a second pass over
-   * them on every tick of a live search. */
-  const pool = useMemo(() => (simple ? session.pickPool() : null), [simple, session.pickPool]);
+  /* Both modes lead with the picks: Simple as cards, Collector as a line of
+   * chips. The pool reuses whichever grouping the rows already built. */
+  const pool = useMemo(() => session.pickPool(), [session.pickPool]);
 
   const queueRelease = useCallback((release: Release) => {
     const verdict = judgeRelease(release.files, rules);
@@ -302,6 +304,23 @@ export function SearchView({
 
   const active = filtersActive(session.filters);
   const available = new Set(session.availableFormats);
+
+  /* The classic flat list only reads right in the columnar table density, so
+   * choosing it switches density too. The density control stays live
+   * afterwards — the user can leave table if they want, and picking Files
+   * again brings it back. Grid shows covers, which only release rows have, so
+   * leaving the release grouping leaves grid behind too. */
+  const regroup = useCallback((g: GroupBy) => {
+    session.setGroupBy(g);
+    if (g === 'file') onDensity('table');
+    else if (g !== 'release' && density === 'grid') onDensity('comfortable');
+  }, [session, onDensity, density]);
+
+  const applyView = useCallback((v: SavedView) => {
+    session.setFilters({ ...v.filters, formats: new Set(v.filters.formats) });
+    // Regrouping folds every open row, so only when the view really changes it.
+    if (v.groupBy !== session.groupBy) regroup(v.groupBy);
+  }, [session, regroup]);
 
   /* Index the live downloads so each result's Get button can show whether the
      file it queued is queued / downloading / done. Rebuilt when the transfer
@@ -575,6 +594,38 @@ export function SearchView({
                   Save
                 </button>
               )}
+              {!simple && (
+                <p className="status tnum" data-live={session.running ? 'true' : undefined}>
+                  {/* No React children: the spring owns this node's text. A
+                      literal child here would be rewritten to its JSX value on
+                      every render, erasing whatever frame the animation had
+                      just written. */}
+                  <span ref={countRef} />
+                  {active && session.totalFiles !== session.matchedFiles && ` of ${integer(session.totalFiles)}`}
+                  {session.matchedFiles === 1 ? ' file' : ' files'}
+                  {session.peerCount > 0 && ` · ${integer(session.peerCount)} ${session.peerCount === 1 ? 'person' : 'people'}`}
+                  {session.running && (session.peerCount > 0 ? ' · still listening' : ' · asking the network')}
+                  {!session.running && session.closedReason === WISHLIST_REASON && (
+                    <>
+                      {' · '}
+                      <span
+                        className="status__closed"
+                        title="What your wishlist found when it last ran. Press Return in the search field for a live search."
+                      >
+                        found by your wishlist
+                      </span>
+                    </>
+                  )}
+                  {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
+                    <>
+                      {' · '}
+                      <span className="status__closed" title={closedLabel(session.closedReason).title}>
+                        {closedLabel(session.closedReason).text}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
             </div>
 
             {/* Slides down from the pill row. Never a modal. */}
@@ -604,49 +655,14 @@ export function SearchView({
           <Answered running={session.running} people={session.peerCount} closedReason={session.closedReason} />
         ) : (
           <div className="resultbar">
-            <div className="resultbar__count">
-              {/* No React children: the spring owns this node's text. A literal
-                  child here would be rewritten to its JSX value on every render,
-                  erasing whatever frame the animation had just written. */}
-              <span className="tnum" ref={countRef} />
-              <span className="resultbar__word">
-                {session.matchedFiles === 1 ? 'result' : 'results'}
-              </span>
-              {active && session.totalFiles !== session.matchedFiles && (
-                <span className="resultbar__of tnum">of {integer(session.totalFiles)}</span>
-              )}
-              {session.running && <span className="resultbar__live">searching…</span>}
-              {!session.running && session.closedReason === WISHLIST_REASON && (
-                <span
-                  className="resultbar__closed"
-                  title="What your wishlist found when it last ran. Press Return in the search field for a live search."
-                >
-                  found by your wishlist
-                </span>
-              )}
-              {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
-                <span className="resultbar__closed" title={closedLabel(session.closedReason).title}>
-                  {closedLabel(session.closedReason).text}
-                </span>
-              )}
-            </div>
+            <SavedViews filters={session.filters} groupBy={session.groupBy} onApply={applyView} />
 
             <div className="resultbar__controls">
               <SegmentedControl
                 label="Group results by"
                 segments={GROUPS}
                 value={session.groupBy}
-                /* The classic flat list only reads right in the columnar table
-                 * density, so choosing it switches density too. The density
-                 * control stays live afterwards — the user can leave table if they
-                 * want, and picking Files again brings it back. */
-                onChange={(g) => {
-                  session.setGroupBy(g);
-                  if (g === 'file') onDensity('table');
-                  // Grid shows covers, which only release rows have — so leaving
-                  // the release grouping leaves grid behind too.
-                  else if (g !== 'release' && density === 'grid') onDensity('comfortable');
-                }}
+                onChange={regroup}
               />
               <Select
                 label="Sort results"
@@ -654,6 +670,8 @@ export function SearchView({
                 onChange={session.setSort}
                 options={SORTS}
               />
+              {/* "Search", because a view saves the same filters without the
+                  query, one row over. */}
               {onSave && session.query.trim() !== '' && (
                 <button
                   type="button"
@@ -661,7 +679,7 @@ export function SearchView({
                   onClick={onSave}
                   title="Save this query together with the filters currently applied"
                 >
-                  Save
+                  Save search
                 </button>
               )}
               <ViewMenu
@@ -705,9 +723,10 @@ export function SearchView({
         pendingCount={session.pendingCount}
         onFoldIn={session.foldInPending}
         onViewport={session.reportViewport}
-        lead={pool ? (
+        lead={(
           <>
             <BestPicks
+              compact={!simple}
               pool={pool}
               rules={rules}
               transfers={transfers}
@@ -716,9 +735,9 @@ export function SearchView({
               artwork={artwork}
               onQueue={onQueue}
             />
-            <CopiesHeading rows={session.rows} sort={session.sort} onSort={session.setSort} />
+            {simple && <CopiesHeading rows={session.rows} sort={session.sort} onSort={session.setSort} />}
           </>
-        ) : undefined}
+        )}
         emptyState={
           <div className="empty">
             <IconEmpty size={28} painted={1.3} className="empty__icon" />

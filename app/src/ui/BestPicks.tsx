@@ -1,5 +1,6 @@
 /*
- * Seek — best picks, the row of cards that leads Search · Simple.
+ * Seek — best picks: the row of cards that leads Search · Simple, and the
+ * line of chips above Collector's results.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
  * Which copies earn a card is domain/bestPicks.ts. This decides what a card
@@ -36,6 +37,13 @@ const KIND: Record<PickKind, string> = {
   overall: 'Best overall',
   fastest: 'Fastest',
   release: 'Whole release',
+};
+
+/** Collector's strip, where the chip's own facts say the rest. */
+const KIND_SHORT: Record<PickKind, string> = {
+  overall: 'Overall',
+  fastest: 'Fastest',
+  release: 'Release',
 };
 
 /** What a Get says between the press and the download starting. */
@@ -75,8 +83,10 @@ function view(p: BestPick) {
 }
 
 export function BestPicks({
-  pool, rules, transfers, queueStates, folderStates, artwork, onQueue,
+  pool, rules, transfers, queueStates, folderStates, artwork, onQueue, compact = false,
 }: {
+  /** Collector's form: one line of chips above the table, each a Get. */
+  compact?: boolean;
   pool: PickPool;
   rules: DownloadPrefs;
   transfers: Pick<TransferSession, 'all' | 'groups'>;
@@ -109,18 +119,18 @@ export function BestPicks({
   useEffect(() => { shown.current = picks; }, [picks]);
 
   useEffect(() => {
-    if (!artwork?.enabled) return;
+    if (!artwork?.enabled || compact) return;
     for (const p of picks) {
       const r = p.kind === 'release' ? p.release : p.folder;
       if (r) artwork.want(r.id, r.artist, r.title);
     }
-  }, [picks, artwork]);
+  }, [picks, artwork, compact]);
 
   if (picks.length === 0) return null;
 
   return (
     <section
-      className="picks"
+      className={compact ? 'pickchips' : 'picks'}
       aria-labelledby={headingId}
       onPointerEnter={() => setHover(true)}
       onPointerLeave={() => setHover(false)}
@@ -128,13 +138,45 @@ export function BestPicks({
       onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocus(false); }}
     >
       <h2 className="picks__title" id={headingId}>Best picks</h2>
-      <div className="picks__row">
+      <div className={compact ? 'pickchips__row' : 'picks__row'}>
         {picks.map((p) => {
           const v = view(p);
-          const art = v.cover ? artwork?.get(v.cover.id) : undefined;
           const started = p.kind === 'release'
             ? transfers.groups.find((g) => g.key === folderKey(p.release.peer.username, p.release.folderPath))?.transfers ?? []
             : transfers.all.filter((t) => transferKey(t.username, t.path) === transferKey(p.source.user, p.source.path));
+          const get = (className: string, children?: React.ReactNode) => (
+            <QueueButton
+              key={`${p.kind}:${pickId(p)}`}
+              badge={badgeOf(p)}
+              label={compact ? `${v.label}, ${KIND[p.kind].toLowerCase()}` : v.label}
+              className={className}
+              withText
+              texts={{ idle: v.get, queued: waitingWords(started, v.peer.username), done: 'In Completed' }}
+              onQueue={() => {
+                pressed.current.add(pickId(p));
+                onQueue(p.kind === 'release'
+                  ? { kind: 'release', id: p.release.id, release: p.release, tick: p.release.tick }
+                  : { kind: 'file', id: p.source.id, source: p.source, tick: p.source.tick });
+              }}
+            >
+              {children}
+            </QueueButton>
+          );
+          if (compact) {
+            return get('pickchip pressable', (
+              <>
+                <span className="pickchip__kind">{KIND_SHORT[p.kind]}</span>
+                <span className="pickchip__title" data-raw={v.raw ? 'true' : undefined}>{v.title}</span>
+                <FormatBadge {...v.format} />
+                <span className="pickchip__peer tnum">
+                  {v.peer.username} · {slotWords(v.peer)}
+                  {p.kind === 'release' ? ` · ${fileSize(p.release.totalSize)}`
+                    : v.peer.advertisedSpeed > 0 && ` · ≈${speed(v.peer.advertisedSpeed)}`}
+                </span>
+              </>
+            ));
+          }
+          const art = v.cover ? artwork?.get(v.cover.id) : undefined;
           return (
             <article
               key={`${p.kind}:${pickId(p)}`}
@@ -170,19 +212,7 @@ export function BestPicks({
                     )}
                   </span>
                 </div>
-                <QueueButton
-                  badge={badgeOf(p)}
-                  label={v.label}
-                  className="action action--primary pressable qbtn pick__get"
-                  withText
-                  texts={{ idle: v.get, queued: waitingWords(started, v.peer.username), done: 'In Completed' }}
-                  onQueue={() => {
-                    pressed.current.add(pickId(p));
-                    onQueue(p.kind === 'release'
-                      ? { kind: 'release', id: p.release.id, release: p.release, tick: p.release.tick }
-                      : { kind: 'file', id: p.source.id, source: p.source, tick: p.source.tick });
-                  }}
-                />
+                {get('action action--primary pressable qbtn pick__get')}
               </div>
             </article>
           );

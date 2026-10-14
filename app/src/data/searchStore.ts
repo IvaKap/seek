@@ -394,7 +394,7 @@ export function useSearchSession(
     resortAll.current = true;
   }
 
-  const { rows: nextRows, kept, matchedFiles, availableFormats } = useMemo(() => {
+  const { rows: nextRows, kept, tracks, folders, matchedFiles, availableFormats } = useMemo(() => {
     void tick;
     const all = grouper.all;
     const inc = terms(filters.include);
@@ -408,8 +408,12 @@ export function useSearchSession(
     }
 
     const out: Row[] = [];
+    /* Kept for the best picks, which want both groupings: whichever one the
+       rows already built is not built twice. */
+    let tracks: TrackCluster[] | null = null;
+    let folders: Release[] | null = null;
     if (group === 'version') {
-      const folders = grouper.releases(kept);
+      folders = grouper.releases(kept);
       const folderOf = new Map(folders.map((r) => [r.files[0].releaseKey, r]));
       for (const t of grouper.versions(kept)) {
         out.push({ kind: 'track', id: t.id, track: t, tick: t.tick, folder: folderOf.get(t.best.releaseKey) ?? null });
@@ -419,9 +423,11 @@ export function useSearchSession(
         out.push({ kind: 'release', id: v.id, release: v.copies[0], copies: v.copies, tick });
       }
     } else if (group === 'track') {
-      for (const t of grouper.tracks(kept)) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
+      tracks = grouper.tracks(kept);
+      for (const t of tracks) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
     } else if (group === 'release') {
-      for (const r of grouper.releases(kept)) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
+      folders = grouper.releases(kept);
+      for (const r of folders) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
     } else if (group === 'file') {
       // No grouper method — one row per kept file, already the filtered list.
       for (const s of kept) out.push({ kind: 'file', id: s.id, source: s, tick: s.tick });
@@ -434,14 +440,16 @@ export function useSearchSession(
     return {
       rows: out,
       kept,
+      tracks,
+      folders,
       matchedFiles: kept.length,
       availableFormats: [...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
     };
   }, [grouper, filters, group, tick]);
 
   const pickPool = useCallback(
-    (): PickPool => ({ tracks: grouper.tracks(kept), releases: grouper.releases(kept) }),
-    [grouper, kept],
+    (): PickPool => ({ tracks: tracks ?? grouper.tracks(kept), releases: folders ?? grouper.releases(kept) }),
+    [grouper, kept, tracks, folders],
   );
 
   /* ---- order: frozen prefix + free suffix + queued ---- */

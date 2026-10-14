@@ -121,6 +121,15 @@ pills open, never a menu, and the button reads *Filters on* whenever any filter
 applies, so a filtered list never passes for the whole one. Collector shows the
 pill row as it always did.
 
+**Collector's presets are saved views** (0.4.0), beside the grouping control:
+*All results*, *Lossless, slot free*, *By version*, *Under 3 waiting*, and any
+you save. A view is the filters AND the grouping, so choosing one replaces both,
+the way choosing a tab does. The selected view is whichever one the search
+currently equals, never a stored choice: touching a pill leaves every view
+unselected rather than quietly editing one. Yours are kept on this machine, like
+the table's columns. The count became a status line at the end of the pill row,
+*683 files · 34 people · still listening*. `app/src/domain/savedViews.ts`.
+
 ---
 
 ## 4. Results — release cards, not a spreadsheet
@@ -311,6 +320,8 @@ pick is one peer's file or folder, and Get takes exactly that copy: the ranking
 orders, it never chooses. Picks honour the filters and the download rules
 ("Prefer lossless" included), are never a suspected transcode or buddy-only, and
 hold still under the pointer while results stream in. `app/src/domain/bestPicks.ts`.
+Collector shows the same picks as one line of chips above the table, and each
+chip is the Get for the copy it names.
 
 ---
 

@@ -297,6 +297,27 @@ export const EMPTY_FILTERS: Filters = {
   hidePrivate: true,
 };
 
+/* Filters contain a Set, which JSON cannot carry. These two are the only places
+ * that know that, so the shape stays in one file. */
+export function serialiseFilters(f: Filters): string {
+  return JSON.stringify({ ...f, formats: [...f.formats] });
+}
+
+export function deserialiseFilters(json: string): Filters {
+  if (!json) return EMPTY_FILTERS;
+  try {
+    const raw = JSON.parse(json) as Record<string, unknown>;
+    return {
+      ...EMPTY_FILTERS,
+      ...raw,
+      formats: new Set(Array.isArray(raw.formats) ? (raw.formats as string[]) : []),
+    };
+  } catch {
+    // A corrupt saved filter should not take the screen down with it.
+    return EMPTY_FILTERS;
+  }
+}
+
 /**
  * A wish's stored filters. Identical to `Filters` field for field, EXCEPT
  * `formats` is an array rather than a Set — this is the shape that travels on

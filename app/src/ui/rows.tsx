@@ -160,7 +160,7 @@ const QBTN_TEXT: Record<QueueBadge, string> = {
  * queued; `failed` re-queues; `done` is inert.
  */
 export function QueueButton({
-  badge, onQueue, label, className = 'action pressable qbtn', withText = false, texts,
+  badge, onQueue, label, className = 'action pressable qbtn', withText = false, texts, children,
 }: {
   badge: QueueBadge;
   onQueue(): void;
@@ -171,6 +171,8 @@ export function QueueButton({
   withText?: boolean;
   /** Words to say instead of the defaults, per state. A best pick says who it is asking. */
   texts?: Partial<Record<QueueBadge, string>>;
+  /** What the button shows before its icon. A best-pick chip is all button. */
+  children?: ReactNode;
 }) {
   const [pressed, setPressed] = useState(false);
   // Once the store reflects any real state, stop being optimistic and follow it.
@@ -196,6 +198,7 @@ export function QueueButton({
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => { e.stopPropagation(); act(); }}
     >
+      {children}
       {QBTN_ICON[shown]}
       {withText && <span>{texts?.[shown] ?? QBTN_TEXT[shown]}</span>}
     </button>

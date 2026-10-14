@@ -3,12 +3,13 @@
  *
  * The best-pick cards: Get takes the copy named on the card, the button says
  * who it is asking until the peer answers, and a card holds still under the
- * pointer while better copies stream in.
+ * pointer while better copies stream in. Collector's chips are the same picks
+ * on one line, and each chip is the Get.
  */
 
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { BestPicks } from './BestPicks.tsx';
 import { adaptSearchResult } from '../data/adapt.ts';
 import type { WireFileRef, WireSearchResultData } from '../data/adapt.ts';
@@ -141,5 +142,34 @@ describe('a card under the pointer', () => {
 
     rerender(pool(dave, faster));
     expect(card('Best overall').textContent).toContain('dave');
+  });
+});
+
+describe("Collector's line of chips", () => {
+  it('names each copy on one chip, and the chip takes exactly that copy', () => {
+    const onQueue = vi.fn();
+    render(
+      <StrictMode>
+        <BestPicks compact pool={pool(dave)} rules={RULES} transfers={{ all: [], groups: [] }}
+          queueStates={new Map()} folderStates={new Map()} onQueue={onQueue} />
+      </StrictMode>,
+    );
+    const strip = screen.getByRole('region', { name: 'Best picks' });
+    expect(within(strip).queryByRole('article')).toBeNull();
+
+    const overall = within(strip).getByRole('button', { name: 'Queue Archangel from dave, best overall' });
+    for (const words of ['Overall', 'Archangel', 'FLAC', 'dave · slot free · ≈2.3 MB/s', 'Get']) {
+      expect(overall.textContent).toContain(words);
+    }
+    const release = within(strip).getByRole('button', { name: /^Queue all 2 tracks of Untrue from dave/ });
+    expect(release.textContent).toContain('Get all 2');
+
+    fireEvent.click(overall);
+    expect(onQueue).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'file', source: expect.objectContaining({ user: 'dave', path: ARCHANGEL }),
+    }));
+    expect(overall.textContent).toContain('Asking dave…');
+    fireEvent.click(release);
+    expect(onQueue).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'release' }));
   });
 });

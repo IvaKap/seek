@@ -571,26 +571,64 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--sp-4); margin-top: var(--sp-3); flex-wrap: wrap;
 }
-.resultbar__count {
-  display: flex; align-items: baseline; gap: var(--sp-2);
-  font-size: var(--fs-secondary); letter-spacing: var(--tr-secondary);
-  color: var(--text-secondary);
+.resultbar__controls { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+/* Collector's status, at the end of the pill row: what the filters let
+   through, who answered, and whether Seek is still listening. Inline, not
+   flex: a flex container would strip the spaces between the number the
+   spring writes and the words after it. */
+.status {
+  margin: 0 0 0 auto;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); white-space: nowrap;
 }
-.resultbar__count > .tnum:first-child {
-  font-size: var(--fs-section); line-height: var(--lh-section);
-  letter-spacing: var(--tr-section); font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-}
-.resultbar__of, .resultbar__live, .resultbar__closed { color: var(--text-tertiary); }
-.resultbar__live::before {
-  content: ''; display: inline-block;
-  width: 0.375rem; height: 0.375rem; margin-right: var(--sp-1);
+.status[data-live='true']::before {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 0.375rem; height: 0.375rem; margin: -2px var(--sp-2) 0 0;
   border-radius: 50%; background: var(--accent);
   animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
-.resultbar__closed { border-bottom: 1px dotted var(--separator-strong); cursor: help; }
-.resultbar__controls { display: flex; align-items: center; gap: var(--sp-2); }
+.status__closed { border-bottom: 1px dotted var(--separator-strong); cursor: help; }
+
+/* ========================================================= saved views == */
+
+/* The presets of docs/PRODUCT.md §3, drawn like the segmented control beside
+   them. A view you made carries an × to remove it. */
+.views { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.views__tabs {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 2px;
+  border-radius: var(--radius-sm); background: var(--bg-sunken);
+  border: 0.5px solid var(--separator);
+}
+.views__tab { display: flex; align-items: center; border-radius: calc(var(--radius-sm) - 1px); }
+.views__tab[data-on='true'] { background: var(--bg-raised); box-shadow: var(--shadow-raised); }
+.views__label {
+  height: 1.5rem; padding: 0 var(--sp-3); border: 0; background: transparent;
+  font: inherit; font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); white-space: nowrap; cursor: default;
+}
+.views__tab[data-on='true'] .views__label { color: var(--text-primary); font-weight: var(--fw-medium); }
+.views__remove {
+  margin-left: calc(-1 * var(--sp-2)); padding: 0 var(--sp-2);
+  border: 0; background: transparent; color: var(--text-tertiary);
+  font: inherit; line-height: 1; cursor: default;
+}
+.views__remove:hover { color: var(--text-primary); }
+.views__save {
+  height: 1.5rem; padding: 0 var(--sp-2); border: 0; border-radius: var(--radius-sm);
+  background: transparent; font: inherit; font-size: var(--fs-caption);
+  color: var(--accent); white-space: nowrap; cursor: default;
+}
+.views__save:disabled { color: var(--text-quaternary); }
+@media (hover: hover) and (pointer: fine) { .views__save:not(:disabled):hover { background: var(--bg-hover); } }
+.views__name { display: flex; align-items: center; gap: var(--sp-1); }
+.views__input {
+  width: 10rem; height: 1.5rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: var(--bg-raised); color: var(--text-primary);
+  font: inherit; font-size: var(--fs-caption);
+}
 
 /* ===================================================== segmented control == */
 
@@ -4059,6 +4097,36 @@
 @container (max-width: 17rem) {
   .pick__foot { flex-direction: column; align-items: stretch; }
 }
+
+/* Collector's lead: the same picks as one line of chips above the table,
+   each a Get for exactly the copy it names. Scrolls away with the list. */
+.pickchips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.pickchips .picks__title { font-size: var(--fs-caption); }
+.pickchips__row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.pickchip {
+  display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%;
+  height: 1.625rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font: inherit; font-size: var(--fs-caption); color: var(--text-primary); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) { .pickchip:hover { background: var(--bg-hover); } }
+.pickchip__kind { color: var(--text-tertiary); }
+.pickchip__title {
+  max-width: 14rem; font-weight: var(--fw-medium);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pickchip__title[data-raw='true'] { font-weight: 400; color: var(--text-secondary); }
+.pickchip__peer { min-width: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The Get at the end, in the queue button's colours for each state. */
+.pickchip > svg { flex: none; }
+.pickchip > svg, .pickchip > span:last-child { color: var(--accent); white-space: nowrap; }
+.pickchip[data-q='queued'] > svg, .pickchip[data-q='queued'] > span:last-child { color: var(--text-secondary); }
+.pickchip[data-q='done'] > svg, .pickchip[data-q='done'] > span:last-child { color: var(--success); }
+.pickchip[data-q='failed'] > svg, .pickchip[data-q='failed'] > span:last-child { color: var(--warn); }
 
 /* ========================================================== all copies == */
 
