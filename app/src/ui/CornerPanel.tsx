@@ -82,6 +82,21 @@ export function troubleLine(g: TransferGroup): string {
   return groupStatus(g.transfers)?.text ?? 'Stopped';
 }
 
+/**
+ * What a release is doing, in a few words for a Status column or a details
+ * pane: the trouble line above for a release in trouble, so the panel and the
+ * table never disagree, and plainly what the bar shows otherwise. A column
+ * cannot leave a moving row blank the way a card can.
+ */
+export function statusOf(g: TransferGroup): { text: string; tone: string } {
+  if (g.state === 'paused') return { text: 'Paused', tone: 'waiting' };
+  const kind = kindOf(g, 0);
+  if (kind === 'trouble') return { text: troubleLine(g), tone: groupStatus(g.transfers)?.tone ?? 'broken' };
+  if (kind === 'finished') return { text: 'Finished', tone: 'done' };
+  if (kind === 'moving') return { text: 'Downloading', tone: 'active' };
+  return groupStatus(g.transfers) ?? { text: 'Waiting', tone: 'waiting' };
+}
+
 function row(g: TransferGroup, since: number): CornerRow | null {
   const kind = kindOf(g, since);
   if (kind === null) return null;

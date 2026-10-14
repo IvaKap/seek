@@ -39,12 +39,12 @@ export function SavedViews({ filters, groupBy, onApply }: {
 
   return (
     <div className="views">
-      <div className="views__tabs" role="tablist" aria-label="Saved views">
+      <div className="tabset" role="tablist" aria-label="Saved views">
         {all.map((v) => {
           const own = mine.includes(v);
           return (
-            <span key={`${own ? 'mine' : 'seek'}:${v.name}`} className="views__tab" data-on={v === current ? 'true' : undefined}>
-              <button type="button" role="tab" aria-selected={v === current} className="views__label" onClick={() => onApply(v)}>
+            <span key={`${own ? 'mine' : 'seek'}:${v.name}`} className="tabset__tab" data-on={v === current ? 'true' : undefined}>
+              <button type="button" role="tab" aria-selected={v === current} className="tabset__label" onClick={() => onApply(v)}>
                 {v.name}
               </button>
               {own && (

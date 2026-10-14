@@ -1106,6 +1106,8 @@ export default function App() {
             discovery={downloadsDiscovery}
             simple={mode === 'simple'}
             onFindAnother={(q) => { go('search'); searchTabs.openWith(q); }}
+            peers={(u) => prefs.peers.get(u)}
+            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
             onShowCompleted={() => go('completed')}
           />
         ) : section === 'settings' ? (

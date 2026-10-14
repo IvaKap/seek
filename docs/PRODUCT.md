@@ -293,6 +293,31 @@ so a stalled or refused release shows here under Needs attention, with *Find
 another copy*: a search the person picks from, never a substitute chosen for
 them. `app/src/ui/DownloadsSimple.tsx`.
 
+**Downloads · Collector** (0.4.0) holds the same releases as Simple. It shows
+everything still in hand: coming down, waiting, in trouble, or finished in the
+last hour. They are sorted by the same `downloadsKind`, so Simple's sections,
+Collector's chips and the corner panel always agree. Failed and Completed keep
+their own lenses, where you go to deal with a release for good.
+
+- **Chips.** All / Moving / Queued / Problems / Finished, each counting what
+  choosing it would show.
+- **Bulk actions.** These touch only what is shown:
+  - *Pause all*, or *Resume all* once everything shown is paused. Its tooltip
+    warns that a file waiting in a peer's queue loses its place.
+  - *Retry N failed*. It skips a refusal a retry cannot change, such as a file
+    they no longer share, because `transferStatus` already knows which those
+    are.
+- **The table.** Status gets its own column, where it used to be a pill tucked
+  into the name. The queue reads *#3 in queue*, since the protocol gives a
+  place and never a total. Rows do not open in place: choosing one fills a
+  details pane beneath the list with its tracks, the peer, and the folder it
+  comes from and goes to. The peer tab, like everything in §8, speaks only from
+  your own downloads.
+- **Not on Downloads.** *Check hashes* and *Related* stay on Completed, where a
+  finished release is reviewed.
+
+`app/src/ui/DownloadInspector.tsx`.
+
 ---
 
 ## 8. Sources ranked, with the reasoning shown

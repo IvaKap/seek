@@ -24,7 +24,12 @@ import { copyText } from '../data/clipboard.ts';
 /* Shared with the uploads screen — see the header on transferBits.tsx for
    what deliberately did NOT move there. */
 import { Bar, Cover, ReleaseName, etaLabel, groupEta, releaseOf } from './transferBits.tsx';
-import { SimpleDownloads } from './DownloadsSimple.tsx';
+import { SimpleDownloads, downloadsKind, formatOf } from './DownloadsSimple.tsx';
+import { statusOf } from './CornerPanel.tsx';
+import type { Kind } from './CornerPanel.tsx';
+import { FormatBadge } from './rows.tsx';
+import { DownloadInspector } from './DownloadInspector.tsx';
+import type { PeerLookup } from './PeerHistory.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { ViewMenu } from './ViewMenu.tsx';
@@ -532,9 +537,11 @@ function TableRow({
   const pct = g.size > 0 ? Math.round((g.bytesDone / g.size) * 100) : 0;
   const firstError = g.transfers.find((t) => t.error)?.error;
   const status = groupStatus(g.transfers);
+  const active = filter === 'active' ? statusOf(g) : null;
+  const format = filter === 'active' ? formatOf(g) : null;
 
   return (
-    <div className="dl__row" data-state={g.state}>
+    <div className="dl__row" data-state={g.state} data-open={open ? 'true' : undefined}>
       <button
         type="button"
         className="dl__disclose"
@@ -550,10 +557,16 @@ function TableRow({
         {/* Replaces a bare "stalled" flag, which was the only thing this row
             ever said about why nothing was happening — and it could not tell a
             refusal from a queue, though both look identical at 0 bytes/sec.
-            Opening every card to find out is what this removes. */}
-        {status && <span className="dl__status" data-tone={status.tone}>{status.text}</span>}
+            Opening every card to find out is what this removes. Downloads has
+            a Status column of its own for it. */}
+        {filter !== 'active' && status && <span className="dl__status" data-tone={status.tone}>{status.text}</span>}
       </button>
 
+      {active && (
+        <span className="dl__cell dl__cell--status">
+          <span className="dl__status" data-tone={active.tone} title={active.text}>{active.text}</span>
+        </span>
+      )}
       <span className="dl__cell tnum">{g.finished}/{g.transfers.length}</span>
       <span className="dl__cell tnum">{fileSize(g.size)}</span>
 
@@ -571,6 +584,9 @@ function TableRow({
       {filter === 'active' && (
         <span className="dl__cell tnum">{etaLabel(groupEta(g))}</span>
       )}
+      {filter === 'active' && (
+        <span className="dl__cell">{format && <FormatBadge label={format.label} tier={format.tier} />}</span>
+      )}
       {filter === 'failed' && (
         <span className="dl__cell dl__cell--reason" title={firstError ?? undefined}>
           {firstError ?? g.state.replace(/_/g, ' ')}
@@ -582,9 +598,13 @@ function TableRow({
         {g.username}
       </span>
       <span className="dl__cell dl__rowactions">
-        <Actions g={g} session={session} compact discovery={discovery}
+        {/* Checking hashes and Related are Completed's, where a finished
+            release is reviewed; on Downloads a just-finished one offers Finder
+            and Clear, which is also what fits its actions column. */}
+        <Actions g={g} session={session} compact discovery={filter === 'active' ? undefined : discovery}
                  related={related} setRelated={setRelated}
-                 checksums={checksums} hashOpen={hashOpen} setHashOpen={setHashOpen} />
+                 checksums={filter === 'active' ? undefined : checksums}
+                 hashOpen={hashOpen} setHashOpen={setHashOpen} />
       </span>
     </div>
   );
@@ -605,6 +625,8 @@ interface GroupProps {
      speak for all of them. */
   open: boolean;
   onOpenChange(key: string, next: boolean): void;
+  /** False where an open release shows in the details pane, not beneath its row. */
+  inline: boolean;
   /** The whole view's file selection, and the two gestures that change it. */
   selected: ReadonlySet<string>;
   onFileSelect(id: string, order: string[], mods: Mods): void;
@@ -628,7 +650,7 @@ function sameRow(a: GroupProps, b: GroupProps): boolean {
 
 const Group = memo(function Group({
   g, session, analysis, checksums, client, preview, density, filter, discovery,
-  open, onOpenChange, selected, onFileSelect, onFileContext, pictures,
+  open, onOpenChange, inline, selected, onFileSelect, onFileContext, pictures,
 }: GroupProps) {
   const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(g.key, fn(open));
   /** Whether the Related shelf is showing for this release. */
@@ -683,7 +705,7 @@ const Group = memo(function Group({
     <ChecksumPanel report={hashEntry.report!} />
   );
 
-  const files = open && (
+  const files = open && inline && (
     <Files
       g={g} session={session} analysis={analysis} client={client} preview={preview}
       selected={selected} onFileSelect={onFileSelect} onFileContext={onFileContext}
@@ -779,9 +801,10 @@ const Group = memo(function Group({
       )}
 
       <div className="dl__actions">
-        <Actions g={g} session={session} discovery={discovery}
+        <Actions g={g} session={session} discovery={filter === 'active' ? undefined : discovery}
                  related={related} setRelated={setRelated}
-                 checksums={checksums} hashOpen={hashOpen} setHashOpen={setHashOpen} />
+                 checksums={filter === 'active' ? undefined : checksums}
+                 hashOpen={hashOpen} setHashOpen={setHashOpen} />
       </div>
 
       {files}
@@ -790,6 +813,16 @@ const Group = memo(function Group({
     </div>
   );
 }, sameRow);
+
+/** Downloads' chips: the corner panel's kinds, in its order. */
+type Show = 'all' | Kind;
+const SHOW: Array<{ value: Show; label: string; none: string }> = [
+  { value: 'all', label: 'All', none: '' },
+  { value: 'moving', label: 'Moving', none: 'are coming down right now' },
+  { value: 'waiting', label: 'Queued', none: 'are waiting' },
+  { value: 'trouble', label: 'Problems', none: 'need a look' },
+  { value: 'finished', label: 'Finished', none: 'finished in the last hour' },
+];
 
 const TITLES: Record<'active' | 'finished' | 'failed', string> = {
   active: 'Downloads', finished: 'Completed', failed: 'Failed',
@@ -812,11 +845,13 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
   return (
     <div className="dl__thead" aria-hidden>
       <span>Release</span>
+      {filter === 'active' && <span>Status</span>}
       <span>Files</span>
       <span>Size</span>
       {filter === 'active' && <span>Progress</span>}
       {filter === 'active' && <span>Speed</span>}
       {filter === 'active' && <span>ETA</span>}
+      {filter === 'active' && <span>Format</span>}
       {filter === 'failed' && <span>Reason</span>}
       <span>From</span>
       <span />
@@ -827,7 +862,7 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
 export function DownloadsView({
   session, signedIn, filter, analysis, checksums, client, preview, density,
   onDensity, discovery, autoClaims, onApproveAuto, onRejectAuto,
-  simple = false, onFindAnother, onShowCompleted,
+  simple = false, onFindAnother, onShowCompleted, peers, onBrowse,
 }: {
   session: TransferSession;
   signedIn: boolean;
@@ -838,6 +873,9 @@ export function DownloadsView({
   /** Search for another copy of a release that will not come down. */
   onFindAnother?(query: string): void;
   onShowCompleted?(): void;
+  /** Your own history with each peer, for the details pane. */
+  peers?: PeerLookup;
+  onBrowse?(username: string): void;
   analysis: AnalysisSession;
   checksums: ChecksumSession;
   client: SidecarClient | null;
@@ -862,6 +900,11 @@ export function DownloadsView({
   /* Completed-lens only: how the list splits into sections. Date by default —
    * "what did I pull down lately" is the question you open Completed with. */
   const [completedGroupBy, setCompletedGroupBy] = useState<CompletedGroupBy>('date');
+  /* Downloads only: which chip is chosen. Per visit, like the query. */
+  const [show, setShow] = useState<Show>('all');
+  /* Downloads' table: the release in the details pane, by key. */
+  const [inspected, setInspected] = useState<string | null>(null);
+  const inspect = useCallback((key: string, next: boolean) => setInspected(next ? key : null), []);
 
   /* Which releases are open, by key rather than by index — the list re-sorts
      and re-filters under you, and an index would open whatever moved into that
@@ -929,14 +972,16 @@ export function DownloadsView({
      Bound while anything is selected or open, so it does not fight the app's
      other Escape handlers the rest of the time. */
   useEffect(() => {
-    if (selected.size === 0 && !menu) return;
+    if (selected.size === 0 && !menu && !inspected) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (menu) setMenu(null); else clearSelection();
+      if (menu) setMenu(null);
+      else if (selected.size > 0) clearSelection();
+      else setInspected(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected.size, menu, clearSelection]);
+  }, [selected.size, menu, inspected, clearSelection]);
 
   /* The actions a right-click offers, computed from the target files' states so
      a menu never shows Retry for something that is running. The rule itself lives
@@ -997,6 +1042,9 @@ export function DownloadsView({
   const shownDensity: Density = offeredDensities.includes(density)
     ? density
     : 'comfortable';
+  /* Downloads' table keeps one line per release: choosing one shows it in the
+     details pane beneath the list rather than opening it in place. */
+  const inspecting = filter === 'active' && shownDensity === 'table';
 
   /* Auto-downloads awaiting review, pulled out of the ordinary Completed list
      into their own section so a candidate you have not judged never sits among
@@ -1020,9 +1068,10 @@ export function DownloadsView({
     }
   }, [awaiting, analysis]);
 
-  /* A coarse clock for the Completed date windows and sections: with the
-     lists memoised, nothing else would move a release from "This week" to
-     "Older" in an app left open for days. */
+  /* A coarse clock for the Completed date windows and sections, and for
+     Downloads' last hour: with the lists memoised, nothing else would move a
+     release from "This week" to "Older" in an app left open for days, or let a
+     finished one leave Downloads. */
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
   useEffect(() => {
     const t = window.setInterval(() => setMinute(Math.floor(Date.now() / 60_000)), 60_000);
@@ -1030,27 +1079,43 @@ export function DownloadsView({
   }, []);
 
   const lens = useMemo(() => session.groups.filter((g) => (
-    /* A given-up group is excluded from 'active' by having its own state, and
-     * joins Failed below. It is not a failure — nothing refused it and nothing
-     * errored — but Failed is where you go to deal with downloads that are not
-     * happening, and that is exactly what this is. */
-    filter === 'active' ? g.state === 'active' || g.state === 'queued' || g.state === 'paused'
+    /* Downloads is everything still in hand: coming down, waiting, in trouble,
+     * or finished in the last hour, sorted by the same answer as Simple's
+     * sections and the corner panel (downloadsKind). The trouble and the
+     * finished also keep their own lenses, Failed and Completed, where you go
+     * to deal with them for good. */
+    filter === 'active' ? downloadsKind(g, minute * 60) !== null
       // A finished group that IS an auto-download awaiting review is shown in its
       // own section instead, not here.
       : filter === 'finished' ? g.state === 'finished' && !g.transfers.every((t) => awaitingIds.has(t.id))
         // Cancelled sits with Failed: it did not complete, and it can be retried.
         : g.state === 'failed' || g.state === 'cancelled' || g.state === 'stalled'
-  )), [session.groups, filter, awaitingIds]);
+  )), [session.groups, filter, awaitingIds, minute]);
 
   const groups = useMemo(
     () => sortGroups(
       lens.filter((g) => matchesQuery(g, query)
         // The date window only applies to Completed; the other lenses ignore it.
-        && (filter !== 'finished' || withinFinishedWindow(g, finishedWindow, Date.now()))),
+        && (filter !== 'finished' || withinFinishedWindow(g, finishedWindow, Date.now()))
+        && (filter !== 'active' || show === 'all' || downloadsKind(g, minute * 60) === show)),
       sort, descending,
     ),
-    [lens, query, sort, descending, finishedWindow, filter, minute],
+    [lens, query, sort, descending, finishedWindow, filter, minute, show],
   );
+
+  /* Each chip's count is what choosing it would show: the query applies, the
+     other chips do not. */
+  const counts = useMemo(() => {
+    const n: Record<Show, number> = { all: 0, moving: 0, waiting: 0, trouble: 0, finished: 0 };
+    if (filter !== 'active') return n;
+    for (const g of lens) {
+      if (!matchesQuery(g, query)) continue;
+      n.all += 1;
+      const kind = downloadsKind(g, minute * 60);
+      if (kind) n[kind] += 1;
+    }
+    return n;
+  }, [lens, query, filter, minute]);
 
   /* Completed splits into labelled sections (date / who / format); every other
      lens is one unlabelled section, so the render path stays single. */
@@ -1080,6 +1145,21 @@ export function DownloadsView({
     ? groups.flatMap((g) => g.transfers.filter((t) => !awaitingIds.has(t.id)).map((t) => t.id))
     : [];
 
+  /* Downloads' bulk actions act on what is on screen, like Expand all.
+     Retry takes only what a retry can change: a peer who no longer shares the
+     file will refuse it again (transferStatus says which). */
+  const pausable = filter === 'active'
+    ? groups.flatMap((g) => g.transfers.filter((t) => isActive(t.state)).map((t) => t.id)) : [];
+  const resumable = filter === 'active'
+    ? groups.flatMap((g) => g.transfers.filter((t) => t.state === 'paused').map((t) => t.id)) : [];
+  const retryable = filter === 'active'
+    ? groups.flatMap((g) => g.transfers
+      .filter((t) => isFailed(t.state) && transferStatus(t).retryable).map((t) => t.id))
+    : [];
+  const totalSpeed = filter === 'active' ? groups.reduce((n, g) => n + g.speed, 0) : 0;
+
+  const inspectedGroup = inspecting ? groups.find((g) => g.key === inspected) : undefined;
+
   const totalBytes = groups.reduce((n, g) => n + g.size, 0);
   const totalFiles = groups.reduce((n, g) => n + g.transfers.length, 0);
   const hiddenCount = lens.length - groups.length;
@@ -1093,6 +1173,7 @@ export function DownloadsView({
             {integer(groups.length)} {groups.length === 1 ? 'release' : 'releases'}
             {' · '}{integer(totalFiles)} {totalFiles === 1 ? 'file' : 'files'}
             {' · '}{fileSize(totalBytes)}
+            {totalSpeed > 0 && <> · ↓ {fmtSpeed(totalSpeed)}</>}
             {hiddenCount > 0 && <> · {integer(hiddenCount)} hidden by the filter</>}
           </p>
         )}
@@ -1126,7 +1207,30 @@ export function DownloadsView({
             onChange={setFinishedWindow}
           />
         )}
-        {groups.length > 0 && (
+        {(pausable.length > 0 || resumable.length > 0) && (
+          /* One button, by the same reasoning as Expand all below. */
+          <button
+            type="button"
+            className="btn pressable"
+            title={pausable.length > 0
+              ? 'Stop every download shown here. A file waiting in a peer\'s queue loses its place.'
+              : 'Ask again for every paused download shown here.'}
+            onClick={() => (pausable.length > 0 ? session.pause(pausable) : session.resume(resumable))}
+          >
+            {pausable.length > 0 ? 'Pause all' : 'Resume all'}
+          </button>
+        )}
+        {retryable.length > 0 && (
+          <button
+            type="button"
+            className="btn pressable"
+            title="Ask again for every failed file a retry could fix. A refusal that will not change, such as a file they no longer share, is left alone."
+            onClick={() => session.retry(retryable)}
+          >
+            Retry {integer(retryable.length)} failed
+          </button>
+        )}
+        {groups.length > 0 && !inspecting && (
           /* One button, not two: with everything shut the useful action is to
              open, and with anything open it is to shut. A pair would leave one
              of them dead most of the time. */
@@ -1184,6 +1288,24 @@ export function DownloadsView({
           />
         )}
       </div>
+      {filter === 'active' && lens.length > 0 && (
+        <div className="tabset dls__show" role="tablist" aria-label="Show">
+          {SHOW.map(({ value, label }) => (
+            <span key={value} className="tabset__tab" data-on={show === value ? 'true' : undefined}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={show === value}
+                className="tabset__label"
+                onClick={() => setShow(value)}
+              >
+                {label}
+                <span className="tabset__n tnum">{integer(counts[value])}</span>
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
     </header>
   );
 
@@ -1261,16 +1383,18 @@ export function DownloadsView({
             <p className="empty__title">Nothing matches that</p>
             <p className="empty__body">
               {integer(lens.length)}
-              {lens.length === 1 ? ' release is' : ' releases are'} here, but none
-              {query && ` match “${query}”`}
-              {query && finishedWindow !== 'all' && ' and none'}
-              {finishedWindow !== 'all'
-                && ` finished in the ${FINISHED_WINDOW_LABELS[finishedWindow].toLowerCase()}`}.
+              {lens.length === 1 ? ' release is' : ' releases are'} here, but none{' '}
+              {[
+                query && `match “${query}”`,
+                filter === 'finished' && finishedWindow !== 'all'
+                  && `finished in the ${FINISHED_WINDOW_LABELS[finishedWindow].toLowerCase()}`,
+                filter === 'active' && show !== 'all' && SHOW.find((c) => c.value === show)?.none,
+              ].filter(Boolean).join(' and none ')}.
             </p>
             <button
               type="button"
               className="btn pressable"
-              onClick={() => { setQuery(''); setFinishedWindow('all'); }}
+              onClick={() => { setQuery(''); setFinishedWindow('all'); setShow('all'); }}
             >
               Clear the filter
             </button>
@@ -1320,6 +1444,7 @@ export function DownloadsView({
           className="dls"
           data-density={shownDensity}
           data-filter={filter}
+          data-inspecting={inspecting ? 'true' : undefined}
           /* Click empty space (not a row, not a button) to drop the selection —
              the standard "click away to deselect". */
           onClick={(e) => {
@@ -1357,8 +1482,9 @@ export function DownloadsView({
                   density={density}
                   filter={filter}
                   discovery={discovery}
-                  open={openKeys.has(g.key)}
-                  onOpenChange={setOpenFor}
+                  open={inspecting ? inspected === g.key : openKeys.has(g.key)}
+                  onOpenChange={inspecting ? inspect : setOpenFor}
+                  inline={!inspecting}
                   selected={selected}
                   onFileSelect={onFileSelect}
                   onFileContext={onFileContext}
@@ -1369,6 +1495,25 @@ export function DownloadsView({
           ))}
         </div>
       </div>
+      {inspectedGroup && (
+        <DownloadInspector
+          g={inspectedGroup}
+          groups={lens}
+          artwork={discovery?.artwork}
+          pictures={pictures}
+          peers={peers}
+          tracks={(
+            <Files
+              g={inspectedGroup} session={session} analysis={analysis} client={client} preview={preview}
+              selected={selected} onFileSelect={onFileSelect} onFileContext={onFileContext}
+            />
+          )}
+          onReveal={session.reveal}
+          onBrowse={onBrowse}
+          onFindAnother={onFindAnother}
+          onClose={() => setInspected(null)}
+        />
+      )}
       <ContextMenu request={menu} onClose={() => setMenu(null)} />
     </>
   );

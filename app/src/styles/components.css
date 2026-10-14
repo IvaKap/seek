@@ -593,22 +593,27 @@
 
 /* ========================================================= saved views == */
 
-/* The presets of docs/PRODUCT.md §3, drawn like the segmented control beside
-   them. A view you made carries an × to remove it. */
-.views { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
-.views__tabs {
+/* A row of tabs drawn like the segmented control, for sets whose items come
+   and go or carry a count: Collector's saved views and the Downloads chips.
+   No sliding indicator, because the items change width as counts change. */
+.tabset {
   display: flex; flex-wrap: wrap; gap: 2px; padding: 2px;
   border-radius: var(--radius-sm); background: var(--bg-sunken);
   border: 0.5px solid var(--separator);
 }
-.views__tab { display: flex; align-items: center; border-radius: calc(var(--radius-sm) - 1px); }
-.views__tab[data-on='true'] { background: var(--bg-raised); box-shadow: var(--shadow-raised); }
-.views__label {
+.tabset__tab { display: flex; align-items: center; border-radius: calc(var(--radius-sm) - 1px); }
+.tabset__tab[data-on='true'] { background: var(--bg-raised); box-shadow: var(--shadow-raised); }
+.tabset__label {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
   height: 1.5rem; padding: 0 var(--sp-3); border: 0; background: transparent;
   font: inherit; font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
   color: var(--text-secondary); white-space: nowrap; cursor: default;
 }
-.views__tab[data-on='true'] .views__label { color: var(--text-primary); font-weight: var(--fw-medium); }
+.tabset__tab[data-on='true'] .tabset__label { color: var(--text-primary); font-weight: var(--fw-medium); }
+.tabset__n { color: var(--text-tertiary); font-weight: 400; }
+
+/* The presets of docs/PRODUCT.md §3. A view you made carries an × to remove it. */
+.views { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
 .views__remove {
   margin-left: calc(-1 * var(--sp-2)); padding: 0 var(--sp-2);
   border: 0; background: transparent; color: var(--text-tertiary);
@@ -950,6 +955,7 @@
 .dl__status[data-tone='refused'] { background: var(--warn-soft); color: var(--warn); }
 .dl__status[data-tone='broken'] { color: var(--danger); }
 .dl__status[data-tone='waiting'] { color: var(--text-tertiary); }
+.dl__status[data-tone='done'] { color: var(--success); }
 
 /* Warn-coloured, not neutral: unlike "free", this is not a nicety about the
    row, it is the reason the download will be refused unless you are on that
@@ -1866,7 +1872,9 @@
   font-size: var(--fs-caption); color: var(--text-tertiary);
 }
 
-.dls__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
+.dls__header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-3) var(--sp-4); }
+/* Downloads' chips, a row of their own under the title and the tools. */
+.dls__show { flex-basis: 100%; width: fit-content; max-width: 100%; }
 .dls__heading { min-width: 0; }
 
 /* ------------------------------------------------- downloads, table density */
@@ -1897,9 +1905,9 @@
      Cancel, and every column to its left shifted to compensate. The header,
      whose last cell is empty, sized it to ZERO and lined up with nothing at
      all. Fixed width is what makes independent grids agree. */
-  /* active: name | files | size | progress | speed | eta | from | actions */
+  /* active: name | status | files | size | progress | speed | eta | format | from | actions */
   grid-template-columns:
-    minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 7.5rem 8rem;
+    minmax(8rem, 1fr) minmax(8rem, 0.8fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 3.75rem 7.5rem 8rem;
 }
 .dls[data-density='table'][data-filter='finished'] .dl__row,
 .dls[data-density='table'][data-filter='finished'] .dl__thead {
@@ -1918,26 +1926,37 @@
   grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem minmax(6rem, 1fr) 7.5rem 8rem;
 }
 
-/* Columns drop rather than crushing the name. Order of sacrifice: ETA first
-   (the percentage already answers "how far"), then speed, then the file count.
-   The release name, its size and its progress are never dropped — squeezing
-   the column that IDENTIFIES the row to 20px, which is what happened at
-   1100px, is the failure this ordering exists to prevent. */
-@container dls (max-width: 66em) {
+/* Columns drop rather than crushing the name. Order of sacrifice on
+   Downloads: ETA and the file count first (the percentage already answers
+   "how far", and the details pane lists the files), then speed, then the
+   format, then size and peer. The release name, its status and its progress
+   are never dropped — squeezing the column
+   that IDENTIFIES the row to 20px, which is what happened at 1100px, is the
+   failure this ordering exists to prevent. The queries stack, so each one
+   hides its column on top of the ones before it. */
+@container dls (max-width: 72em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 5.5rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 5.5rem 3.75rem 7.5rem 8rem;
+  }
+  .dls[data-filter='active'] .dl__row > :is(:nth-child(3), :nth-child(7)),
+  .dls[data-filter='active'] .dl__thead > :is(:nth-child(3), :nth-child(7)) { display: none; }
+}
+@container dls (max-width: 64em) {
+  .dls[data-density='table'][data-filter='active'] .dl__row,
+  .dls[data-density='table'][data-filter='active'] .dl__thead {
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 3.75rem 7.5rem 8rem;
   }
   .dls[data-filter='active'] .dl__row > :nth-child(6),
   .dls[data-filter='active'] .dl__thead > :nth-child(6) { display: none; }
 }
-@container dls (max-width: 58em) {
+@container dls (max-width: 56em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 7.5rem 8rem;
   }
-  .dls[data-filter='active'] .dl__row > :nth-child(5),
-  .dls[data-filter='active'] .dl__thead > :nth-child(5) { display: none; }
+  .dls[data-filter='active'] .dl__row > :nth-child(8),
+  .dls[data-filter='active'] .dl__thead > :nth-child(8) { display: none; }
 }
 @container dls (max-width: 44em) {
   /* Down to what identifies the row and how far along it is. */
@@ -1945,13 +1964,18 @@
   .dls[data-density='table'] .dl__thead {
     grid-template-columns: minmax(8rem, 1fr) 5rem 6.5rem 8rem;
   }
+  .dls[data-density='table'][data-filter='active'] .dl__row,
+  .dls[data-density='table'][data-filter='active'] .dl__thead {
+    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 6.5rem 8rem;
+  }
   .dls[data-density='table'][data-filter='finished'] .dl__row,
   .dls[data-density='table'][data-filter='finished'] .dl__thead {
     grid-template-columns: minmax(8rem, 1fr) 5rem 8rem;
   }
-  .dls .dl__row > :nth-child(2), .dls .dl__thead > :nth-child(2),
-  .dls[data-filter='active'] .dl__row > :nth-child(7),
-  .dls[data-filter='active'] .dl__thead > :nth-child(7),
+  .dls:not([data-filter='active']) .dl__row > :nth-child(2),
+  .dls:not([data-filter='active']) .dl__thead > :nth-child(2),
+  .dls[data-filter='active'] .dl__row > :is(:nth-child(4), :nth-child(9)),
+  .dls[data-filter='active'] .dl__thead > :is(:nth-child(4), :nth-child(9)),
   .dls[data-filter='finished'] .dl__row > :nth-child(4),
   .dls[data-filter='finished'] .dl__thead > :nth-child(4) { display: none; }
 }
@@ -1965,6 +1989,10 @@
   border-bottom: 1px solid var(--separator);
 }
 .dl__thead span:not(:first-child) { text-align: right; }
+.dls[data-filter='active'] .dl__thead > span:nth-child(2) { text-align: left; }
+/* The status reads left to right, like the name beside it. */
+.dl__cell.dl__cell--status { text-align: left; }
+.dl__cell--status .dl__status { display: inline-block; vertical-align: middle; margin-left: 0; max-width: 100%; }
 
 .dls[data-density='table'] .dl__row {
   padding: 0 var(--sp-2);
@@ -1974,6 +2002,50 @@
 @media (hover: hover) and (pointer: fine) {
   .dls[data-density='table'] .dl__row:hover { background: var(--bg-hover); }
 }
+
+/* -------------------------------------------- downloads, the details pane */
+/* Downloads · Collector, at table density: the release a row was chosen for,
+   beneath the list as the pane grid's third row, so the table above keeps its
+   height. It scrolls inside itself past 45% of the window. */
+.dls[data-inspecting='true'] .dl__row[data-open='true'] { background: var(--bg-selected); }
+.inspector {
+  display: flex; flex-direction: column; min-height: 0; max-height: 45vh;
+  border-top: 0.5px solid var(--separator-strong);
+  background: var(--bg-window);
+}
+.inspector__head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.inspector__what { display: flex; flex-direction: column; gap: 1px; flex: 1 1 12rem; min-width: 0; }
+.inspector__title {
+  margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inspector__sub {
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inspector__close {
+  display: inline-flex; padding: var(--sp-1); border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-tertiary); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+}
+.inspector__body { min-height: 0; overflow-y: auto; padding: 0 var(--sp-5) var(--sp-4); }
+.inspector__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-2) 0 0; font-size: var(--fs-secondary);
+}
+.facts dt { color: var(--text-tertiary); }
+.facts dd { margin: 0; min-width: 0; color: var(--text-primary); }
+.facts dd[data-tone='refused'] { color: var(--warn); }
+.facts dd[data-tone='broken'] { color: var(--danger); }
+.facts dd[data-tone='done'] { color: var(--success); }
+.facts__who { display: flex; align-items: center; gap: var(--sp-2); }
+.facts__path { overflow-wrap: anywhere; }
 
 /* The disclosure is its own button rather than the whole row, because the row
    also carries action buttons — and a button inside a button is invalid HTML

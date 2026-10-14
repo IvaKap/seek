@@ -33,6 +33,7 @@ import { IconDownload } from '../icons/index.tsx';
 import { Bar, Cover, ReleaseName, groupEta, releaseOf } from './transferBits.tsx';
 import { FormatBadge } from './rows.tsx';
 import { finishedAt, kindOf, queuePlace, startsWhen, troubleLine } from './CornerPanel.tsx';
+import type { Kind } from './CornerPanel.tsx';
 
 /** How long a finished release counts as just finished. Then it is Completed's. */
 const JUST_FINISHED_S = 3600;
@@ -52,6 +53,16 @@ export interface Sections {
 }
 
 /**
+ * What a release on Downloads is doing, in either mode: the corner panel's
+ * answer, except that a paused release waits here (the panel leaves out what
+ * you paused) and only the last hour's finishes are news. Null for a cancel,
+ * and for anything older. `now` is epoch seconds.
+ */
+export function downloadsKind(g: TransferGroup, now: number): Kind | null {
+  return g.state === 'paused' ? 'waiting' : kindOf(g, now - JUST_FINISHED_S);
+}
+
+/**
  * Sort the releases into the screen's sections. `now` is epoch seconds;
  * `lead` is the key of the release on the card last time, which keeps it
  * there for as long as it is still coming down.
@@ -59,8 +70,7 @@ export interface Sections {
 export function sections(groups: TransferGroup[], now: number, lead: string | null): Sections {
   const out: Sections = { lead: null, moving: [], waiting: [], trouble: [], finished: [] };
   for (const g of groups) {
-    // The corner panel leaves out what you paused; on this screen it waits.
-    const kind = g.state === 'paused' ? 'waiting' : kindOf(g, now - JUST_FINISHED_S);
+    const kind = downloadsKind(g, now);
     if (kind) out[kind].push(g);
   }
   out.lead = out.moving.find((g) => g.key === lead) ?? out.moving[0] ?? null;
@@ -70,7 +80,7 @@ export function sections(groups: TransferGroup[], now: number, lead: string | nu
 }
 
 /** The format most of a release's audio files are in. Null with no audio. */
-function formatOf(g: TransferGroup): Quality | null {
+export function formatOf(g: TransferGroup): Quality | null {
   const tally = new Map<string, number>();
   for (const t of g.transfers) {
     if (!isAudioPath(t.path)) continue;
@@ -99,7 +109,7 @@ function waitingLine(g: TransferGroup): string {
 }
 
 /** What to search for when a release will not come down. */
-function another(g: TransferGroup): string {
+export function another(g: TransferGroup): string {
   const { artist, release } = releaseOf(g);
   return [artist, release].filter(Boolean).join(' ') || g.title;
 }
