@@ -12,6 +12,8 @@ import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
 import { SettingsView } from './ui/SettingsView.tsx';
 import { CornerPanel } from './ui/CornerPanel.tsx';
+import { MiniSeek } from './ui/MiniSeek.tsx';
+import { keepOnTop, restore, shrink } from './data/miniWindow.ts';
 import type { Density } from './ui/ViewMenu.tsx';
 import { MODE_KEY, densityKey, initialMode, loadViews } from './ui/viewMode.ts';
 import type { DensityScreen, Mode, Views } from './ui/viewMode.ts';
@@ -98,6 +100,8 @@ const NUMBER_KEYS: Record<string, Section> = {
    view preference about this machine's window, not an account setting the
    sidecar has any use for. */
 const COLUMNS_KEY = 'seek.columns';
+/* Whether Mini Seek stays above other apps. A preference about this window. */
+const MINI_ON_TOP_KEY = 'seek.miniOnTop';
 
 function storedColumns(): ColumnId[] {
   try {
@@ -535,6 +539,27 @@ export default function App() {
     return () => setSeenUntil(Date.now() / 1000);
   }, [section]);
 
+  /* Mini Seek: the same window made small (data/miniWindow.ts). A reload
+     while small would leave the window small with nothing drawn for it, so a
+     fresh start puts the full window's rules back first. */
+  const [mini, setMini] = useState(false);
+  const [onTop, setOnTop] = useState(() => stored(MINI_ON_TOP_KEY) !== 'false');
+  useEffect(() => { void restore().catch(() => {}); }, []);
+  const enterMini = useCallback(() => {
+    setMini(true);
+    void shrink(onTop).catch((e) => reportFailure('Shrink to Mini Seek', e));
+  }, [onTop]);
+  const leaveMini = useCallback((to?: Section) => {
+    setMini(false);
+    if (to) go(to);
+    void restore().catch((e) => reportFailure('Go back to the full window', e));
+  }, [go]);
+  const changeOnTop = useCallback((on: boolean) => {
+    setOnTop(on);
+    remember(MINI_ON_TOP_KEY, String(on));
+    void keepOnTop(on).catch((e) => reportFailure('Keep Mini Seek on top', e));
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -558,6 +583,18 @@ export default function App() {
        * swap two letters), and taking them broke every text field. */
       const meta = MAC ? e.metaKey : e.ctrlKey;
       if (!meta) return;
+
+      /* ⇧⌘M into Mini Seek and out. Inside it there are no screens or tabs for
+       * the rest to act on; ⌘W goes back to the full window, never quits. */
+      if (e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        if (mini) leaveMini(); else enterMini();
+        return;
+      }
+      if (mini) {
+        if (e.key === 'w') { e.preventDefault(); leaveMini(); }
+        return;
+      }
 
       if (e.key === 'k') {
         e.preventDefault();
@@ -649,7 +686,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, session, preview, mode, switchMode]);
+  }, [go, session, preview, mode, switchMode, mini, enterMini, leaveMini]);
 
   // Start the recorded session so the app is never a dead screen.
   //
@@ -755,6 +792,7 @@ export default function App() {
         label: mode === 'simple' ? 'Switch to Collector' : 'Switch to Simple',
         run: () => switchMode(mode === 'simple' ? 'collector' : 'simple'),
       },
+      { id: 'view.mini', group: 'View', label: 'Mini Seek', shortcut: '⇧⌘M', hint: 'a small window that can stay on top', run: enterMini },
     ];
 
     if (session.client) {
@@ -790,7 +828,7 @@ export default function App() {
     }
 
     return list;
-  }, [go, session, transfers, browse, onDensity, mode, switchMode, labels.labels.length, addWish, saveSearch]);
+  }, [go, session, transfers, browse, onDensity, mode, switchMode, labels.labels.length, addWish, saveSearch, enterMini]);
 
   const userActions = useMemo<UserMenuActions>(() => ({
     browse: (who) => { browse.browse(who); go('browsing'); },
@@ -888,7 +926,23 @@ export default function App() {
   }, [people, userActions]);
 
   return (
-    <div className="app">
+    <div className="app" data-mini={mini ? 'true' : undefined}>
+      {/* Over the full window, which stays mounted beneath it so nothing you
+          left open is lost on the way back. */}
+      {mini && (
+        <MiniSeek
+          session={transfers}
+          artwork={artwork}
+          awaiting={autoDownloads.claims.filter((c) => c.status === 'awaiting-review')}
+          onTop={onTop}
+          onKeepOnTop={changeOnTop}
+          onSearch={(q) => { leaveMini('search'); searchTabs.openWith(q); }}
+          onFindAnother={(q) => { leaveMini('search'); searchTabs.openWith(q); }}
+          onReview={() => leaveMini('completed')}
+          onOpen={() => leaveMini('downloads')}
+          onBack={() => leaveMini()}
+        />
+      )}
       <UpdateBanner
         state={updates}
         onInstall={updates.install}
@@ -1109,6 +1163,7 @@ export default function App() {
             peers={(u) => prefs.peers.get(u)}
             onBrowse={(who) => { browse.browse(who); go('browsing'); }}
             onShowCompleted={() => go('completed')}
+            onMini={enterMini}
           />
         ) : section === 'settings' ? (
           <SettingsView

@@ -28,7 +28,7 @@ import {
   ChevronDown, ChevronRight, X, AlertTriangle,
   Users, Download, ArrowUp, SlidersHorizontal, Inbox,
   MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Minus, Info,
-  FolderCheck, Clover, List,
+  FolderCheck, Clover, List, Minimize2, Maximize2,
 } from 'lucide-react';
 
 /** Painted stroke, in CSS px. The brief's range is 1.5–1.75. */
@@ -189,6 +189,9 @@ export const IconFolderOpen = wrap(FolderOpen, 'FolderOpen');
 export const IconList = wrap(List, 'List');
 export const IconPlus = wrap(Plus, 'Plus');
 export const IconMinus = wrap(Minus, 'Minus');
+/* Into Mini Seek and back out of it. */
+export const IconMinimize = wrap(Minimize2, 'Minimize');
+export const IconMaximize = wrap(Maximize2, 'Maximize');
 /* Opens an explanation that exists. */
 export const IconInfo = wrap(Info, 'Info');
 

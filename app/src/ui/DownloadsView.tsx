@@ -29,6 +29,7 @@ import { statusOf } from './CornerPanel.tsx';
 import type { Kind } from './CornerPanel.tsx';
 import { FormatBadge } from './rows.tsx';
 import { DownloadInspector } from './DownloadInspector.tsx';
+import { MiniSeekButton } from './MiniSeek.tsx';
 import type { PeerLookup } from './PeerHistory.tsx';
 import { fileSize, integer, spanWords, speed as fmtSpeed } from '../domain/format.ts';
 import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
@@ -862,7 +863,7 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
 export function DownloadsView({
   session, signedIn, filter, analysis, checksums, client, preview, density,
   onDensity, discovery, autoClaims, onApproveAuto, onRejectAuto,
-  simple = false, onFindAnother, onShowCompleted, peers, onBrowse,
+  simple = false, onFindAnother, onShowCompleted, peers, onBrowse, onMini,
 }: {
   session: TransferSession;
   signedIn: boolean;
@@ -876,6 +877,8 @@ export function DownloadsView({
   /** Your own history with each peer, for the details pane. */
   peers?: PeerLookup;
   onBrowse?(username: string): void;
+  /** Shrinks the window to Mini Seek. */
+  onMini?(): void;
   analysis: AnalysisSession;
   checksums: ChecksumSession;
   client: SidecarClient | null;
@@ -1287,6 +1290,7 @@ export function DownloadsView({
             onDescending={setDescending}
           />
         )}
+        {onMini && <MiniSeekButton onClick={onMini} />}
       </div>
       {filter === 'active' && lens.length > 0 && (
         <div className="tabset dls__show" role="tablist" aria-label="Show">
@@ -1362,6 +1366,7 @@ export function DownloadsView({
           notices={<>{undo}{said}</>}
           onFindAnother={onFindAnother}
           onShowCompleted={onShowCompleted}
+          tools={onMini && <MiniSeekButton onClick={onMini} />}
         />
         <ContextMenu request={menu} onClose={() => setMenu(null)} />
       </>

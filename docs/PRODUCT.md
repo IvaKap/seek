@@ -318,6 +318,28 @@ their own lenses, where you go to deal with a release for good.
 
 `app/src/ui/DownloadInspector.tsx`.
 
+**Mini Seek** (0.4.0) shrinks the window to 320×560, for watching downloads
+while you work in something else. Optionally it stays above other apps
+(*Keep on top*, on by default and remembered).
+
+- **The same window.** It is not a second webview: that would be a second page
+  with its own sidecar socket and its own copy of every store. The full frame
+  comes back exactly as it was. `app/src/data/miniWindow.ts`.
+- **The list.** It shows Downloading / Waiting / Needs attention, in Simple's
+  words and by the same `downloadsKind`. A release that finishes leaves the
+  list; held wishlist downloads get a strip with *Review*.
+- **Trouble rows.** *Retry* appears only where a retry can change something.
+  A stall is still a transfer in progress upstream, which ignores a retry, so
+  a stalled or refused release offers *Find another copy* instead, as Simple
+  does.
+- **The field opens the full window.** A window this size has no room for
+  results, so a search opens the full window and runs there.
+- **Ways in and out.** In: ⇧⌘M, the palette, or *Mini Seek* in the Downloads
+  header (the canvas drew no way in). Out: ⇧⌘M again, the corner button, or
+  ⌘W, which goes back rather than quitting.
+
+`app/src/ui/MiniSeek.tsx`.
+
 ---
 
 ## 8. Sources ranked, with the reasoning shown

@@ -92,20 +92,26 @@ export function formatOf(g: TransferGroup): Quality | null {
   return top ? classify({ extension: top[0], size: 0, bitrate: null, duration: null, sampleRate: null, bitDepth: null, vbr: null }) : null;
 }
 
-function rateAndTime(g: TransferGroup): string {
+export function rateAndTime(g: TransferGroup): string {
   if (g.speed <= 0) return 'Starting';
   const eta = groupEta(g);
   if (!eta) return speed(g.speed);
   return `${speed(g.speed)} · ${eta < 90 ? 'less than a minute' : `about ${spanWords(eta)}`} left`;
 }
 
-function waitingLine(g: TransferGroup): string {
+/** Where a waiting release stands, in a few words. Mini Seek has room for no more. */
+export function queueLine(g: TransferGroup): string {
   if (g.state === 'paused') {
     return g.bytesDone > 0 ? `Paused · ${fileSize(g.bytesDone)} of ${fileSize(g.size)}` : 'Paused';
   }
   const place = queuePlace(g);
   if (place === null) return `Asked ${g.username} · waiting for an answer`;
-  return `${ordinal(place)} in ${g.username}'s queue. ${startsWhen(place)}.`;
+  return `${ordinal(place)} in ${g.username}'s queue`;
+}
+
+function waitingLine(g: TransferGroup): string {
+  const place = g.state === 'paused' ? null : queuePlace(g);
+  return place === null ? queueLine(g) : `${queueLine(g)}. ${startsWhen(place)}.`;
 }
 
 /** What to search for when a release will not come down. */
@@ -272,7 +278,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export function SimpleDownloads({
   session, artwork, awaiting, signedIn, openKeys, onOpen, renderOpen, notices,
-  onFindAnother, onShowCompleted,
+  onFindAnother, onShowCompleted, tools,
 }: {
   session: TransferSession;
   artwork?: ArtworkSession;
@@ -287,6 +293,8 @@ export function SimpleDownloads({
   notices: ReactNode;
   onFindAnother?(query: string): void;
   onShowCompleted?(): void;
+  /** Header buttons, from DownloadsView. */
+  tools?: ReactNode;
 }) {
   // A coarse clock: "finished 3 minutes ago" moves when nothing else does.
   const [now, setNow] = useState(() => Date.now() / 1000);
@@ -321,6 +329,7 @@ export function SimpleDownloads({
             </p>
           )}
         </div>
+        {tools && <div className="dls__tools">{tools}</div>}
       </header>
       <div className="pane__scroll">
         <div className="dlsimple">
