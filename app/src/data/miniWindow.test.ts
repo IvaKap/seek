@@ -24,7 +24,7 @@ const mock = vi.hoisted(() => {
       // A Retina screen: everything physical is twice the logical size.
       scaleFactor: async () => 2,
       outerPosition: async () => ({ toLogical: (s: number) => ({ x: 2000 / s, y: 200 / s }) }),
-      innerSize: async () => ({ toLogical: (s: number) => ({ width: 2560 / s, height: 1680 / s }) }),
+      innerSize: vi.fn(async () => ({ toLogical: (s: number) => ({ width: 2560 / s, height: 1680 / s }) })),
       setMinSize: said('min'),
       setSize: said('size'),
       setPosition: said('at'),
@@ -70,6 +70,29 @@ describe('Mini Seek’s frame', () => {
     expect(mock.calls[0]).toBe('fullscreen false');
     expect(mock.calls.at(-1)).toBe('top false');
     await restore();
+  });
+
+  /* ⇧⌘M twice, fast, from full screen: the way back ran while the shrink was
+     still waiting out the full-screen animation, found no frame, and the
+     shrink then finished — the full app stuck in a tiny window. */
+  it('lets a shrink finish before the way back starts', async () => {
+    mock.win.isFullscreen.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    const small = shrink(false);
+    const back = restore();
+    await Promise.all([small, back]);
+    expect(mock.calls.at(-1)).toBe('min 880x560');
+    expect(mock.calls).toContain('size 1280x840');
+    expect(mock.calls.lastIndexOf('resizable true')).toBeGreaterThan(mock.calls.lastIndexOf('resizable false'));
+  });
+
+  it('keeps the full frame when asked to shrink while already small', async () => {
+    await shrink(true);
+    mock.win.innerSize.mockResolvedValueOnce({ toLogical: () => ({ width: 320, height: 560 }) });
+    await shrink(true);
+    mock.calls.length = 0;
+    await restore();
+    expect(mock.calls).toContain('size 1280x840');
+    expect(mock.calls).toContain('at 1000,100');
   });
 
   it('does nothing outside Tauri', async () => {

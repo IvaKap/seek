@@ -55,6 +55,8 @@ interface EngineSettings {
   queueLimitMb: number;
   /** The two limits above do not apply to buddies. */
   buddiesUnlimited: boolean;
+  /** Where Send to Rekordbox copies finished files. Seek's own; '' clears it. */
+  rekordboxFolder: string | null;
 }
 
 type EngineSettingsPatch = Partial<EngineSettings>;
@@ -122,6 +124,7 @@ const NOTHING: Record<keyof EngineSettings, null> = {
   queueLimitFiles: null,
   queueLimitMb: null,
   buddiesUnlimited: null,
+  rekordboxFolder: null,
 };
 
 export function useEngine(client: SidecarClient | null): EngineSession {

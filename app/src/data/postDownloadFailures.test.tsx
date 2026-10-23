@@ -23,7 +23,14 @@ afterEach(cleanup);
 function slowClient() {
   const handlers = new Map<string, Set<(d: unknown) => void>>();
   const held: (() => void)[] = [];
+  const phases = new Set<(p: string) => void>();
+  let phase = 'open';
   const client = {
+    onPhase(fn: (p: string) => void) {
+      phases.add(fn);
+      fn(phase);
+      return () => { phases.delete(fn); };
+    },
     on(event: string, fn: (d: unknown) => void) {
       const set = handlers.get(event) ?? new Set();
       set.add(fn);
@@ -38,7 +45,11 @@ function slowClient() {
     for (const fn of handlers.get(event) ?? []) fn(data);
   };
   const reply = () => act(async () => { for (const r of held.splice(0)) r(); });
-  return { client, emit, reply };
+  const setPhase = (next: string) => act(() => {
+    phase = next;
+    for (const fn of phases) fn(next);
+  });
+  return { client, emit, reply, setPhase };
 }
 
 describe('a failure that beats its reply still lands on its row', () => {
@@ -72,5 +83,42 @@ describe('a failure that beats its reply still lands on its row', () => {
     }));
     await reply();
     expect(box.s!.byTransfer.get('tr-9')).toEqual({ state: 'failed', reason: 'no such folder' });
+  });
+});
+
+/* Events go to whoever is connected when they are sent. A check still running
+   when the socket dropped, or when the engine restarted, may never hear back,
+   and its row read "Checking…" for the session with no way to ask again. */
+describe('a check the engine never answered gives its button back', () => {
+  it('when the socket drops', () => {
+    const { client, setPhase } = slowClient();
+    const box: { a?: AnalysisSession; c?: ChecksumSession } = {};
+    function Probe() { box.a = useAnalysis(client); box.c = useChecksums(client); return null; }
+    render(<StrictMode><Probe /></StrictMode>);
+
+    act(() => { box.a!.analyseTransfer('tr-1'); box.c!.check('tr-2'); });
+    expect(box.a!.byTransfer.get('tr-1')?.state).toBe('running');
+    expect(box.c!.byTransfer.get('tr-2')?.state).toBe('running');
+
+    setPhase('connecting');
+    expect(box.a!.byTransfer.has('tr-1')).toBe(false);
+    expect(box.c!.byTransfer.has('tr-2')).toBe(false);
+  });
+
+  it('when the engine restarts, and keeps what was finished', () => {
+    const first = slowClient();
+    const second = slowClient();
+    const box: { a?: AnalysisSession } = {};
+    function Probe({ client }: { client: SidecarClient }) { box.a = useAnalysis(client); return null; }
+    const view = render(<StrictMode><Probe client={first.client} /></StrictMode>);
+
+    act(() => { box.a!.analyseTransfer('tr-1'); box.a!.analyseTransfer('tr-2'); });
+    act(() => first.emit('analysis.failed', {
+      requestId: 'r', path: '/a.flac', transferId: 'tr-2', reason: 'decode failed',
+    }));
+
+    view.rerender(<StrictMode><Probe client={second.client} /></StrictMode>);
+    expect(box.a!.byTransfer.has('tr-1')).toBe(false);
+    expect(box.a!.byTransfer.get('tr-2')?.state).toBe('failed');
   });
 });

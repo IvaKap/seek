@@ -85,3 +85,33 @@ export function readUntilAnswered<T>(
   ask();
   return () => { live = false; window.clearTimeout(timer); };
 }
+
+/**
+ * `lost` when an open socket stops being open; `back` when it opens again.
+ *
+ * Events go to whoever is connected when they are sent, so anything still
+ * waiting on one when the socket dropped may never hear it: a copy, a check
+ * or a decode that finished in the gap answered nobody. Returns the cleanup.
+ */
+export function onReconnect(client: SidecarClient, lost: () => void, back?: () => void): () => void {
+  let state: 'new' | 'open' | 'lost' = 'new';
+  return client.onPhase((phase) => {
+    if (phase === 'open') {
+      if (state === 'lost') back?.();
+      state = 'open';
+    } else if (state === 'open') {
+      state = 'lost';
+      lost();
+    }
+  });
+}
+
+/** `prev` without its entries still marked running, or `prev` itself when
+ *  there were none, so a state setter can take it without a wasted render. */
+export function dropRunning<V extends { state: string }>(prev: Map<string, V>): Map<string, V> {
+  let next: Map<string, V> | null = null;
+  for (const [key, value] of prev) {
+    if (value.state === 'running') (next ??= new Map(prev)).delete(key);
+  }
+  return next ?? prev;
+}

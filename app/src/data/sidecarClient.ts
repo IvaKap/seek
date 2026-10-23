@@ -121,6 +121,8 @@ const WRITE_VERBS = new Set([
   // failed while the engine applies them anyway.
   'say', 'join', 'leave', 'watch', 'unwatch', 'note', 'create', 'rename',
   'ensureFolder', 'addSheet', 'removeSheet', 'refreshSheet', 'setDownloaded', 'signOut',
+  // Answered once the files are found; the copy itself is reported by event.
+  'send',
   // A read, but a slow one: it looks for every finished download on disk.
   'findMissing',
 ]);
@@ -329,6 +331,11 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
   function whenOpen(ms: number): Promise<boolean> {
     if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve(true);
     if (closedByUs) return Promise.resolve(false);
+    /* Still 'open' with the socket closing, before `onclose` has run. Waiting
+       here would call `off` from inside `onPhase`, before it exists: the throw
+       rejected this promise and nothing caught it, so the request hung for
+       good. The caller re-checks the socket and reports it as not connected. */
+    if (phase === 'open') return Promise.resolve(true);
     return new Promise((resolve) => {
       const timer = window.setTimeout(() => { off(); resolve(false); }, ms);
       const off = onPhase((p) => {

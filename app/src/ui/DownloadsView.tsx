@@ -46,6 +46,7 @@ import type { AnalysisSession } from '../data/analysisStore.ts';
 import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { usePeerPictures } from '../data/peerProfiles.ts';
+import { onReconnect } from '../data/failures.ts';
 import type { PeerPictureCache } from '../data/peerProfiles.ts';
 import { PeerAvatar } from './PeerAvatar.tsx';
 import { ASSESSMENT_LABEL, ASSESSMENT_TONE, explain } from '../data/analysisStore.ts';
@@ -63,6 +64,12 @@ import type { LibrarySession } from '../data/libraryStore.ts';
 import { IconChevronDown, IconDownload, IconEmpty } from '../icons/index.tsx';
 import { ChecksumPanel } from './ChecksumPanel.tsx';
 import { summarise } from '../domain/checksums.ts';
+import type { HandoffSession } from '../data/handoffStore.ts';
+import { HandoffButton } from './HandoffButton.tsx';
+import type { HandoffBits } from './HandoffButton.tsx';
+import { DownloadsBoard } from './DownloadsBoard.tsx';
+import { DownloadsFolders } from './DownloadsFolders.tsx';
+import type { DownloadsLayout } from './viewMode.ts';
 
 /** Everything the Related shelf needs, bundled so it threads as one prop. */
 interface RelatedDiscovery {
@@ -424,11 +431,12 @@ function Files({ g, session, analysis, client, preview, selected, onFileSelect, 
  * the row already says.
  */
 function Actions({
-  g, session, compact, discovery, related, setRelated, checksums, hashOpen, setHashOpen,
+  g, session, compact, discovery, related, setRelated, checksums, hashOpen, setHashOpen, handoff,
 }: {
   g: TransferGroup;
   session: TransferSession;
   compact?: boolean;
+  handoff?: HandoffBits;
   discovery?: RelatedDiscovery;
   related?: boolean;
   setRelated?(fn: (v: boolean) => boolean): void;
@@ -475,6 +483,7 @@ function Actions({
           onToggle={() => setHashOpen?.((v) => !v)}
         />
       )}
+      {handoff && g.state === 'finished' && <HandoffButton g={g} handoff={handoff} compact={compact} />}
       {discovery && g.state === 'finished' && (
         <button
           type="button" className={cls}
@@ -520,8 +529,9 @@ function Actions({
  */
 function TableRow({
   g, session, filter, open, onToggle, discovery, related, setRelated,
-  checksums, hashOpen, setHashOpen, pictures,
+  checksums, hashOpen, setHashOpen, pictures, handoff,
 }: {
+  handoff?: HandoffBits;
   g: TransferGroup;
   session: TransferSession;
   filter: 'active' | 'finished' | 'failed';
@@ -605,7 +615,7 @@ function TableRow({
         <Actions g={g} session={session} compact discovery={filter === 'active' ? undefined : discovery}
                  related={related} setRelated={setRelated}
                  checksums={filter === 'active' ? undefined : checksums}
-                 hashOpen={hashOpen} setHashOpen={setHashOpen} />
+                 hashOpen={hashOpen} setHashOpen={setHashOpen} handoff={handoff} />
       </span>
     </div>
   );
@@ -633,6 +643,7 @@ interface GroupProps {
   onFileSelect(id: string, order: string[], mods: Mods): void;
   onFileContext(t: Transfer, e: React.MouseEvent): void;
   pictures: PeerPictureCache;
+  handoff?: HandoffBits;
 }
 
 /* A release row redraws when something it shows changed: its own group (the
@@ -651,7 +662,7 @@ function sameRow(a: GroupProps, b: GroupProps): boolean {
 
 const Group = memo(function Group({
   g, session, analysis, checksums, client, preview, density, filter, discovery,
-  open, onOpenChange, inline, selected, onFileSelect, onFileContext, pictures,
+  open, onOpenChange, inline, selected, onFileSelect, onFileContext, pictures, handoff,
 }: GroupProps) {
   const setOpen = (fn: (v: boolean) => boolean) => onOpenChange(g.key, fn(open));
   /** Whether the Related shelf is showing for this release. */
@@ -729,6 +740,7 @@ const Group = memo(function Group({
           pictures={pictures}
           hashOpen={hashOpen}
           setHashOpen={setHashOpen}
+          handoff={handoff}
         />
         {files}
         {hashPanel && <div className="dl__detail dl__detail--row">{hashPanel}</div>}
@@ -805,7 +817,7 @@ const Group = memo(function Group({
         <Actions g={g} session={session} discovery={filter === 'active' ? undefined : discovery}
                  related={related} setRelated={setRelated}
                  checksums={filter === 'active' ? undefined : checksums}
-                 hashOpen={hashOpen} setHashOpen={setHashOpen} />
+                 hashOpen={hashOpen} setHashOpen={setHashOpen} handoff={handoff} />
       </div>
 
       {files}
@@ -860,11 +872,26 @@ function TableHead({ filter }: { filter: 'active' | 'finished' | 'failed' }) {
   );
 }
 
+const LAYOUT_SEGMENTS: Segment<DownloadsLayout>[] = [
+  { value: 'list', label: 'List' },
+  { value: 'board', label: 'Board' },
+  { value: 'folders', label: 'Folders' },
+];
+
 export function DownloadsView({
   session, signedIn, filter, analysis, checksums, client, preview, density,
   onDensity, discovery, autoClaims, onApproveAuto, onRejectAuto,
   simple = false, onFindAnother, onShowCompleted, peers, onBrowse, onMini,
+  handoff: handoffSession, onSetRekordboxFolder, layout = 'list', onLayout, downloadFolder = null,
 }: {
+  /** Where finished downloads land, for the Folders layout's first root. */
+  downloadFolder?: string | null;
+  /** Simple's Downloads layout: List, Board or Folders. */
+  layout?: DownloadsLayout;
+  onLayout?(layout: DownloadsLayout): void;
+  /** The Rekordbox hand-off. Absent in tests that are not about it. */
+  handoff?: HandoffSession;
+  onSetRekordboxFolder?(): void;
   session: TransferSession;
   signedIn: boolean;
   /** Which section this is rendering — the same list, three lenses. */
@@ -1058,18 +1085,29 @@ export function DownloadsView({
     [autoClaims],
   );
   const awaitingIds = useMemo(() => new Set(awaiting.map((c) => c.transferId)), [awaiting]);
+  const handoff = useMemo<HandoffBits | undefined>(() => handoffSession && ({
+    session: handoffSession, held: awaitingIds, onSetFolder: onSetRekordboxFolder ?? (() => {}),
+  }), [handoffSession, awaitingIds, onSetRekordboxFolder]);
 
   /* On a fresh start an awaiting-review claim survives but its spectrogram does
      not (analysis is in memory), so ask for it once. Guarded by a ref so a
-     result arriving does not re-request. */
+     result arriving does not re-request. Once per connection, not per session:
+     a decode the engine never answered (it restarted, or the socket dropped)
+     is forgotten by the analysis store, and is asked for again here. */
   const analysed = useRef<Set<string>>(new Set());
+  const [connection, setConnection] = useState(0);
+  useEffect(() => {
+    const fresh = () => { analysed.current = new Set(); setConnection((n) => n + 1); };
+    fresh();
+    return client ? onReconnect(client, () => {}, fresh) : undefined;
+  }, [client]);
   useEffect(() => {
     for (const c of awaiting) {
       if (!c.transferId || analysed.current.has(c.transferId)) continue;
       if (!analysis.byTransfer.get(c.transferId)) analysis.analyseTransfer(c.transferId);
       analysed.current.add(c.transferId);
     }
-  }, [awaiting, analysis]);
+  }, [awaiting, analysis, connection]);
 
   /* A coarse clock for the Completed date windows and sections, and for
      Downloads' last hour: with the lists memoised, nothing else would move a
@@ -1345,6 +1383,47 @@ export function DownloadsView({
      carries the failed and the just finished too: Simple keeps those lenses
      behind More. The files beneath a release are the same either way. */
   if (simple && filter === 'active') {
+    const tools = (
+      <>
+        {onLayout && (
+          <SegmentedControl<DownloadsLayout>
+            segments={LAYOUT_SEGMENTS} value={layout} onChange={onLayout} label="Downloads layout"
+          />
+        )}
+        {onMini && <MiniSeekButton onClick={onMini} />}
+      </>
+    );
+    if (layout === 'folders' && handoff) {
+      return (
+        <DownloadsFolders
+          session={session}
+          checksums={checksums}
+          handoff={handoff}
+          claims={autoClaims ?? []}
+          now={minute * 60}
+          downloadFolder={downloadFolder}
+          tools={tools}
+          notices={<div className="board__notices">{undo}{said}</div>}
+        />
+      );
+    }
+    if (layout === 'board' && handoff) {
+      return (
+        <DownloadsBoard
+          session={session}
+          artwork={discovery?.artwork}
+          checksums={checksums}
+          handoff={handoff}
+          claims={autoClaims ?? []}
+          now={minute * 60}
+          tools={tools}
+          notices={<div className="board__notices">{undo}{said}</div>}
+          onFindAnother={onFindAnother}
+          onApproveAuto={onApproveAuto}
+          onRejectAuto={onRejectAuto}
+        />
+      );
+    }
     return (
       <>
         <SimpleDownloads
@@ -1356,7 +1435,7 @@ export function DownloadsView({
           onOpen={setOpenFor}
           renderOpen={(g, actions) => (
             <>
-              {actions && <div className="dl__actions"><Actions g={g} session={session} /></div>}
+              {actions && <div className="dl__actions"><Actions g={g} session={session} handoff={handoff} /></div>}
               <Files
                 g={g} session={session} analysis={analysis} client={client} preview={preview}
                 selected={selected} onFileSelect={onFileSelect} onFileContext={onFileContext}
@@ -1366,7 +1445,7 @@ export function DownloadsView({
           notices={<>{undo}{said}</>}
           onFindAnother={onFindAnother}
           onShowCompleted={onShowCompleted}
-          tools={onMini && <MiniSeekButton onClick={onMini} />}
+          tools={tools}
         />
         <ContextMenu request={menu} onClose={() => setMenu(null)} />
       </>
@@ -1494,6 +1573,7 @@ export function DownloadsView({
                   onFileSelect={onFileSelect}
                   onFileContext={onFileContext}
                   pictures={pictures}
+                  handoff={handoff}
                 />
               ))}
             </Fragment>

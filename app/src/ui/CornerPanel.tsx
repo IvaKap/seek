@@ -14,7 +14,7 @@
  * elsewhere is not missed.
  */
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { TransferGroup } from '../data/transferStore.ts';
 import { isAudioPath } from '../data/adapt.ts';
 import { groupStatus } from '../domain/transferStatus.ts';
@@ -166,12 +166,26 @@ export function CornerPanel({ groups, since, mode, onShowAll, onShowCompleted }:
 }) {
   const rows = useMemo(() => cornerRows(groups, since), [groups, since]);
   const [open, setOpen] = useState(mode === 'simple');
+  /* The panel floats over the bottom of the pane, so it published nothing and
+     sat on whatever was there: the last rows' Get buttons, Chat's Send. It now
+     says how much of the pane's bottom it takes, as `--corner-h` on the pane;
+     lists scroll their last rows clear of it and Chat stands its composer
+     above it (styles/components.css). */
+  const footprint = useCallback((el: HTMLElement | null) => {
+    const pane = el?.parentElement;
+    if (!el || !pane || typeof ResizeObserver === 'undefined') return undefined;
+    const watch = new ResizeObserver(() => {
+      pane.style.setProperty('--corner-h', `${pane.clientHeight - el.offsetTop}px`);
+    });
+    watch.observe(el);
+    return () => { watch.disconnect(); pane.style.removeProperty('--corner-h'); };
+  }, []);
   if (rows.length === 0) return null;
 
   if (!open) {
     const [first, ...rest] = cornerSummary(rows);
     return (
-      <button type="button" className="corner corner--pill pressable" onClick={() => setOpen(true)}>
+      <button ref={footprint} type="button" className="corner corner--pill pressable" onClick={() => setOpen(true)}>
         <span className="corner__pill-text tnum">
           <span>{first}</span>
           {rest.length > 0 && <span className="corner__dim">{rest.join(' · ')}</span>}
@@ -181,7 +195,7 @@ export function CornerPanel({ groups, since, mode, onShowAll, onShowCompleted }:
   }
 
   return (
-    <aside className="corner" aria-label="Downloads">
+    <aside ref={footprint} className="corner" aria-label="Downloads">
       <div className="corner__head">
         <span className="corner__title">
           Downloads <span className="corner__dim tnum">{rows.length}</span>

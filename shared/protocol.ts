@@ -2693,6 +2693,14 @@ export interface Settings {
    * `transfers.friendsnolimits`.
    */
   buddiesUnlimited: boolean | null;
+
+  /**
+   * Where `handoff.send` copies finished downloads for Rekordbox to import.
+   * Seek's own, so it lives in seek-state.json, not the Nicotine+ config. An
+   * empty string in a patch clears it. Seek never touches the Rekordbox
+   * database: this is a plain folder.
+   */
+  rekordboxFolder: string | null;
 }
 
 /** Current server connection. */
@@ -2706,8 +2714,12 @@ export interface ConnectionState {
   publicAddress: string | null;
 
   /**
-   * Server rejection text on a failed login (e.g. wrong password). Null
-   * otherwise.
+   * Why we are not signed in, as a code the app words: the server's rejection
+   * of a login (INVALIDPASS, INVALIDUSERNAME, SVRFULL, …), 'relogged' when the
+   * server signed us out because the account signed in elsewhere, or
+   * 'server_closed' when it ended the session for another reason. Neither of
+   * the last two is retried automatically. Null otherwise, including a dropped
+   * connection, which upstream retries by itself.
    */
   error: string | null;
 }
@@ -3609,6 +3621,64 @@ export interface LogEvent {
   at: number;
 }
 
+/**
+ * Copy finished downloads into the Rekordbox folder. COPY, never move: the
+ * download folder keeps its files, so Verify, the checksum check and Show in
+ * Finder go on working.
+ */
+export interface HandoffSendParams {
+  /** Finished downloads. Anything else is refused file by file. */
+  transferIds: string[];
+}
+
+/** What happened to one file. */
+export interface HandoffResult {
+  transferId: string;
+
+  /**
+   * copied | already_there (the same-sized file was there; counted as sent) |
+   * not_finished | file_missing | exists_different (a different file holds the
+   * name; never overwritten) | io_error.
+   */
+  outcome: string;
+
+  /** Absolute path of the copy. Null unless copied or already there. */
+  dest: string | null;
+}
+
+/** The outcome of one `handoff.send`, file by file. */
+export interface HandoffDone {
+  /** One per transferId, in order. */
+  results: HandoffResult[];
+}
+
+/**
+ * One file Seek has put in the Rekordbox folder. Seek's record, kept so a
+ * restart still knows what went; the folder itself may have changed since, and
+ * this does not check.
+ */
+export interface HandoffSent {
+  /** Stable across a restart: a hash of user and path. */
+  transferId: string;
+
+  /** Who it came from. */
+  user: string;
+
+  /** The remote virtual path. */
+  path: string;
+
+  /** Absolute path of the copy. */
+  dest: string;
+
+  /** Unix epoch seconds. */
+  sentAt: number;
+}
+
+export interface HandoffState {
+  /** Newest last. Capped; the oldest go first. */
+  sent: HandoffSent[];
+}
+
 /* ------------------------------------------------------------- envelope */
 
 /**
@@ -4043,6 +4113,15 @@ export interface CommandParams {
    * silently if it already exists. Never deletes or overwrites.
    */
   'fs.ensureFolder': EnsureFolderParams;
+  /**
+   * Copy finished downloads into the Rekordbox folder, keeping each file's
+   * place under the download folder. Never overwrites. Answered at once,
+   * because a release can take a minute to copy to a USB stick; `handoff.done`
+   * reports each file, then `handoff.state` the record.
+   */
+  'handoff.send': HandoffSendParams;
+  /** What Seek has put in the Rekordbox folder. */
+  'handoff.list': Record<string, never>;
   /** Show a file or folder in Finder, selected. */
   'fs.reveal': RevealParams;
   /**
@@ -4171,6 +4250,8 @@ export interface CommandResult {
   'settings.patch': SettingsResult;
   'fs.check': PathCheck;
   'fs.ensureFolder': PathCheck;
+  'handoff.send': Record<string, never>;
+  'handoff.list': HandoffState;
   'fs.reveal': Record<string, never>;
   'fs.open': Record<string, never>;
   'users.lists': UserLists;
@@ -4292,6 +4373,8 @@ export const COMMAND_NAMES = [
   'settings.patch',
   'fs.check',
   'fs.ensureFolder',
+  'handoff.send',
+  'handoff.list',
   'fs.reveal',
   'fs.open',
   'users.lists',
@@ -4371,6 +4454,10 @@ export interface EventPayload {
   'shares.state': ShareState;
   /** The wishlist or its interval changed. */
   'wishlist.state': WishlistState;
+  /** A `handoff.send` finished, file by file. */
+  'handoff.done': HandoffDone;
+  /** Files were put in the Rekordbox folder. */
+  'handoff.state': HandoffState;
   /** The buddy list changed. */
   'buddies.state': BuddyState;
   /** Index changed, or a scan progressed. */
@@ -4485,6 +4572,8 @@ export const EVENT_NAMES = [
   'chat.member',
   'shares.state',
   'wishlist.state',
+  'handoff.done',
+  'handoff.state',
   'buddies.state',
   'library.state',
   'app.settings',

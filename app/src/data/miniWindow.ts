@@ -21,7 +21,19 @@ export const MINI = { width: 320, height: 560 };
 const FULL_MIN = { width: 880, height: 560 };
 
 interface Frame { x: number; y: number; width: number; height: number }
+/** The full window's frame while small; null while full. */
 let full: Frame | null = null;
+
+/* One at a time. Two quick ⇧⌘M used to interleave: the restore ran while the
+   shrink was still waiting out full screen, found no frame to go back to, and
+   then the shrink finished: the full app in a tiny window that would not
+   resize. Queued, each waits for the one before. */
+let queue: Promise<void> = Promise.resolve();
+function queued(step: () => Promise<void>): Promise<void> {
+  const next = queue.then(step);
+  queue = next.catch(() => {});
+  return next;
+}
 
 async function api() {
   const { getCurrentWindow, LogicalPosition, LogicalSize } = await import('@tauri-apps/api/window');
@@ -29,8 +41,13 @@ async function api() {
 }
 
 /** Shrink to Mini Seek, keeping the window's top-right corner where it was. */
-export async function shrink(onTop: boolean): Promise<void> {
-  if (!isTauri()) return;
+export function shrink(onTop: boolean): Promise<void> {
+  return queued(() => shrinkNow(onTop));
+}
+
+async function shrinkNow(onTop: boolean): Promise<void> {
+  // Already small: measuring now would save Mini Seek's frame as the full one.
+  if (!isTauri() || full) return;
   const { win, LogicalPosition, LogicalSize } = await api();
   // A full-screen window cannot be resized, so leave full screen first.
   if (await win.isFullscreen()) {
@@ -59,7 +76,11 @@ export async function shrink(onTop: boolean): Promise<void> {
  * go back to (a reload while small), it still puts back the full window's
  * rules, which is why the app calls this once at startup.
  */
-export async function restore(): Promise<void> {
+export function restore(): Promise<void> {
+  return queued(restoreNow);
+}
+
+async function restoreNow(): Promise<void> {
   if (!isTauri()) return;
   const { win, LogicalPosition, LogicalSize } = await api();
   await win.setAlwaysOnTop(false);
@@ -73,8 +94,10 @@ export async function restore(): Promise<void> {
   await win.setMinSize(new LogicalSize(FULL_MIN.width, FULL_MIN.height));
 }
 
-export async function keepOnTop(on: boolean): Promise<void> {
-  if (!isTauri()) return;
-  const { win } = await api();
-  await win.setAlwaysOnTop(on);
+export function keepOnTop(on: boolean): Promise<void> {
+  return queued(async () => {
+    if (!isTauri()) return;
+    const { win } = await api();
+    await win.setAlwaysOnTop(on);
+  });
 }

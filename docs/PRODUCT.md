@@ -340,6 +340,48 @@ while you work in something else. Optionally it stays above other apps
 
 `app/src/ui/MiniSeek.tsx`.
 
+**Send to Rekordbox** (0.4.0) copies a finished release into one folder chosen
+in Settings → Folders. Rekordbox has no watch folder: through 7.2 there is no
+automatic import, and Pioneer's own forum says so. So nothing here claims the
+folder is watched; the DJ imports it in Rekordbox. Seek never opens, reads or
+writes the Rekordbox database.
+
+- **A copy, never a move.** The download keeps its file, so Verify, the
+  checksum check and Show in Finder go on working on the original.
+- **Never overwrites, never half a file.** A name already taken by a different
+  file stops that file; the same-sized file counts as sent before. Each copy is
+  written under a hidden name and renamed into place.
+- **Its place is kept.** A file lands at its path under the download folder, so
+  two multi-disc releases' `CD1/01.flac` cannot meet.
+- **Remembered.** The sidecar keeps what went (`handoff_sent` in
+  seek-state.json), so *Sent* survives a restart. The folder must exist: an
+  unplugged drive fails rather than being recreated on the internal disk.
+- **The person sends.** A wishlist download waiting for review is not offered
+  until it is kept. `sidecar/seek_sidecar/handoff.py`,
+  `app/src/ui/HandoffButton.tsx`.
+
+A release that came with a `.ffp` or `.md5` is now **checked the moment its last
+file lands**, rather than waiting for *Check hashes*. Only releases seen
+unfinished this session: an old one keeps its button rather than every release
+re-reading itself at launch.
+
+**Board and Folders** (0.4.0) are Simple's two other Downloads layouts, behind a
+List / Board / Folders switch in the header. Collector keeps its densities.
+
+- **Board.** The columns are Queued by peer / Downloading / Checking / Ready /
+  Sent to Rekordbox. They sort by Simple's own `downloadsKind`, so no release
+  sits in one column here and another section in the list. A refusal waits
+  in Queued; a stall that has bytes stays in Downloading. *Checking* is a
+  checksum check running, and *Sent* is the hand-off's record. Both are facts,
+  not guesses.
+- **Ready.** It holds the last hour's finishes, which is Downloads' Just
+  finished window, plus review, whatever its age. Review offers Keep/Reject;
+  anything else offers Send. `app/src/ui/DownloadsBoard.tsx`.
+- **Folders.** The same releases as folders that open to their files, with
+  the Rekordbox folder beside them. It is built from what Seek downloaded and
+  sent, not from a walk of the disk, and its footnote says so.
+  `app/src/ui/DownloadsFolders.tsx`.
+
 ---
 
 ## 8. Sources ranked, with the reasoning shown

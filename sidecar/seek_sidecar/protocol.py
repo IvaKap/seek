@@ -2162,6 +2162,11 @@ class Settings(TypedDict):
     # The two limits above do not apply to buddies. Upstream's
     # `transfers.friendsnolimits`.
     buddiesUnlimited: Optional[bool]
+    # Where `handoff.send` copies finished downloads for Rekordbox to import.
+    # Seek's own, so it lives in seek-state.json, not the Nicotine+ config. An
+    # empty string in a patch clears it. Seek never touches the Rekordbox
+    # database: this is a plain folder.
+    rekordboxFolder: Optional[str]
 
 
 class ConnectionState(TypedDict):
@@ -2171,8 +2176,13 @@ class ConnectionState(TypedDict):
     username: Optional[str]
     # Our public IP as the server sees it.
     publicAddress: Optional[str]
-    # Server rejection text on a failed login (e.g. wrong password). Null
-    # otherwise.
+    # Why we are not signed in, as a code the app words: the server's
+    # rejection of a login (INVALIDPASS, INVALIDUSERNAME, SVRFULL, …),
+    # 'relogged' when the server signed us out because the account signed in
+    # elsewhere, or 'server_closed' when it ended the session for another
+    # reason. Neither of the last two is retried automatically. Null
+    # otherwise, including a dropped connection, which upstream retries by
+    # itself.
     error: Optional[str]
 
 
@@ -2885,6 +2895,56 @@ class LogEvent(TypedDict):
     message: str
     # Unix epoch seconds.
     at: float
+
+
+class HandoffSendParams(TypedDict):
+    """
+    Copy finished downloads into the Rekordbox folder. COPY, never move: the
+    download folder keeps its files, so Verify, the checksum check and Show
+    in Finder go on working.
+    """
+    # Finished downloads. Anything else is refused file by file.
+    transferIds: List[str]
+
+
+class HandoffResult(TypedDict):
+    """What happened to one file."""
+    transferId: str
+    # copied | already_there (the same-sized file was there; counted as sent)
+    # | not_finished | file_missing | exists_different (a different file holds
+    # the name; never overwritten) | io_error.
+    outcome: str
+    # Absolute path of the copy. Null unless copied or already there.
+    dest: Optional[str]
+
+
+class HandoffDone(TypedDict):
+    """The outcome of one `handoff.send`, file by file."""
+    # One per transferId, in order.
+    results: List["HandoffResult"]
+
+
+class HandoffSent(TypedDict):
+    """
+    One file Seek has put in the Rekordbox folder. Seek's record, kept so a
+    restart still knows what went; the folder itself may have changed since,
+    and this does not check.
+    """
+    # Stable across a restart: a hash of user and path.
+    transferId: str
+    # Who it came from.
+    user: str
+    # The remote virtual path.
+    path: str
+    # Absolute path of the copy.
+    dest: str
+    # Unix epoch seconds.
+    sentAt: float
+
+
+class HandoffState(TypedDict):
+    # Newest last. Capped; the oldest go first.
+    sent: List["HandoffSent"]
 
 
 # ------------------------------------------------------ runtime validator
@@ -3664,6 +3724,7 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("queueLimitFiles", "int", False, True),
         ("queueLimitMb", "int", False, True),
         ("buddiesUnlimited", "bool", False, True),
+        ("rekordboxFolder", "str", False, True),
     ),
     "ConnectionState": (
         ("status", "ConnectionStatus", False, False),
@@ -3969,6 +4030,27 @@ STRUCT_FIELDS: Dict[str, Tuple[Tuple[str, str, bool, bool], ...]] = {
         ("message", "str", False, False),
         ("at", "float", False, False),
     ),
+    "HandoffSendParams": (
+        ("transferIds", "str", True, False),
+    ),
+    "HandoffResult": (
+        ("transferId", "str", False, False),
+        ("outcome", "str", False, False),
+        ("dest", "str", False, True),
+    ),
+    "HandoffDone": (
+        ("results", "HandoffResult", True, False),
+    ),
+    "HandoffSent": (
+        ("transferId", "str", False, False),
+        ("user", "str", False, False),
+        ("path", "str", False, False),
+        ("dest", "str", False, False),
+        ("sentAt", "float", False, False),
+    ),
+    "HandoffState": (
+        ("sent", "HandoffSent", True, False),
+    ),
 }
 
 COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
@@ -4082,6 +4164,8 @@ COMMANDS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "settings.patch": ("SettingsPatchParams", "SettingsResult"),
     "fs.check": ("PathCheckParams", "PathCheck"),
     "fs.ensureFolder": ("EnsureFolderParams", "PathCheck"),
+    "handoff.send": ("HandoffSendParams", None),
+    "handoff.list": (None, "HandoffState"),
     "fs.reveal": ("RevealParams", None),
     "fs.open": ("RevealParams", None),
     "users.lists": (None, "UserLists"),
@@ -4120,6 +4204,8 @@ EVENTS: Dict[str, str] = {
     "chat.member": "ChatMemberChange",
     "shares.state": "ShareState",
     "wishlist.state": "WishlistState",
+    "handoff.done": "HandoffDone",
+    "handoff.state": "HandoffState",
     "buddies.state": "BuddyState",
     "library.state": "LibraryState",
     "app.settings": "AppSettings",

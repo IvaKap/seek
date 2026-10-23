@@ -2235,6 +2235,14 @@ STRUCTS = {
                 "The two limits above do not apply to buddies. "
                 "Upstream's `transfers.friendsnolimits`.",
             ),
+            (
+                "rekordboxFolder",
+                "str?",
+                "Where `handoff.send` copies finished downloads for Rekordbox to "
+                "import. Seek's own, so it lives in seek-state.json, not the "
+                "Nicotine+ config. An empty string in a patch clears it. Seek "
+                "never touches the Rekordbox database: this is a plain folder.",
+            ),
         ],
     ),
     # ---- event payloads ----------------------------------------------------
@@ -2247,8 +2255,13 @@ STRUCTS = {
             (
                 "error",
                 "str?",
-                "Server rejection text on a failed login (e.g. wrong password). "
-                "Null otherwise.",
+                "Why we are not signed in, as a code the app words: the server's "
+                "rejection of a login (INVALIDPASS, INVALIDUSERNAME, SVRFULL, …), "
+                "'relogged' when the server signed us out because the account "
+                "signed in elsewhere, or 'server_closed' when it ended the "
+                "session for another reason. Neither of the last two is retried "
+                "automatically. Null otherwise, including a dropped connection, "
+                "which upstream retries by itself.",
             ),
         ],
     ),
@@ -3071,6 +3084,47 @@ STRUCTS = {
             ("at", "float", "Unix epoch seconds."),
         ],
     ),
+    # ---- the Rekordbox hand-off ----------------------------------------------
+    "HandoffSendParams": (
+        "Copy finished downloads into the Rekordbox folder. COPY, never move: "
+        "the download folder keeps its files, so Verify, the checksum check and "
+        "Show in Finder go on working.",
+        [("transferIds", "str[]", "Finished downloads. Anything else is refused file by file.")],
+    ),
+    "HandoffResult": (
+        "What happened to one file.",
+        [
+            ("transferId", "str", ""),
+            (
+                "outcome",
+                "str",
+                "copied | already_there (the same-sized file was there; counted "
+                "as sent) | not_finished | file_missing | exists_different (a "
+                "different file holds the name; never overwritten) | io_error.",
+            ),
+            ("dest", "str?", "Absolute path of the copy. Null unless copied or already there."),
+        ],
+    ),
+    "HandoffDone": (
+        "The outcome of one `handoff.send`, file by file.",
+        [("results", "HandoffResult[]", "One per transferId, in order.")],
+    ),
+    "HandoffSent": (
+        "One file Seek has put in the Rekordbox folder. Seek's record, kept so "
+        "a restart still knows what went; the folder itself may have changed "
+        "since, and this does not check.",
+        [
+            ("transferId", "str", "Stable across a restart: a hash of user and path."),
+            ("user", "str", "Who it came from."),
+            ("path", "str", "The remote virtual path."),
+            ("dest", "str", "Absolute path of the copy."),
+            ("sentAt", "float", "Unix epoch seconds."),
+        ],
+    ),
+    "HandoffState": (
+        "",
+        [("sent", "HandoffSent[]", "Newest last. Capped; the oldest go first.")],
+    ),
 }
 
 # --------------------------------------------------------------------------
@@ -3540,6 +3594,15 @@ COMMANDS = {
         "EnsureFolderParams",
         "PathCheck",
     ),
+    "handoff.send": (
+        "Copy finished downloads into the Rekordbox folder, keeping each "
+        "file's place under the download folder. Never overwrites. Answered "
+        "at once, because a release can take a minute to copy to a USB stick; "
+        "`handoff.done` reports each file, then `handoff.state` the record.",
+        "HandoffSendParams",
+        None,
+    ),
+    "handoff.list": ("What Seek has put in the Rekordbox folder.", None, "HandoffState"),
     "fs.reveal": (
         "Show a file or folder in Finder, selected.",
         "RevealParams",
@@ -3618,6 +3681,8 @@ EVENTS = {
     "chat.member": ("Someone joined or left a room.", "ChatMemberChange"),
     "shares.state": ("Share configuration or scan state changed.", "ShareState"),
     "wishlist.state": ("The wishlist or its interval changed.", "WishlistState"),
+    "handoff.done": ("A `handoff.send` finished, file by file.", "HandoffDone"),
+    "handoff.state": ("Files were put in the Rekordbox folder.", "HandoffState"),
     "buddies.state": ("The buddy list changed.", "BuddyState"),
     "library.state": ("Index changed, or a scan progressed.", "LibraryState"),
     "app.settings": ("Preferences changed.", "AppSettings"),

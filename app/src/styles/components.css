@@ -1536,10 +1536,14 @@
   border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
 }
 
+/* Wraps rather than running off the window's edge: a narrow window used to
+   cut "Clear 827 finished" in half and push View and Mini Seek out of reach. */
 .dls__tools {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: var(--sp-2);
   margin-left: auto; min-width: 0;
 }
+.dls__tools > * { flex: none; }
 .dls__tools .browse__filter { max-width: 16rem; }
 @container (max-width: 44em) {
   .dls__tools .browse__filter { max-width: 9rem; }
@@ -2105,6 +2109,18 @@
 /* Actions are the only thing here that earns its space on hover alone: they
    are always reachable by keyboard, and showing five buttons per row turns a
    status board back into a control panel. */
+/* No fixed track holds every set: Send can read "Send the rest" and a checksum
+   verdict "No checksum file", and a finished row now carries five buttons. So
+   when they spill left they sit ON an opaque copy of the hovered row's
+   background, fading in over the cells beneath, instead of printing through
+   the peer name. */
+.dls[data-density='table'] .dl__rowactions {
+  position: relative; z-index: 1;
+  padding-left: var(--sp-5);
+  background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-content);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--sp-5));
+  mask-image: linear-gradient(to right, transparent, #000 var(--sp-5));
+}
 @media (hover: hover) and (pointer: fine) {
   .dls[data-density='table'] .dl__rowactions { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
   .dls[data-density='table'] .dl__row:hover .dl__rowactions,
@@ -2283,6 +2299,9 @@
 .verify--done[data-tone='warn'] { color: var(--warn); }
 .verify--done[data-tone='bad']  { color: var(--danger); }
 .verify--done[data-tone='unknown'] { color: var(--text-tertiary); }
+/* Send to Rekordbox: green once every file is in the folder, red when one was refused. */
+.handoff[data-tone='good'] { color: var(--success); }
+.handoff[data-tone='bad']  { color: var(--danger); }
 
 /* ==================================================== table density ====== */
 /* One shared column grid. `display: contents` on the intermediate wrappers
@@ -4103,6 +4122,14 @@
 .corner__row[data-kind='trouble'] .corner__line { color: var(--warn); }
 .corner__row .corner__link { align-self: flex-start; }
 
+/* Room for it. `--corner-h` is how much of the pane's bottom the panel takes,
+   set by the panel itself and gone with it. A list scrolls its last rows clear
+   of the panel; Chat's composer is pinned, so its column ends above it. */
+.scroller { padding-bottom: var(--corner-h, 0px); }
+.pane__scroll { padding-bottom: max(var(--sp-10), calc(var(--corner-h, 0px) + var(--sp-4))); }
+.btree__list, .btree__tree { padding-bottom: var(--corner-h, 0px); }
+.chat__main { padding-bottom: var(--corner-h, 0px); }
+
 /* Folded: two lines of summary, a pill in the same corner. */
 .corner--pill {
   width: auto; flex-direction: row; align-items: center;
@@ -4406,3 +4433,118 @@
 }
 .mini__ontop { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
 .mini__ontop input { margin: 0; accent-color: var(--accent); }
+
+/* ------------------------------------------------------- downloads, board */
+/* Downloads · Board (Simple): five columns, a card per release. The columns
+   share the width; below about five 11rem columns the row scrolls sideways
+   inside its own box rather than the page. */
+.board__tools { flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.board__folder {
+  max-width: 22rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.board__notices:empty { display: none; }
+.board {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  overflow-x: auto; padding: var(--sp-2) 0 var(--sp-4);
+}
+.board__col {
+  flex: 1 1 0; min-width: 11rem;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-2) calc(var(--sp-2) + 2px);
+  border: 0.5px solid var(--separator); border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+.board__colhead { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
+.board__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.board__n { margin-left: 2px; font-weight: normal; color: var(--text-tertiary); }
+.board__note { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.board__empty { margin: 0; padding: var(--sp-2) 2px; font-size: var(--fs-caption); color: var(--text-quaternary); }
+.board__cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.board__card {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: calc(var(--sp-2) + 2px);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-md);
+  background: var(--bg-raised); box-shadow: var(--shadow-raised);
+}
+/* Stalled: a border that says it, as the canvas has it. */
+.board__card[data-tone='broken'] { border: 1px solid var(--warn); }
+.board__head { display: flex; align-items: center; gap: calc(var(--sp-2) + 2px); min-width: 0; }
+.board__name { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0; }
+.board__title { font-size: var(--fs-secondary); overflow-wrap: anywhere; }
+.board__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.board__chip {
+  padding: 1px 6px; border-radius: var(--radius-sm);
+  font-size: var(--fs-micro); color: var(--accent); background: var(--accent-soft);
+}
+.board__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.board__card[data-tone='refused'] .board__line { color: var(--danger); }
+.board__card[data-tone='broken'] .board__line { color: var(--warn); }
+.board__line[data-check='good'] { color: var(--success); }
+.board__line[data-check='warn'] { color: var(--warn); }
+.board__line[data-check='bad'] { color: var(--danger); }
+.board__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.board__more { padding: 0 2px; font-size: var(--fs-caption); color: var(--text-tertiary); }
+
+/* ----------------------------------------------------- downloads, folders */
+/* Downloads · Folders (Simple): the releases as folders, each opening to its
+   files. One grid shared by the head and every row, so the columns line up. */
+.dlf {
+  display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-4);
+  container-type: inline-size;
+}
+.dlf__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.dlf__crumbs {
+  flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden;
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+.dlf__crumb { display: inline-flex; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlf__crumb[aria-current] { color: var(--text-primary); font-weight: var(--fw-medium); }
+.dlf__sep { color: var(--text-quaternary); }
+.dlf__table {
+  border: 0.5px solid var(--separator); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--sp-1);
+}
+.dlf__head, .dlf__row {
+  display: grid; grid-template-columns: minmax(0, 1fr) 4rem 5.25rem minmax(8rem, 16rem);
+  align-items: center; column-gap: var(--sp-2);
+}
+.dlf__head {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) calc(var(--sp-2) + 30px);
+  font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--text-tertiary);
+  border-bottom: 0.5px solid var(--separator);
+}
+.dlf__rows { list-style: none; margin: 0; padding: 0; }
+.dlf__row { min-height: 28px; border-radius: var(--radius-sm); }
+.dlf__row[data-current] { background: var(--bg-selected); }
+.dlf__name {
+  display: flex; align-items: center; gap: 6px; min-width: 0; height: 28px;
+  padding: 0 var(--sp-2) 0 calc(var(--sp-2) + var(--depth, 0) * 20px);
+  border: 0; background: none; font: inherit; font-size: var(--fs-secondary);
+  color: var(--text-primary); text-align: left; cursor: default;
+}
+.dlf__name svg { flex: none; color: var(--text-tertiary); }
+.dlf__row[data-current] .dlf__name { color: var(--accent); }
+.dlf__row[data-pending] .dlf__name { color: var(--text-tertiary); }
+.dlf__row[data-pending] .dlf__name svg { color: var(--text-quaternary); }
+.dlf__label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlf__chev { transition: transform var(--dur-fast) var(--ease-out); }
+.dlf__chev[data-open] { transform: rotate(90deg); }
+.dlf__chev[data-hidden] { visibility: hidden; }
+.dlf__files, .dlf__size { text-align: right; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlf__status {
+  display: flex; align-items: center; gap: var(--sp-2); min-width: 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.dlf__status .prog { flex: 0 0 3rem; }
+.dlf__statustext { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlf__status[data-tone='done'], .dlf__status[data-tone='good'] { color: var(--success); }
+.dlf__status[data-tone='active'] { color: var(--accent); }
+.dlf__status[data-tone='waiting'] { color: var(--text-tertiary); }
+.dlf__status[data-tone='refused'], .dlf__status[data-tone='bad'] { color: var(--danger); }
+.dlf__status[data-tone='broken'], .dlf__status[data-tone='warn'] { color: var(--warn); }
+.dlf__foot { margin: 0; font-size: var(--fs-caption); color: var(--text-tertiary); }
+@container (max-width: 40em) {
+  .dlf__head, .dlf__row { grid-template-columns: minmax(0, 1fr) 4.5rem minmax(6rem, 10rem); }
+  .dlf__files { display: none; }
+}

@@ -15,8 +15,8 @@ import { CornerPanel } from './ui/CornerPanel.tsx';
 import { MiniSeek } from './ui/MiniSeek.tsx';
 import { keepOnTop, restore, shrink } from './data/miniWindow.ts';
 import type { Density } from './ui/ViewMenu.tsx';
-import { MODE_KEY, densityKey, initialMode, loadViews } from './ui/viewMode.ts';
-import type { DensityScreen, Mode, Views } from './ui/viewMode.ts';
+import { LAYOUT_KEY, MODE_KEY, densityKey, initialMode, loadLayout, loadViews } from './ui/viewMode.ts';
+import type { DensityScreen, DownloadsLayout, Mode, Views } from './ui/viewMode.ts';
 import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
@@ -26,7 +26,8 @@ import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
 import { useAnalysis } from './data/analysisStore.ts';
-import { useChecksums } from './data/checksumStore.ts';
+import { useAutoChecksums, useChecksums } from './data/checksumStore.ts';
+import { useHandoff } from './data/handoffStore.ts';
 import { useBrowse } from './data/browseStore.ts';
 import { useArtwork } from './data/artworkStore.ts';
 import { useLibrary } from './data/libraryStore.ts';
@@ -187,6 +188,11 @@ export default function App() {
   /* Simple or Collector, and each screen's density in it (ui/viewMode.ts). */
   const [mode, setMode] = useState<Mode>(() => initialMode(stored, [SIDEBAR_KEY, COLUMNS_KEY]));
   const [views, setViews] = useState<Views>(() => loadViews(mode, stored));
+  const [downloadsLayout, setDownloadsLayout] = useState<DownloadsLayout>(() => loadLayout(stored));
+  const changeLayout = useCallback((next: DownloadsLayout) => {
+    setDownloadsLayout(next);
+    remember(LAYOUT_KEY, next);
+  }, []);
   const [columns, setColumns] = useState<ColumnId[]>(storedColumns);
   const changeColumns = useCallback((next: ColumnId[]) => {
     setColumns(next);
@@ -247,6 +253,8 @@ export default function App() {
   const updates = useUpdates(prefs.loaded ? prefs.settings.checkUpdates : null);
   const analysis = useAnalysis(session.client);
   const checksums = useChecksums(session.client);
+  const handoff = useHandoff(session.client, engine.settings?.rekordboxFolder ?? null);
+  useAutoChecksums(transfers.groups, checksums);
   const artwork = useArtwork(session.client);
   const library = useLibrary(session.client);
   const youtube = useYoutube(session.client);
@@ -305,6 +313,10 @@ export default function App() {
       return next;
     });
   }, []);
+  /* Settings opens on Account, except when something sends you to a folder. */
+  const [settingsTab, setSettingsTab] = useState<'folders' | undefined>();
+  useEffect(() => { if (section !== 'settings') setSettingsTab(undefined); }, [section]);
+  const openFolders = useCallback(() => { setSettingsTab('folders'); go('settings'); }, [go]);
 
   /* Search for a want list entry, then judge the outcome.
    *
@@ -588,6 +600,8 @@ export default function App() {
        * the rest to act on; ⌘W goes back to the full window, never quits. */
       if (e.shiftKey && e.key.toLowerCase() === 'm') {
         e.preventDefault();
+        // Held down, the key repeats: in, out, in, as fast as it auto-repeats.
+        if (e.repeat) return;
         if (mini) leaveMini(); else enterMini();
         return;
       }
@@ -1164,9 +1178,15 @@ export default function App() {
             onBrowse={(who) => { browse.browse(who); go('browsing'); }}
             onShowCompleted={() => go('completed')}
             onMini={enterMini}
+            handoff={handoff}
+            onSetRekordboxFolder={openFolders}
+            layout={downloadsLayout}
+            onLayout={changeLayout}
+            downloadFolder={engine.settings?.downloadFolder ?? null}
           />
         ) : section === 'settings' ? (
           <SettingsView
+            initialTab={settingsTab}
             client={session.client}
             serverState={session.serverState}
             prefs={prefs}

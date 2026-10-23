@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lostInTransit } from './sidecarClient.ts';
+import { dropRunning, onReconnect } from './failures.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { AnalysisFailedEvent } from '../../../shared/protocol.ts';
 
@@ -116,7 +117,11 @@ export function useAnalysis(client: SidecarClient | null): AnalysisSession {
   const pending = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
+    /* A decode still marked running when the engine restarts, or when the
+       socket drops, may never be answered: its button comes back. */
+    setByTransfer(dropRunning);
     if (!client) return;
+    const offDrop = onReconnect(client, () => setByTransfer(dropRunning));
 
     const offResult = client.on('analysis.result', (data) => {
       const a = data as SpectralAnalysis;
@@ -135,7 +140,7 @@ export function useAnalysis(client: SidecarClient | null): AnalysisSession {
       if (tid) setByTransfer((prev) => new Map(prev).set(tid, { state: 'failed', reason: f.reason }));
     });
 
-    return () => { offResult(); offFailed(); };
+    return () => { offDrop(); offResult(); offFailed(); };
   }, [client]);
 
   const analyseTransfer = useCallback((transferId: string) => {

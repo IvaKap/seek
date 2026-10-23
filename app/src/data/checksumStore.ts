@@ -18,8 +18,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { lostInTransit } from './sidecarClient.ts';
+import { dropRunning, onReconnect } from './failures.ts';
 import type { AnalysisFailedEvent, ChecksumReport } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
+import type { TransferGroup } from './transferStore.ts';
 
 interface ChecksumEntryState {
   state: 'running' | 'done' | 'failed';
@@ -41,7 +43,12 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
   const pending = useRef(new Map<string, string>());
 
   useEffect(() => {
+    /* A new client is a restarted engine, and a dropped socket may have missed
+       the answer: either way a check still marked running may never hear back.
+       Its button comes back, as for a request lost in transit. */
+    setByTransfer(dropRunning);
     if (!client) return;
+    const offDrop = onReconnect(client, () => setByTransfer(dropRunning));
 
     const offResult = client.on('checksums.result', (data) => {
       const report = data as ChecksumReport;
@@ -64,7 +71,7 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
       }
     });
 
-    return () => { offResult(); offFailed(); };
+    return () => { offDrop(); offResult(); offFailed(); };
   }, [client]);
 
   const check = useCallback((transferId: string) => {
@@ -97,4 +104,29 @@ export function useChecksums(client: SidecarClient | null): ChecksumSession {
   return useMemo(
     () => ({ byTransfer, check }), [byTransfer, check],
   );
+}
+
+/**
+ * Check a release against the .ffp or .md5 it came with the moment its last
+ * file lands, so "Checking" on the Board happens without a press.
+ *
+ * Only releases seen unfinished in this session: one that was already finished
+ * when Seek opened keeps its Check hashes button, rather than every old release
+ * re-reading itself at launch. Keyed like HashButton, by the first finished
+ * file, so the result shows on that button too.
+ */
+export function useAutoChecksums(groups: readonly TransferGroup[], checksums: ChecksumSession): void {
+  const unfinished = useRef(new Set<string>());
+  useEffect(() => {
+    for (const g of groups) {
+      if (g.state !== 'finished') {
+        unfinished.current.add(g.key);
+        continue;
+      }
+      if (!unfinished.current.delete(g.key)) continue;
+      if (!g.transfers.some((t) => /\.(ffp|md5)$/i.test(t.path))) continue;
+      const id = g.transfers.find((t) => t.state === 'finished')?.id;
+      if (id && !checksums.byTransfer.has(id)) checksums.check(id);
+    }
+  }, [groups, checksums]);
 }

@@ -235,8 +235,10 @@ function SecretRow({
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsView({
-  client, serverState, prefs, engine, profile, connections, youtube, people,
+  client, serverState, prefs, engine, profile, connections, youtube, people, initialTab,
 }: {
+  /** The tab to open on. Account when absent. */
+  initialTab?: Tab;
   client: SidecarClient | null;
   serverState: string | null;
   prefs: PrefsSession;
@@ -246,7 +248,7 @@ export function SettingsView({
   youtube: YoutubeSession;
   people: People;
 }) {
-  const [tab, setTab] = useState<Tab>('account');
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'account');
   const signedIn = serverState === 'online' || serverState === 'away';
   const { settings } = prefs;
   const engineSettings = engine.settings;
@@ -402,7 +404,7 @@ export function SettingsView({
             <>
               <Group
                 title="Where files go"
-                footnote="Both folders are checked before they are saved: Seek writes a file into the folder and deletes it, because on a Mac neither a read-only volume nor a folder macOS has not granted access to shows up in the permissions."
+                footnote="Every folder here is checked before it is saved: Seek writes a file into the folder and deletes it, because on a Mac neither a read-only volume nor a folder macOS has not granted access to shows up in the permissions."
               >
                 <FolderSetting
                   label="Downloads"
@@ -418,6 +420,14 @@ export function SettingsView({
                   engine={engine}
                   onSave={(path) => saveEngine({ incompleteFolder: path })}
                   hint="Partial downloads live here until they finish, then move to the downloads folder. Keeping it on the same volume makes that a rename rather than a copy."
+                />
+                <FolderSetting
+                  label="Rekordbox"
+                  purpose="download"
+                  value={engineSettings?.rekordboxFolder ?? ''}
+                  engine={engine}
+                  onSave={(path) => saveEngine({ rekordboxFolder: path })}
+                  hint="Send to Rekordbox copies a finished release here, in its own folder. Rekordbox does not watch folders, so import this one in Rekordbox yourself. Your downloads stay where they are."
                 />
               </Group>
 
@@ -1299,7 +1309,7 @@ function About({ client, prefs }: { client: SidecarClient | null; prefs: PrefsSe
         />
         <Row
           label="Never writes to Rekordbox"
-          hint="Finished files are handed over through a watch folder. Seek does not touch the Rekordbox database."
+          hint="Send to Rekordbox copies files into a folder you import yourself. Seek never opens, reads or writes the Rekordbox database."
           control={<span className="settings__static">—</span>}
         />
         <Row

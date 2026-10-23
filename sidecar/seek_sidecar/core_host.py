@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from . import (
-    checksums, discover as discover_mod, enrich, library as library_mod,
+    checksums, discover as discover_mod, enrich, handoff, library as library_mod,
     logfile, nicotine_import, registries, translate, youtube_oauth,
 )
 from .protocol import PROTOCOL_VERSION
@@ -146,6 +146,11 @@ class CoreHost:
     POLL_INTERVAL = 0.05  # 20 Hz. Upstream's headless loop uses 0.1; the brief
                           # budgets 100 ms from sidecar to screen, and a 100 ms
                           # pump alone would spend all of it.
+
+    #: Why the server last signed us out, for `_on_server_disconnect`. Class
+    #: defaults, so a test host built without __init__ has them too.
+    _relogged = False      # the server said the account signed in elsewhere
+    _signing_out = False   # Seek asked for this disconnect itself
 
     def __init__(self, bridge, config_folder, data_folder, upstream_path=None,
                  enable_shares=False, log_file=""):
@@ -317,6 +322,7 @@ class CoreHost:
         for name, callback in (
             ("server-login", self._on_server_login),
             ("server-disconnect", self._on_server_disconnect),
+            ("log-message", self._on_upstream_log),
             ("set-connection-stats", self._on_connection_stats),
             ("set-wishlist-interval", self._on_wishlist_interval),
             ("file-search-response", self._on_search_response),
@@ -502,8 +508,23 @@ class CoreHost:
 
     # -- upstream event handlers -------------------------------------------
 
+    def _on_upstream_log(self, _timestamp_format, msg, *_rest):
+        """Hear upstream say the account signed in somewhere else.
+
+        The server's Relogged message is handled inside the network thread and
+        never reaches the event bus; the only trace it leaves is this log line,
+        written just before the disconnect event is queued. Runs on whichever
+        thread logged, so it only sets a flag. Compared through upstream's own
+        `_`, so a translated line still matches; tests/test_signin.py pins the
+        wording against upstream's source.
+        """
+        if msg == _("Someone logged in to your Soulseek account elsewhere"):  # noqa: F821
+            self._relogged = True
+
     def _on_server_login(self, msg):
+        self._relogged = self._signing_out = False
         if msg.success:
+            log.info("signed in to the Soulseek server")
             # Upstream's own login handler runs first and restores a saved
             # away status (users.py), so ask it rather than assume online.
             away = self.core.users.login_status == self.UserStatus.AWAY
@@ -514,6 +535,8 @@ class CoreHost:
                 "error": None,
             })
         else:
+            # A code such as INVALIDPASS: no name, no password.
+            log.warning("sign-in refused: %s", msg.rejection_reason or "no reason given")
             self._connection.update({
                 "status": "failed",
                 "username": None,
@@ -521,9 +544,30 @@ class CoreHost:
             })
         self.bridge.broadcast("connection.state", dict(self._connection))
 
-    def _on_server_disconnect(self, _msg):
+    def _on_server_disconnect(self, msg):
+        """Signed out, and why, because "Not signed in" alone sent a person
+        hunting. A dropped connection upstream retries by itself; the server
+        ending the session it does not, so that one is reported as an error:
+        `relogged` when the server said the account signed in elsewhere, and
+        `server_closed` for the rarer endings (a message it could not read)."""
+        manual = getattr(msg, "manual_disconnect", False)
+        error = None
+        if self._relogged:
+            error = "relogged"
+        elif self._connection.get("status") == "failed":
+            # A refused login closes the connection too; its reason stands.
+            error = self._connection.get("error")
+        elif manual and not self._signing_out and not getattr(self, "_shutdown_done", False):
+            error = "server_closed"
+        self._relogged = self._signing_out = False
+        if error in ("relogged", "server_closed"):
+            log.warning("signed out by the server (%s); not signing in again by itself", error)
+        elif manual:
+            log.info("signed out")
+        else:
+            log.info("lost the connection to the server; upstream will reconnect")
         self._connection.update({
-            "status": "offline", "username": None, "publicAddress": None,
+            "status": "offline", "username": None, "publicAddress": None, "error": error,
         })
         self.bridge.broadcast("connection.state", dict(self._connection))
         for payload in self.searches.close_all("disconnected"):
@@ -4020,6 +4064,7 @@ class CoreHost:
 
         self._connection.update({"status": "connecting", "error": None})
         self.bridge.broadcast("connection.state", dict(self._connection))
+        log.info("signing in")
         self.core.connect()
         # Persist so a restart does not lose the login — after connecting, so
         # a failed save never stands between you and this session. Neither
@@ -4032,6 +4077,7 @@ class CoreHost:
         # Signing out means staying out, next launch included: automatic
         # sign-in used to bring the account straight back. Signing in again
         # does not turn it back on — the Settings switch is the one control.
+        self._signing_out = True
         self.core.disconnect()
         self.config.sections["server"]["auto_connect_startup"] = False
         self.bridge.broadcast("app.settings", self._app_settings())
@@ -4464,6 +4510,102 @@ class CoreHost:
         report["requestId"] = request_id
         report["transferId"] = transfer_id
         self.bridge.broadcast("checksums.result", report)
+
+    # -- the Rekordbox hand-off (see handoff.py) -----------------------------
+
+    #: Most hand-offs remembered. The oldest records go first; the files stay.
+    HANDOFF_CAP = 5000
+
+    def _handoff_sent(self):
+        """The ledger, minus any row the validator would drop the event over."""
+        rows = self._load_state().get("handoff_sent")
+        return [
+            row for row in (rows if isinstance(rows, list) else [])
+            if isinstance(row, dict)
+            and all(isinstance(row.get(k), str) for k in ("transferId", "user", "path", "dest"))
+            and isinstance(row.get("sentAt"), (int, float))
+        ]
+
+    def _cmd_handoff_list(self, _params):
+        return {"sent": self._handoff_sent()}
+
+    def _cmd_handoff_send(self, params):
+        """Check the folder and find the files here; copy on the post worker.
+
+        The files are found on THIS thread because finding one asks the core,
+        and the core is not to be read from a worker. The folder must already
+        exist: an unplugged USB stick should fail, not be recreated as an empty
+        folder on the internal disk under /Volumes.
+
+        The post worker, not a pool of its own, because Organise moves files
+        there: one queue means a copy never races a move of the same file.
+        ponytail: a big copy delays artwork and Organise for downloads that
+        finish behind it; give the hand-off its own pool if that is ever felt.
+        """
+        folder = self._resolve_path(self._load_state().get("rekordbox_folder"))
+        if not folder:
+            raise CommandError("bad_request", "no Rekordbox folder is set")
+        folder = self._require_writable_dir("the Rekordbox folder", folder)
+
+        jobs = []
+        for transfer_id in params["transferIds"]:
+            record = self.transfers.get(transfer_id)
+            job = {"transferId": transfer_id, "source": None, "outcome": None,
+                   "user": record.username if record else "",
+                   "path": record.path if record else ""}
+            if record is None or record.direction != "download":
+                # The resolver would happily answer for an upload, with a path
+                # in the download folder that is not that file.
+                job["outcome"] = "file_missing"
+            else:
+                try:
+                    job["source"] = self._resolve_local_file({"path": None, "transferId": transfer_id})
+                except CommandError as error:
+                    job["outcome"] = "not_finished" if error.code == "bad_request" else "file_missing"
+            jobs.append(job)
+        # Read here, with the files: a folder changed while the copy waits its
+        # turn must not change where the files land.
+        self._post_pool.submit(self._handoff_now, folder, self._download_root(), jobs)
+        return {}
+
+    def _handoff_now(self, folder, root, jobs):
+        """Worker-thread body. Never raises into the pool."""
+        try:
+            results, ledger = self._handoff_copy(folder, root, jobs)
+        except Exception:                              # noqa: BLE001 - worker
+            log.exception("hand-off failed")
+            results, ledger = [{"transferId": job["transferId"], "outcome": handoff.IO_ERROR,
+                                "dest": None} for job in jobs], None
+        self.bridge.broadcast("handoff.done", {"results": results})
+        if ledger is not None:
+            self.bridge.broadcast("handoff.state", {"sent": ledger})
+
+    def _handoff_copy(self, folder, root, jobs):
+        now = time.time()
+        results, sent = [], []
+        for job in jobs:
+            outcome, dest = job["outcome"], None
+            if outcome is None:
+                # Organise may have moved it while this job waited its turn.
+                source = self._follow_move(job["source"])
+                dest = handoff.destination(folder, source, root)
+                outcome = handoff.send_file(source, dest)
+                if outcome in (handoff.COPIED, handoff.ALREADY_THERE):
+                    sent.append({"transferId": job["transferId"], "user": job["user"],
+                                 "path": job["path"], "dest": dest, "sentAt": now})
+                else:
+                    dest = None
+            results.append({"transferId": job["transferId"], "outcome": outcome, "dest": dest})
+        if sent:
+            ids = {row["transferId"] for row in sent}
+            with _STATE_LOCK:
+                kept = [row for row in self._handoff_sent() if row["transferId"] not in ids]
+                ledger = (kept + sent)[-self.HANDOFF_CAP:]
+                # Not `_store`: the copies happened, and an unsaved record is
+                # no reason to report them as failed.
+                self._save_state(handoff_sent=ledger)
+            return results, ledger
+        return results, None
 
     # -- chat --------------------------------------------------------------
     #
@@ -4945,14 +5087,25 @@ class CoreHost:
         transfers = self.config.sections["transfers"]
         server = self.config.sections["server"]
 
-        if patch.get("downloadFolder") is not None:
-            transfers["downloaddir"] = self._require_writable_dir(
-                "the download folder", patch["downloadFolder"]
-            )
-        if patch.get("incompleteFolder") is not None:
-            transfers["incompletedir"] = self._require_writable_dir(
-                "the in-progress folder", patch["incompleteFolder"]
-            )
+        # Checked before anything else changes, saved after, like stallSeconds.
+        rekordbox = patch.get("rekordboxFolder")
+        if rekordbox is not None:
+            rekordbox = (self._require_writable_dir("the Rekordbox folder", rekordbox)
+                         if str(rekordbox).strip() else "")
+
+        # Every folder is checked before any is set: a good download folder
+        # beside a bad in-progress one used to take effect in the live config
+        # while the reply said the patch was refused.
+        download = patch.get("downloadFolder")
+        if download is not None:
+            download = self._require_writable_dir("the download folder", download)
+        incomplete = patch.get("incompleteFolder")
+        if incomplete is not None:
+            incomplete = self._require_writable_dir("the in-progress folder", incomplete)
+        if download is not None:
+            transfers["downloaddir"] = download
+        if incomplete is not None:
+            transfers["incompletedir"] = incomplete
         if patch.get("uploadSlots") is not None:
             transfers["uploadslots"] = int(patch["uploadSlots"])
         if patch.get("listenPort") is not None:
@@ -5023,6 +5176,8 @@ class CoreHost:
             # Saved, not just set: it lived only on the registry, so every
             # restart quietly put it back to 45 s.
             self._store(stall_seconds=self.transfers.stall_seconds)
+        if rekordbox is not None:
+            self._store(rekordbox_folder=rekordbox)
         return {"settings": self._read_settings()}
 
     def _read_settings(self):
@@ -5057,6 +5212,7 @@ class CoreHost:
             "queueLimitFiles": int(transfers.get("filelimit") or 0),
             "queueLimitMb": int(transfers.get("queuelimit") or 0),
             "buddiesUnlimited": bool(transfers.get("friendsnolimits")),
+            "rekordboxFolder": self._resolve_path(self._load_state().get("rekordbox_folder")) or None,
         }
 
 

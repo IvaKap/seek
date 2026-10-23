@@ -409,6 +409,14 @@ def _event_samples():
         "chat.member": {"room": "electronic", "present": True,
                         "member": {"username": "someone", "status": "online", "files": 120}},
         "users.lists": {"ignored": ["troll"], "banned": []},
+        "handoff.done": {"results": [
+            {"transferId": "a1", "outcome": "copied", "dest": "/Volumes/USB/To Rekordbox/x.flac"},
+            {"transferId": "b2", "outcome": "exists_different", "dest": None},
+        ]},
+        "handoff.state": {"sent": [
+            {"transferId": "a1", "user": "u", "path": "Music\\x.flac",
+             "dest": "/Volumes/USB/To Rekordbox/x.flac", "sentAt": 1.0},
+        ]},
         "wishlist.state": {
             "items": [
                 {"query": "burial untrue", "filters": None, "auto": False},

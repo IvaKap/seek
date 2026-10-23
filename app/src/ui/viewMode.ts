@@ -44,6 +44,18 @@ const PRESETS: Record<Mode, Views> = {
 
 const DENSITIES: readonly string[] = ['comfortable', 'compact', 'table', 'grid'];
 
+/** Downloads · Simple's three layouts, after its canvas boards. Collector keeps
+ * its densities instead, so this is Simple's alone and has one key. Kept out
+ * of KEYS: it is no evidence of an install from before the mode switch. */
+export type DownloadsLayout = 'list' | 'board' | 'folders';
+export const LAYOUT_KEY = 'seek.downloads.layout.simple';
+const LAYOUTS: readonly string[] = ['list', 'board', 'folders'];
+
+export function loadLayout(read: Read): DownloadsLayout {
+  const raw = read(LAYOUT_KEY);
+  return raw !== null && LAYOUTS.includes(raw) ? raw as DownloadsLayout : 'list';
+}
+
 type Read = (key: string) => string | null;
 
 /** The storage key for one screen's density in one mode. */
