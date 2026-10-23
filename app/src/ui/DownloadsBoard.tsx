@@ -155,7 +155,7 @@ function Card({ g, artwork, said: { line, tone, check, bar }, chip, children }: 
       <div className="board__head">
         <Cover g={g} artwork={artwork} size="row" />
         <div className="board__name">
-          <span className="board__title"><ReleaseName g={g} /></span>
+          <span className="board__title" title={g.title}><ReleaseName g={g} /></span>
           <span className="board__chips">
             {format && <FormatBadge label={format.label} tier={format.tier} title={format.description} />}
             {chip && <span className="board__chip">{chip}</span>}
@@ -216,7 +216,7 @@ export function DownloadsBoard({
   return (
     <>
       <LayoutHeader groups={session.groups} now={now} handoff={handoff} tools={tools} />
-      <div className="pane__scroll">
+      <div className="pane__scroll board__scroll">
         {notices}
         <div className="board">
           <Column id="queued" title="Queued by peer" note="Waiting for a slot on their side" count={cols.queued.length}>

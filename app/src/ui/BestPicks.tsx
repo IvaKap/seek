@@ -112,9 +112,11 @@ export function BestPicks({
     if (hover || focus || pressed.current.has(id) || badgeOf(p) !== 'idle') held[p.kind] = id;
   }
   const { overall, fastest, release } = held;
+  const last = shown.current.find((p) => p.kind === 'release');
+  const before = last && pickId(last);
   const picks = useMemo(
-    () => bestPicks(pool, rules, { overall, fastest, release }),
-    [pool, rules, overall, fastest, release],
+    () => bestPicks(pool, rules, { overall, fastest, release }, { release: before }),
+    [pool, rules, overall, fastest, release, before],
   );
   useEffect(() => { shown.current = picks; }, [picks]);
 

@@ -212,7 +212,42 @@ class TestTheCommand:
     def test_a_malformed_record_is_dropped_not_sent(self, tmp_path, monkeypatch):
         """The validator drops a whole event over one bad row."""
         host, _ = _host(tmp_path, monkeypatch, {})
-        host._save_state(handoff_sent=[{"transferId": "a1"}, "junk", {
+        host._save_handoff([{"transferId": "a1"}, "junk", {
             "transferId": "b2", "user": "u", "path": "p", "dest": "/d", "sentAt": 1,
         }])
-        assert [row["transferId"] for row in host._cmd_handoff_list(None)["sent"]] == ["b2"]
+        assert [row["transferId"] for row in host._handoff_sent()] == ["b2"]
+
+    def test_the_record_keeps_out_of_seek_state(self, tmp_path, monkeypatch):
+        """Every save of anything rewrites seek-state.json, so 5,000 rows there
+        cost every finished download its share of 1.6 MB."""
+        rb = tmp_path / "RB"
+        rb.mkdir()
+        good = _file(tmp_path / "Downloads" / "Release" / "01.flac")
+        host, _ = _host(tmp_path, monkeypatch, {"a1": good})
+        host._save_state(rekordbox_folder=str(rb))
+        host._cmd_handoff_send({"transferIds": ["a1"]})
+        assert "handoff_sent" not in host._load_state()
+        assert [row["transferId"] for row in host._handoff_sent()] == ["a1"]
+
+    def test_only_what_is_in_the_folder_now_is_sent(self, tmp_path, monkeypatch):
+        """Another folder, or another stick under the same name, holds none of
+        the old copies: they are sendable again, and the record is kept."""
+        rb, other = tmp_path / "RB", tmp_path / "Other"
+        rb.mkdir()
+        other.mkdir()
+        good = _file(tmp_path / "Downloads" / "Release" / "01.flac")
+        host, _ = _host(tmp_path, monkeypatch, {"a1": good})
+        host._save_state(rekordbox_folder=str(rb))
+        host._cmd_handoff_send({"transferIds": ["a1"]})
+        assert len(host._cmd_handoff_list(None)["sent"]) == 1
+
+        host._save_state(rekordbox_folder=str(other))
+        assert host._cmd_handoff_list(None)["sent"] == []
+        host._save_state(rekordbox_folder=str(rb))
+        assert len(host._cmd_handoff_list(None)["sent"]) == 1
+
+        (rb / "Release" / "01.flac").unlink()             # the stick swapped
+        assert host._cmd_handoff_list(None)["sent"] == []
+        host._cmd_handoff_send({"transferIds": ["a1"]})
+        assert host.bridge.events[-2][1]["results"][0]["outcome"] == "copied"
+        assert len(host.bridge.events[-1][1]["sent"]) == 1

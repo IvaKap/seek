@@ -353,9 +353,14 @@ writes the Rekordbox database.
   written under a hidden name and renamed into place.
 - **Its place is kept.** A file lands at its path under the download folder, so
   two multi-disc releases' `CD1/01.flac` cannot meet.
-- **Remembered.** The sidecar keeps what went (`handoff_sent` in
-  seek-state.json), so *Sent* survives a restart. The folder must exist: an
-  unplugged drive fails rather than being recreated on the internal disk.
+- **Remembered.** The sidecar keeps what went in its own file
+  (`seek-handoff.json`, not seek-state.json, which every setting rewrites), so
+  *Sent* survives a restart. The folder must exist: an unplugged drive fails
+  rather than being recreated on the internal disk.
+- **Sent means it is there.** Only copies still in the folder set now count:
+  another folder, another stick under the same name, or a copy deleted in
+  Finder makes the release sendable again. Seek asks again whenever it comes to
+  the front.
 - **The person sends.** A wishlist download waiting for review is not offered
   until it is kept. `sidecar/seek_sidecar/handoff.py`,
   `app/src/ui/HandoffButton.tsx`.
@@ -408,7 +413,10 @@ people have, *Fastest* is that track's copy likely to arrive soonest (never belo
 pick is one peer's file or folder, and Get takes exactly that copy: the ranking
 orders, it never chooses. Picks honour the filters and the download rules
 ("Prefer lossless" included), are never a suspected transcode or buddy-only, and
-hold still under the pointer while results stream in. `app/src/domain/bestPicks.ts`.
+hold still under the pointer while results stream in. *Whole release* also holds
+without the pointer: it moves only to a record with twice the copies, or to a
+fuller copy of its own, since following every answer flipped it ten times in
+twelve seconds. `app/src/domain/bestPicks.ts`.
 Collector shows the same picks as one line of chips above the table, and each
 chip is the Get for the copy it names.
 

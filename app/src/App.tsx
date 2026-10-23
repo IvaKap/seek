@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SIDEBAR_KEY, Sidebar } from './ui/Sidebar.tsx';
+import { inProgress } from './ui/DownloadsSimple.tsx';
 import { UpdateBanner } from './ui/UpdateBanner.tsx';
 import type { ConnectionStatus, Section } from './ui/Sidebar.tsx';
 import type { SearchSession } from './data/searchStore.ts';
@@ -276,6 +277,7 @@ export default function App() {
     session.client, wishHits, transfers, analysis, prefs.settings, isSignedIn(session.serverState),
   );
   const awaiting = autoDownloads.claims.filter((c) => c.status === 'awaiting-review');
+  const downloading = useMemo(() => inProgress(transfers.groups), [transfers.groups]);
   awaitingReview.current = new Set(awaiting.filter((c) => c.transferId).map((c) => c.transferId));
   /* Greet somebody the first time they finish downloading from you. Mounted
      here for the same reason as auto-download: an upload completes whether or
@@ -980,7 +982,7 @@ export default function App() {
       <Sidebar
         active={section}
         onSelect={go}
-        downloadCount={transfers.activeCount}
+        downloadCount={downloading}
         browsingUser={browse.current?.username ?? null}
         status={connectionStatus(session)}
         client={session.client}

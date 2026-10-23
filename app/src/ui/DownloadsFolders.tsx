@@ -133,8 +133,8 @@ export function folderTree({ groups, now, checks, handoff, review, downloadFolde
 
 /**
  * The Rekordbox folder, from the hand-off's own record rather than the list:
- * every release that went, including one only partly sent and one since
- * cleared from Completed. One folder per release, as the list groups them
+ * every release whose copies are there now, including one only partly sent
+ * and one since cleared from Completed. One folder per release, as the list groups them
  * (who it came from, and its remote folder). Newest first.
  */
 function rekordboxRoot(folder: string, h: HandoffBits['session'], groups: readonly TransferGroup[]): TreeNode {
@@ -237,7 +237,9 @@ export function DownloadsFolders({
   };
   walk(roots, 0);
   const chosen = rows.find((r) => r.node.key === picked)?.node ?? roots[0];
-  const crumbs = chosen.path ? homeShort(chosen.path).split('/').filter(Boolean) : [chosen.name];
+  const parts = chosen.path ? homeShort(chosen.path).split('/').filter(Boolean) : [chosen.name];
+  // The end of a path is the part that says where: a deep one keeps its last three.
+  const crumbs = parts.length > 4 ? ['…', ...parts.slice(-3)] : parts;
 
   const pick = (node: TreeNode) => {
     setPicked(node.key);
@@ -267,12 +269,12 @@ export function DownloadsFolders({
         {notices}
         <div className="dlf">
           <div className="dlf__bar">
-            <nav className="dlf__crumbs" aria-label="Selected path">
+            <nav className="dlf__crumbs" aria-label="Selected path" title={chosen.path ?? undefined}>
               {crumbs.map((c, i) => (
                 // By position: a path can name the same folder twice.
                 <span key={i} className="dlf__crumb" aria-current={i === crumbs.length - 1 ? 'location' : undefined}>
                   {i > 0 && <span aria-hidden className="dlf__sep">›</span>}
-                  {c}
+                  <span className="dlf__crumbtext">{c}</span>
                 </span>
               ))}
             </nav>

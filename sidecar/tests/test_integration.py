@@ -308,7 +308,7 @@ async def test_a_good_download_folder_is_stored_expanded(host, client, tmp_path)
     assert host.config.sections["transfers"]["downloaddir"] == str(folder)
 
 
-async def test_the_rekordbox_folder_is_checked_stored_and_cleared(host, client, tmp_path):
+async def test_the_rekordbox_folder_is_checked_stored_and_cleared(host, client, tmp_path, monkeypatch):
     """Seek's own, so it lands in seek-state.json, never the Nicotine+ config;
     checked like the download folder, and an empty string clears it."""
     blank = {"downloadFolder": None, "incompleteFolder": None, "listenPort": None,
@@ -321,11 +321,15 @@ async def test_the_rekordbox_folder_is_checked_stored_and_cleared(host, client, 
 
     folder = tmp_path / "To Rekordbox"
     folder.mkdir()
+    heard, say = [], host.bridge.broadcast
+    monkeypatch.setattr(host.bridge, "broadcast", lambda name, data: (heard.append((name, data)), say(name, data)))
     reply = await call(host, client, "settings.patch",
                        {"settings": {**blank, "rekordboxFolder": f"{folder}/"}})
     assert reply["result"]["settings"]["rekordboxFolder"] == str(folder)
     assert host._load_state()["rekordbox_folder"] == str(folder)
     assert "rekordbox" not in str(host.config.sections).lower()
+    # What is Sent follows the folder, so the app hears it change.
+    assert ("handoff.state", {"sent": []}) in heard
 
     reply = await call(host, client, "settings.patch",
                        {"settings": {**blank, "rekordboxFolder": ""}})

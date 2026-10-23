@@ -3675,7 +3675,11 @@ export interface HandoffSent {
 }
 
 export interface HandoffState {
-  /** Newest last. Capped; the oldest go first. */
+  /**
+   * What is in the Rekordbox folder now: the record's files whose copy is
+   * still there, under the folder set now. Newest last. Capped; the oldest go
+   * first.
+   */
   sent: HandoffSent[];
 }
 
@@ -4120,7 +4124,7 @@ export interface CommandParams {
    * reports each file, then `handoff.state` the record.
    */
   'handoff.send': HandoffSendParams;
-  /** What Seek has put in the Rekordbox folder. */
+  /** What Seek put in the Rekordbox folder that is still there. */
   'handoff.list': Record<string, never>;
   /** Show a file or folder in Finder, selected. */
   'fs.reveal': RevealParams;
@@ -4456,7 +4460,7 @@ export interface EventPayload {
   'wishlist.state': WishlistState;
   /** A `handoff.send` finished, file by file. */
   'handoff.done': HandoffDone;
-  /** Files were put in the Rekordbox folder. */
+  /** What is in the Rekordbox folder changed: files went, or the folder did. */
   'handoff.state': HandoffState;
   /** The buddy list changed. */
   'buddies.state': BuddyState;

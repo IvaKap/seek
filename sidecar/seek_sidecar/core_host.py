@@ -4516,9 +4516,25 @@ class CoreHost:
     #: Most hand-offs remembered. The oldest records go first; the files stay.
     HANDOFF_CAP = 5000
 
+    def _handoff_path(self):
+        # Its own file, not seek-state.json: at the cap the record is 1.6 MB,
+        # and every save of anything re-reads and rewrites the whole state,
+        # which made each finished download cost ~50 ms on the main thread.
+        return os.path.join(self.data_folder, "seek-handoff.json")
+
     def _handoff_sent(self):
-        """The ledger, minus any row the validator would drop the event over."""
-        rows = self._load_state().get("handoff_sent")
+        """The ledger, minus any row the validator would drop the event over.
+
+        Unreadable is empty: losing the record loses no file, and sending again
+        finds each copy already there."""
+        try:
+            with open(self._handoff_path(), encoding="utf-8") as handle:
+                rows = json.load(handle)
+        except FileNotFoundError:
+            rows = []
+        except (OSError, ValueError):
+            log.exception("seek-handoff.json unreadable; starting the record again")
+            rows = []
         return [
             row for row in (rows if isinstance(rows, list) else [])
             if isinstance(row, dict)
@@ -4526,8 +4542,39 @@ class CoreHost:
             and isinstance(row.get("sentAt"), (int, float))
         ]
 
+    def _save_handoff(self, rows):
+        """Atomic, like `_save_state`. Logged, not raised: the copies happened,
+        and an unsaved record is no reason to report them as failed."""
+        path = self._handoff_path()
+        tmp = f"{path}.tmp"
+        try:
+            os.makedirs(self.data_folder, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(rows, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except OSError:
+            log.exception("could not save the hand-off record")
+
+    def _handoff_present(self):
+        """The record's rows whose copy is in the Rekordbox folder now.
+
+        What went where is history; what is THERE is the disk's to say. A new
+        folder, or another stick mounted under the same name, holds none of the
+        old copies, and calling them Sent would leave nothing to send them with.
+        """
+        folder = self._resolve_path(self._load_state().get("rekordbox_folder"))
+        if not folder:
+            return []
+        inside = os.path.join(folder, "")
+        # ponytail: one stat per row, 5,000 at the cap; list each release
+        # folder once instead if a slow drive ever makes this felt.
+        return [row for row in self._handoff_sent()
+                if row["dest"].startswith(inside) and os.path.isfile(row["dest"])]
+
     def _cmd_handoff_list(self, _params):
-        return {"sent": self._handoff_sent()}
+        return {"sent": self._handoff_present()}
 
     def _cmd_handoff_send(self, params):
         """Check the folder and find the files here; copy on the post worker.
@@ -4578,7 +4625,7 @@ class CoreHost:
                                 "dest": None} for job in jobs], None
         self.bridge.broadcast("handoff.done", {"results": results})
         if ledger is not None:
-            self.bridge.broadcast("handoff.state", {"sent": ledger})
+            self.bridge.broadcast("handoff.state", {"sent": self._handoff_present()})
 
     def _handoff_copy(self, folder, root, jobs):
         now = time.time()
@@ -4601,9 +4648,7 @@ class CoreHost:
             with _STATE_LOCK:
                 kept = [row for row in self._handoff_sent() if row["transferId"] not in ids]
                 ledger = (kept + sent)[-self.HANDOFF_CAP:]
-                # Not `_store`: the copies happened, and an unsaved record is
-                # no reason to report them as failed.
-                self._save_state(handoff_sent=ledger)
+                self._save_handoff(ledger)
             return results, ledger
         return results, None
 
@@ -5178,6 +5223,8 @@ class CoreHost:
             self._store(stall_seconds=self.transfers.stall_seconds)
         if rekordbox is not None:
             self._store(rekordbox_folder=rekordbox)
+            # Another folder holds other copies: what is Sent changes with it.
+            self.bridge.broadcast("handoff.state", {"sent": self._handoff_present()})
         return {"settings": self._read_settings()}
 
     def _read_settings(self):

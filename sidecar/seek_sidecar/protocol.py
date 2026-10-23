@@ -2943,7 +2943,9 @@ class HandoffSent(TypedDict):
 
 
 class HandoffState(TypedDict):
-    # Newest last. Capped; the oldest go first.
+    # What is in the Rekordbox folder now: the record's files whose copy is
+    # still there, under the folder set now. Newest last. Capped; the oldest
+    # go first.
     sent: List["HandoffSent"]
 
 

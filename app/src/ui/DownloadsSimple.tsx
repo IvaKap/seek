@@ -142,6 +142,15 @@ export function Rescue({ g, session, onFindAnother, className = 'btn pressable' 
   );
 }
 
+/** Releases coming down or waiting to: the header's count, and the sidebar
+ * badge's, which counted files and said 216 beside a header saying 20. */
+export function inProgress(groups: readonly TransferGroup[]): number {
+  return groups.filter((g) => {
+    const kind = downloadsKind(g, 0);  // the time only decides which finishes are news
+    return kind === 'moving' || kind === 'waiting';
+  }).length;
+}
+
 /**
  * Downloads' header in Simple: the counts, the layout switch, and in Board and
  * Folders where Send to Rekordbox copies to.
@@ -154,18 +163,17 @@ export function LayoutHeader({ groups, now, handoff, tools }: {
   tools?: ReactNode;
 }) {
   // Counted as the list's sections count them, so switching layouts changes nothing.
-  const kinds = groups.map((g) => downloadsKind(g, now));
-  const inProgress = kinds.filter((k) => k === 'moving' || k === 'waiting').length;
-  const total = groups.reduce((n, g, i) => n + (kinds[i] === 'moving' ? g.speed : 0), 0);
+  const count = inProgress(groups);
+  const total = groups.reduce((n, g) => n + (downloadsKind(g, now) === 'moving' ? g.speed : 0), 0);
   const own = tools && <div className="dls__tools">{tools}</div>;
   const folder = handoff?.session.folder;
   return (
     <header data-tauri-drag-region="deep" className="header header--plain dls__header">
       <div className="dls__heading">
         <h1 className="pane__title">Downloads</h1>
-        {inProgress > 0 && (
+        {count > 0 && (
           <p className="pane__subtitle tnum">
-            {integer(inProgress)} in progress{total > 0 && ` · ${speed(total)} in total`}
+            {integer(count)} in progress{total > 0 && ` · ${speed(total)} in total`}
           </p>
         )}
       </div>

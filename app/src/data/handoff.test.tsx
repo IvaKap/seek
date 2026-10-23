@@ -68,6 +68,20 @@ describe('the record', () => {
     expect([...box.s!.sent.keys()]).toEqual(['a', 'b']);
   });
 
+  it('asks again when Seek comes to the front, since a stick may have been swapped', async () => {
+    let ledger = [row('a')];
+    const { client } = fakeClient(async (cmd) => (cmd === 'handoff.list' ? { sent: ledger } : {}));
+    const box: { s?: HandoffSession } = {};
+    function Probe() { box.s = useHandoff(client, '/RB'); return null; }
+    render(<StrictMode><Probe /></StrictMode>);
+    await act(async () => {});
+    expect([...box.s!.sent.keys()]).toEqual(['a']);
+
+    ledger = [];
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(box.s!.sent.size).toBe(0);
+  });
+
   it('marks files on their way, then each one done or refused', async () => {
     const { client, emit } = fakeClient(async (cmd) => (cmd === 'handoff.list' ? { sent: [] } : {}));
     const box: { s?: HandoffSession } = {};

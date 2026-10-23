@@ -3,9 +3,10 @@
  * folder, what it is copying now, and what it could not.
  * SPDX-License-Identifier: GPL-3.0-or-later
  *
- * The sidecar keeps the record (`handoff_sent` in seek-state.json), so "Sent"
- * survives a restart; this mirrors it, plus the two things only this session
- * can know: which files are on their way, and which the last send refused.
+ * The sidecar keeps the record (seek-handoff.json), so "Sent" survives a
+ * restart, and reports only the copies still in the folder set now. This
+ * mirrors that, plus the two things only this session can know: which files
+ * are on their way, and which the last send refused.
  *
  * Keyed by transfer id. Ids are a hash of user and remote path, so they are
  * the same after a restart, and a sent row whose transfer was cleared still
@@ -23,7 +24,7 @@ import type { SidecarClient } from './sidecarClient.ts';
 export interface HandoffSession {
   /** Where files go. Null when none is set; Send then opens Settings. */
   folder: string | null;
-  /** What Seek has put there, by transfer id. */
+  /** What Seek put there and is still there, by transfer id. */
   sent: ReadonlyMap<string, HandoffSent>;
   /** Asked for and not reported yet. */
   sending: ReadonlySet<string>;
@@ -62,7 +63,11 @@ export function useHandoff(client: SidecarClient | null, folder: string | null):
     }
     const read = () => readUntilAnswered<HandoffState>(client, 'handoff.list', undefined, (r) => setSent(byId(r.sent)));
     let stop = read();
-    const offDrop = onReconnect(client, unsend, () => { stop(); stop = read(); });
+    const again = () => { stop(); stop = read(); };
+    const offDrop = onReconnect(client, unsend, again);
+    /* A stick swapped, or a copy deleted in Finder, happened while Seek was
+       behind: what is in the folder is asked again when it comes to the front. */
+    window.addEventListener('focus', again);
     const offState = client.on('handoff.state', (d) => setSent(byId((d as HandoffState).sent)));
     const offDone = client.on('handoff.done', (d) => {
       const { results } = d as HandoffDone;
@@ -76,7 +81,7 @@ export function useHandoff(client: SidecarClient | null, folder: string | null):
         return next;
       });
     });
-    return () => { offDrop(); offState(); offDone(); stop(); };
+    return () => { offDrop(); offState(); offDone(); stop(); window.removeEventListener('focus', again); };
   }, [client]);
 
   const send = useCallback(async (transferIds: string[]) => {

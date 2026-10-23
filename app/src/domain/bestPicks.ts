@@ -73,7 +73,32 @@ function sooner(a: SourceFile, b: SourceFile): number {
 const first = <T>(items: T[], order: (a: T, b: T) => number): T | undefined =>
   items.reduce<T | undefined>((top, x) => (top === undefined || order(x, top) < 0 ? x : top), undefined);
 
-export function bestPicks(pool: PickPool, rules: DownloadPrefs, pins: PickPins = {}): BestPick[] {
+const lossless = (r: Release) => r.files.every((f) => f.quality.lossless);
+
+/** A record's copy to show: its best, or under "Prefer lossless" its best lossless one. */
+const bestCopy = (copies: Release[], rules: DownloadPrefs) =>
+  (rules.preferLossless ? copies.find(lossless) : undefined) ?? copies[0];
+
+/**
+ * Whole release holds what it showed while answers arrive. Copy counts and
+ * scores move with every answer, and a card that followed them changed ten
+ * times in twelve seconds. It moves to a record with twice the copies of its
+ * own, and within its own record to a fuller copy, or to a lossless one under
+ * "Prefer lossless". A lead of two flipped it seven times as copies arrived in
+ * bursts; double settled in three, on the record the search was for.
+ */
+function steady(
+  before: Release | undefined, records: Release[][], lead: Release[] | undefined, rules: DownloadPrefs,
+): Release | undefined {
+  const own = before && records.find((copies) => copies.includes(before));
+  if (!before || !own || (lead && lead.length >= Math.max(own.length * 2, own.length + 2))) return lead && bestCopy(lead, rules);
+  const rival = bestCopy(own, rules);
+  return rival.trackCount > before.trackCount || (rules.preferLossless && lossless(rival) && !lossless(before))
+    ? rival : before;
+}
+
+/** `shown` is what was on screen last time: held more loosely than a pin (see `steady`). */
+export function bestPicks(pool: PickPool, rules: DownloadPrefs, pins: PickPins = {}, shown: PickPins = {}): BestPick[] {
   const picks: BestPick[] = [];
   const folderOf = (s: SourceFile) => pool.releases.find((r) => r.files[0]?.releaseKey === s.releaseKey) ?? null;
 
@@ -105,11 +130,10 @@ export function bestPicks(pool: PickPool, rules: DownloadPrefs, pins: PickPins =
    * its copies are already ranked best first (completeness, then score). */
   const folders = pool.releases.filter((r) => r.trackCount >= 2 && r.suspectCount === 0
     && r.files.every((f) => !f.private) && judgeRelease(r.files, rules).allowed);
-  const record = first([...new Set(groupCopies(folders).values())], (a, b) =>
-    b.length - a.length || b[0].score - a[0].score);
+  const records = [...new Set(groupCopies(folders).values())];
+  const record = first(records, (a, b) => b.length - a.length || b[0].score - a[0].score);
   const release = folders.find((r) => r.id === pins.release)
-    ?? (rules.preferLossless ? record?.find((r) => r.files.every((f) => f.quality.lossless)) : undefined)
-    ?? record?.[0];
+    ?? steady(folders.find((r) => r.id === shown.release), records, record, rules);
   if (release) picks.push({ kind: 'release', release });
 
   return picks;

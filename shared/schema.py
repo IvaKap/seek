@@ -3123,7 +3123,8 @@ STRUCTS = {
     ),
     "HandoffState": (
         "",
-        [("sent", "HandoffSent[]", "Newest last. Capped; the oldest go first.")],
+        [("sent", "HandoffSent[]", "What is in the Rekordbox folder now: the record's files whose copy is "
+                   "still there, under the folder set now. Newest last. Capped; the oldest go first.")],
     ),
 }
 
@@ -3602,7 +3603,7 @@ COMMANDS = {
         "HandoffSendParams",
         None,
     ),
-    "handoff.list": ("What Seek has put in the Rekordbox folder.", None, "HandoffState"),
+    "handoff.list": ("What Seek put in the Rekordbox folder that is still there.", None, "HandoffState"),
     "fs.reveal": (
         "Show a file or folder in Finder, selected.",
         "RevealParams",
@@ -3682,7 +3683,7 @@ EVENTS = {
     "shares.state": ("Share configuration or scan state changed.", "ShareState"),
     "wishlist.state": ("The wishlist or its interval changed.", "WishlistState"),
     "handoff.done": ("A `handoff.send` finished, file by file.", "HandoffDone"),
-    "handoff.state": ("Files were put in the Rekordbox folder.", "HandoffState"),
+    "handoff.state": ("What is in the Rekordbox folder changed: files went, or the folder did.", "HandoffState"),
     "buddies.state": ("The buddy list changed.", "BuddyState"),
     "library.state": ("Index changed, or a scan progressed.", "LibraryState"),
     "app.settings": ("Preferences changed.", "AppSettings"),

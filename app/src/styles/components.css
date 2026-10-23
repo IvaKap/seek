@@ -1909,9 +1909,12 @@
      Cancel, and every column to its left shifted to compensate. The header,
      whose last cell is empty, sized it to ZERO and lined up with nothing at
      all. Fixed width is what makes independent grids agree. */
-  /* active: name | status | files | size | progress | speed | eta | format | from | actions */
+  /* active: name | status | files | size | progress | speed | eta | format | from | actions.
+     The actions track is a sliver: they show on hover only, and already spill
+     left over an opaque copy of the row (below). At 8rem it stood empty, and
+     the release name got 171 px at 1280. */
   grid-template-columns:
-    minmax(8rem, 1fr) minmax(8rem, 0.8fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 3.75rem 7.5rem 8rem;
+    minmax(8rem, 2fr) minmax(8rem, 0.8fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 3.75rem 7.5rem 1.5rem;
 }
 .dls[data-density='table'][data-filter='finished'] .dl__row,
 .dls[data-density='table'][data-filter='finished'] .dl__thead {
@@ -1941,7 +1944,7 @@
 @container dls (max-width: 72em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 5.5rem 3.75rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 5.5rem 3.75rem 7.5rem 1.5rem;
   }
   .dls[data-filter='active'] .dl__row > :is(:nth-child(3), :nth-child(7)),
   .dls[data-filter='active'] .dl__thead > :is(:nth-child(3), :nth-child(7)) { display: none; }
@@ -1949,7 +1952,7 @@
 @container dls (max-width: 64em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 3.75rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 3.75rem 7.5rem 1.5rem;
   }
   .dls[data-filter='active'] .dl__row > :nth-child(6),
   .dls[data-filter='active'] .dl__thead > :nth-child(6) { display: none; }
@@ -1957,7 +1960,7 @@
 @container dls (max-width: 56em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 5rem 6.5rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 7.5rem 1.5rem;
   }
   .dls[data-filter='active'] .dl__row > :nth-child(8),
   .dls[data-filter='active'] .dl__thead > :nth-child(8) { display: none; }
@@ -1970,7 +1973,7 @@
   }
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) minmax(8rem, 0.8fr) 6.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 6.5rem 1.5rem;
   }
   .dls[data-density='table'][data-filter='finished'] .dl__row,
   .dls[data-density='table'][data-filter='finished'] .dl__thead {
@@ -4436,8 +4439,12 @@
 
 /* ------------------------------------------------------- downloads, board */
 /* Downloads · Board (Simple): five columns, a card per release. The columns
-   share the width; below about five 11rem columns the row scrolls sideways
-   inside its own box rather than the page. */
+   share the width; below five 11rem columns the board scrolls sideways, a
+   column at a time. Not wrapped: a second row put Ready, the column you act
+   on, under every queued card. The board is its own scroller, filling the
+   pane, so its sideways scrollbar sits at the window's foot rather than under
+   the longest column, out of sight. */
+.board__scroll { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--sp-2); }
 .board__tools { flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
 .board__folder {
   max-width: 22rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
@@ -4445,11 +4452,19 @@
 }
 .board__notices:empty { display: none; }
 .board {
+  flex: 1 1 0; min-height: 0; overflow: auto;
   display: flex; align-items: flex-start; gap: var(--sp-3);
-  overflow-x: auto; padding: var(--sp-2) 0 var(--sp-4);
+  padding: var(--sp-2) 0 var(--sp-4);
+  scroll-snap-type: x proximity;
 }
+/* A styled scrollbar is one WebKit always draws. The overlay kind macOS uses
+   by default stays hidden until a scroll starts, so at the window's narrowest
+   nothing said that Ready and Sent were off to the right. */
+.board::-webkit-scrollbar { width: 8px; height: 8px; }
+.board::-webkit-scrollbar-track { background: transparent; }
+.board::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--text-quaternary); }
 .board__col {
-  flex: 1 1 0; min-width: 11rem;
+  flex: 1 1 0; min-width: 11rem; scroll-snap-align: start;
   display: flex; flex-direction: column; gap: var(--sp-2);
   padding: var(--sp-2) calc(var(--sp-2) + 2px);
   border: 0.5px solid var(--separator); border-radius: var(--radius-lg);
@@ -4458,8 +4473,8 @@
 .board__colhead { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
 .board__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
 .board__n { margin-left: 2px; font-weight: normal; color: var(--text-tertiary); }
-.board__note { font-size: var(--fs-micro); color: var(--text-tertiary); }
-.board__empty { margin: 0; padding: var(--sp-2) 2px; font-size: var(--fs-caption); color: var(--text-quaternary); }
+.board__note { font-size: var(--fs-micro); color: var(--text-secondary); }
+.board__empty { margin: 0; padding: var(--sp-2) 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
 .board__cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 .board__card {
   display: flex; flex-direction: column; gap: var(--sp-2);
@@ -4471,7 +4486,11 @@
 .board__card[data-tone='broken'] { border: 1px solid var(--warn); }
 .board__head { display: flex; align-items: center; gap: calc(var(--sp-2) + 2px); min-width: 0; }
 .board__name { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0; }
-.board__title { font-size: var(--fs-secondary); overflow-wrap: anywhere; }
+.board__title {
+  font-size: var(--fs-secondary); overflow-wrap: anywhere;
+  /* Two lines, then the card's tooltip: three made every card a paragraph. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
 .board__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .board__chip {
   padding: 1px 6px; border-radius: var(--radius-sm);
@@ -4498,7 +4517,11 @@
   flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden;
   font-size: var(--fs-secondary); color: var(--text-secondary);
 }
-.dlf__crumb { display: inline-flex; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Only the last crumb gives way, and with an ellipsis: every crumb shrinking
+   at once cut a long path into fragments that named nothing. */
+.dlf__crumb { display: inline-flex; gap: 6px; flex: none; white-space: nowrap; }
+.dlf__crumb[aria-current] { flex: 0 1 auto; min-width: 0; }
+.dlf__crumbtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dlf__crumb[aria-current] { color: var(--text-primary); font-weight: var(--fw-medium); }
 .dlf__sep { color: var(--text-quaternary); }
 .dlf__table {
@@ -4506,8 +4529,16 @@
   background: var(--bg-raised); padding: var(--sp-1);
 }
 .dlf__head, .dlf__row {
-  display: grid; grid-template-columns: minmax(0, 1fr) 4rem 5.25rem minmax(8rem, 16rem);
+  /* The status shares the slack with the name: capped at 16rem it clipped
+     "254 MB of 526 MB · 1.7 MB/s" even at 1280 px. */
+  display: grid; grid-template-columns: minmax(0, 3fr) 4rem 5.25rem minmax(9rem, 2fr);
   align-items: center; column-gap: var(--sp-2);
+}
+/* Narrow: Files and Size go before the names do. Both are a click away, in
+   the selected row's path and in Finder; a name cut to its first word is not. */
+@container (max-width: 40rem) {
+  .dlf__head, .dlf__row { grid-template-columns: minmax(0, 3fr) minmax(8rem, 2fr); }
+  .dlf__files, .dlf__size { display: none; }
 }
 .dlf__head {
   padding: var(--sp-1) var(--sp-2) var(--sp-1) calc(var(--sp-2) + 30px);

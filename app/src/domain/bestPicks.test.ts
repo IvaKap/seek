@@ -148,6 +148,34 @@ describe('against the recorded search', () => {
     expect(fastest.source.user).not.toBe(overall.source.user);
   });
 
+  /* Copy counts and scores move with every answer: followed blindly, the card
+     changed 17 times across this search's 125 answers. */
+  it('Whole release holds still while answers arrive, and still ends on Untrue', () => {
+    const live = createGrouper();
+    let shown: string | undefined;
+    let changes = 0;
+    let at = 0;
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      const { frame } = JSON.parse(line);
+      if (frame.ev !== 'search.result') continue;
+      at += 1;
+      const audio = { ...frame.data, files: frame.data.files.filter((f: WireFile) => isAudioPath(f.path)) };
+      if (audio.files.length === 0) continue;
+      adaptSearchResult(audio, at, () => 0.5).forEach((s) => live.add(s));
+      const pick = bestPicks({ tracks: live.tracks(live.all), releases: live.releases(live.all) }, RULES, {}, { release: shown })
+        .find((x) => x.kind === 'release');
+      const id = pick?.kind === 'release' ? pick.release.id : undefined;
+      if (shown !== undefined && id !== shown) changes += 1;
+      shown = id;
+    }
+    expect(changes).toBeLessThanOrEqual(3);
+    const last = bestPicks({ tracks: live.tracks(live.all), releases: live.releases(live.all) }, RULES, {}, { release: shown })
+      .find((x) => x.kind === 'release');
+    expect(last?.kind === 'release' && last.release.title).toMatch(/untrue/i);
+    expect(last?.kind === 'release' && last.release.trackCount).toBeGreaterThanOrEqual(10);
+  });
+
   it('the release is a clean, whole copy of Untrue, the record everyone has', () => {
     const release = picks.find((p) => p.kind === 'release');
     expect(release?.kind === 'release' && release.release.title).toMatch(/untrue/i);
