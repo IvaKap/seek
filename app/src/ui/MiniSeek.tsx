@@ -17,15 +17,13 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
-import { isFailed } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { AutoClaim } from '../../../shared/protocol.ts';
-import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
 import { integer } from '../domain/format.ts';
 import { IconMaximize, IconMinimize, IconSearch } from '../icons/index.tsx';
 import { Bar, Cover, ReleaseName } from './transferBits.tsx';
-import { another, downloadsKind, queueLine, rateAndTime } from './DownloadsSimple.tsx';
-import { troubleLine } from './CornerPanel.tsx';
+import { Rescue, Section, downloadsKind, queueLine, rateAndTime } from './DownloadsSimple.tsx';
+import { troubleLine, troubleTone } from './CornerPanel.tsx';
 import type { Kind } from './CornerPanel.tsx';
 
 /** The way into Mini Seek, in the Downloads header. ⇧⌘M and the palette are the others. */
@@ -59,16 +57,6 @@ function Row({ g, artwork, line, tone, bar, children }: {
         {children}
       </span>
     </li>
-  );
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id}>
-      <h2 id={id} className="mini__h">{title}</h2>
-      <ul className="mini__rows">{children}</ul>
-    </section>
   );
 }
 
@@ -141,12 +129,12 @@ export function MiniSeek({
           <p className="mini__empty">Nothing downloading</p>
         )}
         {moving.length > 0 && (
-          <Section title="Downloading">
+          <Section title="Downloading" block="mini">
             {moving.map((g) => <Row key={g.key} g={g} artwork={artwork} line={rateAndTime(g)} bar="active" />)}
           </Section>
         )}
         {waiting.length > 0 && (
-          <Section title="Waiting">
+          <Section title="Waiting" block="mini">
             {waiting.map((g) => (
               <Row
                 key={g.key} g={g} artwork={artwork} line={queueLine(g)}
@@ -156,27 +144,12 @@ export function MiniSeek({
           </Section>
         )}
         {trouble.length > 0 && (
-          <Section title="Needs attention">
-            {trouble.map((g) => {
-              // Only what a retry could change; a stall is still "active" upstream, which ignores a retry.
-              const retry = g.transfers.filter((t) => isFailed(t.state) && transferStatus(t).retryable).map((t) => t.id);
-              return (
-                <Row
-                  key={g.key} g={g} artwork={artwork} line={troubleLine(g)}
-                  tone={g.state === 'stalled' ? 'broken' : groupStatus(g.transfers)?.tone}
-                >
-                  {retry.length > 0 ? (
-                    <button type="button" className="btn pressable mini__act" onClick={() => session.retry(retry)}>
-                      Retry
-                    </button>
-                  ) : (
-                    <button type="button" className="btn pressable mini__act" onClick={() => onFindAnother(another(g))}>
-                      Find another copy
-                    </button>
-                  )}
-                </Row>
-              );
-            })}
+          <Section title="Needs attention" block="mini">
+            {trouble.map((g) => (
+              <Row key={g.key} g={g} artwork={artwork} line={troubleLine(g)} tone={troubleTone(g)}>
+                <Rescue g={g} session={session} onFindAnother={onFindAnother} className="btn pressable mini__act" />
+              </Row>
+            ))}
           </Section>
         )}
       </div>

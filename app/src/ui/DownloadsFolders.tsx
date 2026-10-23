@@ -16,7 +16,7 @@
 import { useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
-import { fileName } from '../data/transferStore.ts';
+import { fileName, firstFinished } from '../data/transferStore.ts';
 import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { AutoClaim, HandoffSent } from '../../../shared/protocol.ts';
 import { copyText } from '../data/clipboard.ts';
@@ -25,8 +25,8 @@ import { transferStatus } from '../domain/transferStatus.ts';
 import { count, fileSize, integer, since, speed } from '../domain/format.ts';
 import { IconChevronRight, IconRelease, IconTrack } from '../icons/index.tsx';
 import { Bar } from './transferBits.tsx';
-import { LayoutHeader, boardColumns, homeShort, say } from './DownloadsBoard.tsx';
-import { downloadsKind } from './DownloadsSimple.tsx';
+import { boardColumns, say } from './DownloadsBoard.tsx';
+import { LayoutHeader, downloadsKind, homeShort } from './DownloadsSimple.tsx';
 import type { Column } from './DownloadsBoard.tsx';
 import type { HandoffBits } from './HandoffButton.tsx';
 
@@ -49,7 +49,6 @@ export interface TreeNode {
 }
 
 const leaf = (path: string) => path.slice(path.lastIndexOf('/') + 1) || path;
-const firstFinished = (g: TransferGroup) => g.transfers.find((t) => t.state === 'finished');
 
 /* ponytail: a finished file's path is its folder plus its remote name. Upstream
    renames a second copy "name (1).flac", and that one would show its first
@@ -214,12 +213,12 @@ function Row({ node, depth, open, current, onPick }: {
 }
 
 export function DownloadsFolders({
-  session, checksums, handoff, claims, now, downloadFolder, tools, notices,
+  session, checksums, handoff, review, now, downloadFolder, tools, notices,
 }: {
   session: TransferSession;
   checksums: ChecksumSession;
   handoff: HandoffBits;
-  claims: readonly AutoClaim[];
+  review: ReadonlyMap<string, AutoClaim>;
   now: number;
   downloadFolder: string | null;
   tools: ReactNode;
@@ -227,7 +226,6 @@ export function DownloadsFolders({
 }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set(['downloads', 'rekordbox']));
   const [picked, setPicked] = useState<string | null>(null);
-  const review = new Map(claims.filter((c) => c.status === 'awaiting-review').map((c) => [c.transferId, c]));
   const roots = folderTree({ groups: session.groups, now, checks: checksums.byTransfer, handoff, review, downloadFolder });
 
   const rows: { node: TreeNode; depth: number }[] = [];

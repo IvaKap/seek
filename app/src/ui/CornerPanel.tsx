@@ -82,6 +82,9 @@ export function troubleLine(g: TransferGroup): string {
   return groupStatus(g.transfers)?.text ?? 'Stopped';
 }
 
+/** Its tone: a stall reads as broken whatever its files say. */
+export const troubleTone = (g: TransferGroup) => (g.state === 'stalled' ? 'broken' : groupStatus(g.transfers)?.tone);
+
 /**
  * What a release is doing, in a few words for a Status column or a details
  * pane: the trouble line above for a release in trouble, so the panel and the

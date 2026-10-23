@@ -275,10 +275,8 @@ export default function App() {
   const autoDownloads = useAutoDownloads(
     session.client, wishHits, transfers, analysis, prefs.settings, isSignedIn(session.serverState),
   );
-  awaitingReview.current = new Set(
-    autoDownloads.claims.filter((c) => c.status === 'awaiting-review' && c.transferId)
-      .map((c) => c.transferId as string),
-  );
+  const awaiting = autoDownloads.claims.filter((c) => c.status === 'awaiting-review');
+  awaitingReview.current = new Set(awaiting.filter((c) => c.transferId).map((c) => c.transferId));
   /* Greet somebody the first time they finish downloading from you. Mounted
      here for the same reason as auto-download: an upload completes whether or
      not the Uploads screen is open. Off unless switched on in Settings. */
@@ -947,7 +945,7 @@ export default function App() {
         <MiniSeek
           session={transfers}
           artwork={artwork}
-          awaiting={autoDownloads.claims.filter((c) => c.status === 'awaiting-review')}
+          awaiting={awaiting}
           onTop={onTop}
           onKeepOnTop={changeOnTop}
           onSearch={(q) => { leaveMini('search'); searchTabs.openWith(q); }}

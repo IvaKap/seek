@@ -87,7 +87,7 @@ describe('the view', () => {
       <StrictMode>
         <DownloadsFolders
           session={session} checksums={{ byTransfer: new Map(), check: vi.fn() } as unknown as ChecksumSession}
-          handoff={bits(h)} claims={[]} now={NOW} downloadFolder="/Users/iva/Downloads" tools={null} notices={null}
+          handoff={bits(h)} review={new Map()} now={NOW} downloadFolder="/Users/iva/Downloads" tools={null} notices={null}
         />
       </StrictMode>,
     );

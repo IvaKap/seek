@@ -15,6 +15,7 @@
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TransferGroup } from '../data/transferStore.ts';
+import { firstFinished } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { PeerPictureCache } from '../data/peerProfiles.ts';
 import { isAudioPath } from '../data/adapt.ts';
@@ -60,7 +61,7 @@ export function DownloadInspector({
   const theirs = groups.filter((x) => x.username === g.username).length;
   const audio = g.transfers.filter((t) => isAudioPath(t.path)).length;
   const others = g.transfers.length - audio;
-  const done = g.transfers.find((t) => t.state === 'finished');
+  const done = firstFinished(g);
   const local = g.transfers.find((t) => t.localFolder)?.localFolder ?? null;
 
   return (

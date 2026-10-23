@@ -123,6 +123,9 @@ export const isTerminal = (s: TransferState) => (
   s === 'finished' || isFailed(s) || isCancelled(s)
 );
 
+/** A release's first finished file: what Show in Finder and a checksum check start from. */
+export const firstFinished = (g: TransferGroup) => g.transfers.find((t) => t.state === 'finished');
+
 /** Split a remote virtual path on the backslash Soulseek actually uses. */
 function splitPath(path: string): { folder: string; name: string } {
   const norm = path.replace(/\//g, '\\');

@@ -37,6 +37,13 @@ export interface HandoffSession {
 
 const byId = (rows: HandoffSent[]) => new Map(rows.map((row) => [row.transferId, row]));
 
+/** `prev` without `ids`: what a report or a refusal takes off the way. */
+const without = (ids: Iterable<string>) => (prev: ReadonlySet<string>) => {
+  const next = new Set(prev);
+  for (const id of ids) next.delete(id);
+  return next;
+};
+
 export function useHandoff(client: SidecarClient | null, folder: string | null): HandoffSession {
   const [sent, setSent] = useState<ReadonlyMap<string, HandoffSent>>(() => new Map());
   const [sending, setSending] = useState<ReadonlySet<string>>(() => new Set());
@@ -59,11 +66,7 @@ export function useHandoff(client: SidecarClient | null, folder: string | null):
     const offState = client.on('handoff.state', (d) => setSent(byId((d as HandoffState).sent)));
     const offDone = client.on('handoff.done', (d) => {
       const { results } = d as HandoffDone;
-      setSending((prev) => {
-        const next = new Set(prev);
-        for (const r of results) next.delete(r.transferId);
-        return next;
-      });
+      setSending(without(results.map((r) => r.transferId)));
       setFailed((prev) => {
         const next = new Map(prev);
         for (const r of results) {
@@ -86,11 +89,7 @@ export function useHandoff(client: SidecarClient | null, folder: string | null):
     } catch (error) {
       // Refused outright (no folder, or it has gone): nothing is on its way.
       // Lost in transit may still be copying, and its report will land anyway.
-      setSending((prev) => {
-        const next = new Set(prev);
-        for (const id of ids) next.delete(id);
-        return next;
-      });
+      setSending(without(ids));
       if (!lostInTransit(error)) throw new Error(readableError(error));
     }
   }, [client, sending]);

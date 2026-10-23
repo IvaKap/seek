@@ -11,7 +11,8 @@
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { DownloadsBoard, boardColumns, homeShort, say } from './DownloadsBoard.tsx';
+import { DownloadsBoard, boardColumns, say } from './DownloadsBoard.tsx';
+import { homeShort } from './DownloadsSimple.tsx';
 import { group } from '../data/transferStore.ts';
 import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
 import type { HandoffSession } from '../data/handoffStore.ts';
@@ -101,7 +102,7 @@ describe('the board', () => {
       session: { groups: group(transfers, 999_999, Date.now()), retry: vi.fn() } as unknown as TransferSession,
       checksums: { byTransfer: new Map(), check: vi.fn() } as unknown as ChecksumSession,
       handoff: { session: handoff, held: new Set((more.claims ?? []).map((c) => c.transferId)), onSetFolder: vi.fn() },
-      claims: more.claims ?? [], now: NOW, tools: null, notices: null,
+      review: new Map((more.claims ?? []).map((c) => [c.transferId, c])), now: NOW, tools: null, notices: null,
       onFindAnother: vi.fn(), onApproveAuto: vi.fn(), onRejectAuto: vi.fn(),
     };
     render(<StrictMode><DownloadsBoard {...props} /></StrictMode>);

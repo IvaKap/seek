@@ -22,18 +22,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
+import { firstFinished, isFailed } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { AutoClaim } from '../../../shared/protocol.ts';
 import { isAudioPath } from '../data/adapt.ts';
 import { classify } from '../domain/quality.ts';
 import type { Quality } from '../domain/types.ts';
-import { groupStatus } from '../domain/transferStatus.ts';
+import { transferStatus } from '../domain/transferStatus.ts';
 import { count, fileSize, integer, ordinal, spanWords, speed } from '../domain/format.ts';
 import { IconDownload } from '../icons/index.tsx';
 import { Bar, Cover, ReleaseName, groupEta, releaseOf } from './transferBits.tsx';
 import { FormatBadge } from './rows.tsx';
-import { finishedAt, kindOf, queuePlace, startsWhen, troubleLine } from './CornerPanel.tsx';
+import { finishedAt, kindOf, queuePlace, startsWhen, troubleLine, troubleTone } from './CornerPanel.tsx';
 import type { Kind } from './CornerPanel.tsx';
+import type { HandoffBits } from './HandoffButton.tsx';
 
 /** How long a finished release counts as just finished. Then it is Completed's. */
 const JUST_FINISHED_S = 3600;
@@ -118,6 +120,72 @@ function waitingLine(g: TransferGroup): string {
 export function another(g: TransferGroup): string {
   const { artist, release } = releaseOf(g);
   return [artist, release].filter(Boolean).join(' ') || g.title;
+}
+
+/** What will not come down offers a retry where a retry can change something,
+ * and another copy otherwise: Mini Seek and the Board both. */
+export function Rescue({ g, session, onFindAnother, className = 'btn pressable' }: {
+  g: TransferGroup;
+  session: TransferSession;
+  onFindAnother?(query: string): void;
+  className?: string;
+}) {
+  // Only what a retry could change; a stall is still "active" upstream, which ignores a retry.
+  const retry = g.transfers.filter((t) => isFailed(t.state) && transferStatus(t).retryable).map((t) => t.id);
+  if (retry.length > 0) {
+    return <button type="button" className={className} onClick={() => session.retry(retry)}>Retry</button>;
+  }
+  return onFindAnother && (
+    <button type="button" className={className} onClick={() => onFindAnother(another(g))}>
+      {g.bytesDone > 0 ? 'Try another copy' : 'Find another copy'}
+    </button>
+  );
+}
+
+/**
+ * Downloads' header in Simple: the counts, the layout switch, and in Board and
+ * Folders where Send to Rekordbox copies to.
+ */
+export function LayoutHeader({ groups, now, handoff, tools }: {
+  groups: readonly TransferGroup[];
+  now: number;
+  /** Board and Folders: the list has no Rekordbox folder line. */
+  handoff?: HandoffBits;
+  tools?: ReactNode;
+}) {
+  // Counted as the list's sections count them, so switching layouts changes nothing.
+  const kinds = groups.map((g) => downloadsKind(g, now));
+  const inProgress = kinds.filter((k) => k === 'moving' || k === 'waiting').length;
+  const total = groups.reduce((n, g, i) => n + (kinds[i] === 'moving' ? g.speed : 0), 0);
+  const own = tools && <div className="dls__tools">{tools}</div>;
+  const folder = handoff?.session.folder;
+  return (
+    <header data-tauri-drag-region="deep" className="header header--plain dls__header">
+      <div className="dls__heading">
+        <h1 className="pane__title">Downloads</h1>
+        {inProgress > 0 && (
+          <p className="pane__subtitle tnum">
+            {integer(inProgress)} in progress{total > 0 && ` · ${speed(total)} in total`}
+          </p>
+        )}
+      </div>
+      {handoff ? (
+        <div className="dls__tools board__tools">
+          {own}
+          {folder ? (
+            <span className="board__folder" title={folder}>Rekordbox folder: {homeShort(folder)}</span>
+          ) : (
+            <button type="button" className="corner__link" onClick={handoff.onSetFolder}>Choose a Rekordbox folder</button>
+          )}
+        </div>
+      ) : own}
+    </header>
+  );
+}
+
+/** `/Users/x/Music/RB` → `~/Music/RB`, as Finder's title bar would say it. */
+export function homeShort(path: string): string {
+  return path.replace(/^\/Users\/[^/]+(?=\/|$)/, '~');
 }
 
 /* ------------------------------------------------------------ speed chart */
@@ -265,11 +333,12 @@ function Row({ g, artwork, open, onToggle, line, tone, bar, trailing, children }
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** A titled list of rows. `block` names its classes: Mini Seek's are `mini`. */
+export function Section({ title, block = 'dlsimple', children }: { title: string; block?: string; children: ReactNode }) {
   return (
-    <section className="dlsimple__section" aria-label={title}>
-      <h2 className="dlsimple__h">{title}</h2>
-      <ul className="dlsimple__rows">{children}</ul>
+    <section className={`${block}__section`} aria-label={title}>
+      <h2 className={`${block}__h`}>{title}</h2>
+      <ul className={`${block}__rows`}>{children}</ul>
     </section>
   );
 }
@@ -315,22 +384,11 @@ export function SimpleDownloads({
   );
 
   const inProgress = (s.lead ? 1 : 0) + s.moving.length + s.waiting.length;
-  const total = [s.lead, ...s.moving].reduce((n, g) => n + (g?.speed ?? 0), 0);
   const empty = inProgress + s.trouble.length + s.finished.length + awaiting.length === 0;
 
   return (
     <>
-      <header data-tauri-drag-region="deep" className="header header--plain dls__header">
-        <div className="dls__heading">
-          <h1 className="pane__title">Downloads</h1>
-          {inProgress > 0 && (
-            <p className="pane__subtitle tnum">
-              {integer(inProgress)} in progress{total > 0 && ` · ${speed(total)} in total`}
-            </p>
-          )}
-        </div>
-        {tools && <div className="dls__tools">{tools}</div>}
-      </header>
+      <LayoutHeader groups={session.groups} now={now} tools={tools} />
       <div className="pane__scroll">
         <div className="dlsimple">
           {notices}
@@ -372,7 +430,7 @@ export function SimpleDownloads({
           {s.trouble.length > 0 && (
             <Section title="Needs attention">
               {s.trouble.map((g) => row(g, troubleLine(g), {
-                tone: g.state === 'stalled' ? 'broken' : groupStatus(g.transfers)?.tone,
+                tone: troubleTone(g),
                 bar: g.bytesDone > 0 ? 'trouble' : undefined,
                 trailing: onFindAnother && (
                   <button type="button" className="btn pressable" onClick={() => onFindAnother(another(g))}>
@@ -391,7 +449,7 @@ export function SimpleDownloads({
                   trailing: (
                     <button
                       type="button" className="btn pressable"
-                      onClick={() => session.reveal(g.transfers.find((t) => t.state === 'finished')?.id ?? g.transfers[0].id)}
+                      onClick={() => session.reveal(firstFinished(g)?.id ?? g.transfers[0].id)}
                     >
                       Show in Finder
                     </button>

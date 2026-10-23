@@ -14,7 +14,7 @@
 
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Transfer, TransferGroup, TransferSession } from '../data/transferStore.ts';
-import { fileName, isActive, isFailed, isTerminal } from '../data/transferStore.ts';
+import { fileName, firstFinished, isActive, isFailed, isTerminal } from '../data/transferStore.ts';
 import { ContextMenu } from './ContextMenu.tsx';
 import type { MenuItem, MenuRequest } from './ContextMenu.tsx';
 import { fileMenuItems } from './downloadMenu.ts';
@@ -221,7 +221,7 @@ function HashButton({
   open: boolean;
   onToggle(): void;
 }) {
-  const id = g.transfers.find((t) => t.state === 'finished')?.id;
+  const id = firstFinished(g)?.id;
   if (!id) return null;
 
   const cls = compact ? 'verify pressable' : 'btn pressable';
@@ -499,7 +499,7 @@ function Actions({
           type="button"
           className={cls}
           title="Show this release's files in Finder"
-          onClick={() => session.reveal(g.transfers.find((t) => t.state === 'finished')?.id ?? ids[0])}
+          onClick={() => session.reveal(firstFinished(g)?.id ?? ids[0])}
         >
           {compact ? 'Finder' : 'Show in Finder'}
         </button>
@@ -710,9 +710,7 @@ const Group = memo(function Group({
     />
   );
 
-  const hashEntry = checksums.byTransfer.get(
-    g.transfers.find((t) => t.state === 'finished')?.id ?? '',
-  );
+  const hashEntry = checksums.byTransfer.get(firstFinished(g)?.id ?? '');
   const hashPanel = hashOpen && hashEntry?.state === 'done' && (
     <ChecksumPanel report={hashEntry.report!} />
   );
@@ -1085,6 +1083,7 @@ export function DownloadsView({
     [autoClaims],
   );
   const awaitingIds = useMemo(() => new Set(awaiting.map((c) => c.transferId)), [awaiting]);
+  const review = useMemo(() => new Map(awaiting.map((c) => [c.transferId, c])), [awaiting]);
   const handoff = useMemo<HandoffBits | undefined>(() => handoffSession && ({
     session: handoffSession, held: awaitingIds, onSetFolder: onSetRekordboxFolder ?? (() => {}),
   }), [handoffSession, awaitingIds, onSetRekordboxFolder]);
@@ -1393,17 +1392,18 @@ export function DownloadsView({
         {onMini && <MiniSeekButton onClick={onMini} />}
       </>
     );
+    const notices = <div className="board__notices">{undo}{said}</div>;
     if (layout === 'folders' && handoff) {
       return (
         <DownloadsFolders
           session={session}
           checksums={checksums}
           handoff={handoff}
-          claims={autoClaims ?? []}
+          review={review}
           now={minute * 60}
           downloadFolder={downloadFolder}
           tools={tools}
-          notices={<div className="board__notices">{undo}{said}</div>}
+          notices={notices}
         />
       );
     }
@@ -1414,10 +1414,10 @@ export function DownloadsView({
           artwork={discovery?.artwork}
           checksums={checksums}
           handoff={handoff}
-          claims={autoClaims ?? []}
+          review={review}
           now={minute * 60}
           tools={tools}
-          notices={<div className="board__notices">{undo}{said}</div>}
+          notices={notices}
           onFindAnother={onFindAnother}
           onApproveAuto={onApproveAuto}
           onRejectAuto={onRejectAuto}

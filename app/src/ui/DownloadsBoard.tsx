@@ -14,18 +14,17 @@
 
 import type { ReactNode } from 'react';
 import type { TransferGroup, TransferSession } from '../data/transferStore.ts';
-import { isFailed } from '../data/transferStore.ts';
+import { firstFinished } from '../data/transferStore.ts';
 import type { ArtworkSession } from '../data/artworkStore.ts';
 import type { ChecksumSession } from '../data/checksumStore.ts';
 import type { AutoClaim } from '../../../shared/protocol.ts';
 import { summarise } from '../domain/checksums.ts';
 import { releaseHandoff } from '../domain/handoff.ts';
-import { groupStatus, transferStatus } from '../domain/transferStatus.ts';
-import { fileSize, integer, since, spanWords, speed } from '../domain/format.ts';
+import { fileSize, integer, since, spanWords } from '../domain/format.ts';
 import { Bar, Cover, ReleaseName } from './transferBits.tsx';
 import { FormatBadge } from './rows.tsx';
-import { finishedAt, troubleLine } from './CornerPanel.tsx';
-import { another, downloadsKind, formatOf, queueLine, rateAndTime } from './DownloadsSimple.tsx';
+import { finishedAt, troubleLine, troubleTone } from './CornerPanel.tsx';
+import { LayoutHeader, Rescue, downloadsKind, formatOf, queueLine, rateAndTime } from './DownloadsSimple.tsx';
 import { HandoffButton } from './HandoffButton.tsx';
 import type { HandoffBits } from './HandoffButton.tsx';
 import { reportFailure } from '../data/failures.ts';
@@ -42,7 +41,7 @@ export interface Columns {
   sent: TransferGroup[];
 }
 
-const firstFinished = (g: TransferGroup) => g.transfers.find((t) => t.state === 'finished')?.id;
+const finishedIds = (g: TransferGroup) => g.transfers.filter((t) => t.state === 'finished').map((t) => t.id);
 
 /**
  * Sort releases into the board's columns. `now` is epoch seconds; `held` are
@@ -71,13 +70,13 @@ export function boardColumns(
         out.ready.push(g);
         continue;
       }
-      const ids = g.transfers.filter((t) => t.state === 'finished').map((t) => t.id);
+      const ids = finishedIds(g);
       const r = releaseHandoff(ids, handoff);
       if (ids.length > 0 && r.sent === r.total) {
         out.sent.push(g);
         sentAt.set(g, r.sentAt!);
       } else if (downloadsKind(g, now) !== 'finished') continue;
-      else if (checks.get(firstFinished(g) ?? '')?.state === 'running') out.checking.push(g);
+      else if (checks.get(firstFinished(g)?.id ?? '')?.state === 'running') out.checking.push(g);
       else out.ready.push(g);
       continue;
     }
@@ -117,7 +116,7 @@ export const claimOf = (g: TransferGroup, review: SayContext['review']) =>
  * Folders tree say the same thing, so neither can drift from the other. */
 export function say(g: TransferGroup, column: Column, ctx: SayContext): Said {
   const trouble = downloadsKind(g, ctx.now) === 'trouble';
-  const tone = g.state === 'stalled' ? 'broken' : groupStatus(g.transfers)?.tone;
+  const tone = troubleTone(g);
   switch (column) {
     case 'queued':
       return trouble ? { line: troubleLine(g), tone } : { line: queueLine(g) };
@@ -132,59 +131,15 @@ export function say(g: TransferGroup, column: Column, ctx: SayContext): Said {
     }
     case 'ready': {
       if (claimOf(g, ctx.review)) return { line: 'Waiting for your review' };
-      const check = ctx.checks.get(firstFinished(g) ?? '');
+      const check = ctx.checks.get(firstFinished(g)?.id ?? '');
       const s = check?.state === 'done' ? summarise(check.report!) : null;
       return s && !s.none
         ? { line: s.headline, check: s.tone }
         : { line: `Finished ${spanWords(ctx.now - finishedAt(g))} ago` };
     }
-    case 'sent': {
-      const ids = g.transfers.filter((t) => t.state === 'finished').map((t) => t.id);
-      return { line: `In the Rekordbox folder · sent ${since(releaseHandoff(ids, ctx.handoff).sentAt ?? ctx.now)}` };
-    }
+    case 'sent':
+      return { line: `In the Rekordbox folder · sent ${since(releaseHandoff(finishedIds(g), ctx.handoff).sentAt ?? ctx.now)}` };
   }
-}
-
-/**
- * Downloads' header in Board and Folders: the counts Simple's list shows, the
- * layout switch, and where Send to Rekordbox copies to.
- */
-export function LayoutHeader({ groups, now, handoff, tools }: {
-  groups: readonly TransferGroup[];
-  now: number;
-  handoff: HandoffBits;
-  tools: ReactNode;
-}) {
-  // Counted as Simple's list counts them, so switching layouts changes nothing.
-  const kinds = groups.map((g) => downloadsKind(g, now));
-  const inProgress = kinds.filter((k) => k === 'moving' || k === 'waiting').length;
-  const total = groups.reduce((n, g, i) => n + (kinds[i] === 'moving' ? g.speed : 0), 0);
-  const folder = handoff.session.folder;
-  return (
-    <header data-tauri-drag-region="deep" className="header header--plain dls__header">
-      <div className="dls__heading">
-        <h1 className="pane__title">Downloads</h1>
-        {inProgress > 0 && (
-          <p className="pane__subtitle tnum">
-            {integer(inProgress)} in progress{total > 0 && ` · ${speed(total)} in total`}
-          </p>
-        )}
-      </div>
-      <div className="dls__tools board__tools">
-        <div className="dls__tools">{tools}</div>
-        {folder ? (
-          <span className="board__folder" title={folder}>Rekordbox folder: {homeShort(folder)}</span>
-        ) : (
-          <button type="button" className="corner__link" onClick={handoff.onSetFolder}>Choose a Rekordbox folder</button>
-        )}
-      </div>
-    </header>
-  );
-}
-
-/** `/Users/x/Music/RB` → `~/Music/RB`, as Finder's title bar would say it. */
-export function homeShort(path: string): string {
-  return path.replace(/^\/Users\/[^/]+(?=\/|$)/, '~');
 }
 
 function Card({ g, artwork, said: { line, tone, check, bar }, chip, children }: {
@@ -231,15 +186,15 @@ function Column({ id, title, note, count, children }: {
 }
 
 export function DownloadsBoard({
-  session, artwork, checksums, handoff, claims, now, tools, notices,
+  session, artwork, checksums, handoff, review, now, tools, notices,
   onFindAnother, onApproveAuto, onRejectAuto,
 }: {
   session: TransferSession;
   artwork?: ArtworkSession;
   checksums: ChecksumSession;
   handoff: HandoffBits;
-  /** Every auto-download claim; the ones awaiting review are Ready's. */
-  claims: readonly AutoClaim[];
+  /** Claims awaiting review, by transfer id: Ready's. */
+  review: ReadonlyMap<string, AutoClaim>;
   /** Epoch seconds, from DownloadsView's coarse clock. */
   now: number;
   /** The header's buttons, from DownloadsView: the layout switch, Mini Seek. */
@@ -249,24 +204,11 @@ export function DownloadsBoard({
   onApproveAuto?(query: string): void;
   onRejectAuto?(query: string): void;
 }) {
-  const review = new Map(claims.filter((c) => c.status === 'awaiting-review').map((c) => [c.transferId, c]));
   const cols = boardColumns(session.groups, now, checksums.byTransfer, handoff.session, handoff.held);
   const ctx = { now, checks: checksums.byTransfer, handoff: handoff.session, review };
 
-  /* What will not come down offers a retry where a retry can change something,
-     and another copy otherwise, exactly as Mini Seek does. */
-  const rescue = (g: TransferGroup) => {
-    if (downloadsKind(g, now) !== 'trouble') return null;
-    const retry = g.transfers.filter((t) => isFailed(t.state) && transferStatus(t).retryable).map((t) => t.id);
-    if (retry.length > 0) {
-      return <button type="button" className="btn pressable" onClick={() => session.retry(retry)}>Retry</button>;
-    }
-    return onFindAnother && (
-      <button type="button" className="btn pressable" onClick={() => onFindAnother(another(g))}>
-        {g.bytesDone > 0 ? 'Try another copy' : 'Find another copy'}
-      </button>
-    );
-  };
+  const rescue = (g: TransferGroup) => downloadsKind(g, now) === 'trouble'
+    && <Rescue g={g} session={session} onFindAnother={onFindAnother} />;
   const card = (g: TransferGroup, column: Column, children?: ReactNode, chip?: string) => (
     <Card key={g.key} g={g} artwork={artwork} said={say(g, column, ctx)} chip={chip}>{children}</Card>
   );
@@ -303,7 +245,7 @@ export function DownloadsBoard({
 
           <Column id="sent" title="Sent to Rekordbox" note="Copied into your Rekordbox folder" count={cols.sent.length}>
             {cols.sent.slice(0, MAX_SENT).map((g) => {
-              const dest = releaseHandoff(g.transfers.filter((t) => t.state === 'finished').map((t) => t.id), handoff.session).dest;
+              const dest = releaseHandoff(finishedIds(g), handoff.session).dest;
               return card(g, 'sent', dest && (
                 <button
                   type="button" className="btn pressable" title={dest}

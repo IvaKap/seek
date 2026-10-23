@@ -22,6 +22,7 @@ import { dropRunning, onReconnect } from './failures.ts';
 import type { AnalysisFailedEvent, ChecksumReport } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import type { TransferGroup } from './transferStore.ts';
+import { firstFinished } from './transferStore.ts';
 
 interface ChecksumEntryState {
   state: 'running' | 'done' | 'failed';
@@ -125,7 +126,7 @@ export function useAutoChecksums(groups: readonly TransferGroup[], checksums: Ch
       }
       if (!unfinished.current.delete(g.key)) continue;
       if (!g.transfers.some((t) => /\.(ffp|md5)$/i.test(t.path))) continue;
-      const id = g.transfers.find((t) => t.state === 'finished')?.id;
+      const id = firstFinished(g)?.id;
       if (id && !checksums.byTransfer.has(id)) checksums.check(id);
     }
   }, [groups, checksums]);
