@@ -26,17 +26,18 @@ import { EMPTY_FILTERS } from '../domain/types.ts';
 import { createGrouper, matches, terms } from '../domain/group.ts';
 import { TIER_RANK } from '../domain/quality.ts';
 import { reliabilityFrom } from '../domain/score.ts';
+import { releaseVersions } from '../domain/bestSources.ts';
+import type { PickPool } from '../domain/bestPicks.ts';
 import { adaptSearchResult, isAudioPath } from './adapt.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import type { SidecarConnection } from './connectionStore.ts';
-import type { ConnectionPhase, SidecarClient } from './sidecarClient.ts';
 import { GLOBAL_SCOPE } from './mockSidecar.ts';
 import type { SearchScope } from './mockSidecar.ts';
 
 export const TICK_MS = 250;
 
 /** Set on a tab that was still searching when you switched away from it. */
-export const SWITCHED_REASON = 'switched';
+const SWITCHED_REASON = 'switched';
 
 /**
  * How a finished search ended, in words. Each reason is a different fact:
@@ -73,8 +74,11 @@ export function isSignedIn(serverState: string | null): boolean {
 }
 
 export type Row =
-  | { kind: 'track'; id: string; track: TrackCluster; tick: number }
-  | { kind: 'release'; id: string; release: Release; tick: number }
+  /* `folder`, grouped by version only: the folder the copy shown sits in, for its cover. */
+  | { kind: 'track'; id: string; track: TrackCluster; tick: number; folder?: Release | null }
+  /* `copies`, grouped by version only: every folder of this record in this
+   * format, best first. `release` is the first, the one the row shows. */
+  | { kind: 'release'; id: string; release: Release; tick: number; copies?: Release[] }
   | { kind: 'user'; id: string; group: UserGroup; tick: number }
   /* One row per file — the classic Nicotine+ flat list. A leaf, like a source
    * row, but top-level: it never expands and it participates in the column
@@ -90,6 +94,41 @@ export type Row =
        * track title is the only thing telling them apart. */
       context: 'peers' | 'files';
     };
+
+/* ---------------------------------------------------------------- reuse */
+
+/** Same fields, arrays compared item by item. Sources are never mutated, only
+ *  appended, so equal members mean an equal group. */
+function shallowSame(a: object, b: object): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => {
+    const x = (a as Record<string, unknown>)[k];
+    const y = (b as Record<string, unknown>)[k];
+    return x === y || (Array.isArray(x) && Array.isArray(y)
+      && x.length === y.length && x.every((v, i) => v === y[i]));
+  });
+}
+
+/**
+ * Last tick's object wherever nothing in it changed.
+ *
+ * Every burst regroups from scratch, so without this every row is a new object
+ * and the memoised rows in ResultList all draw again — the freeze on each
+ * burst. Keyed by id; the map holds only what the latest pass returned.
+ */
+function steady<T extends { id: string }>(cache: { current: Map<string, T> }, next: T[]): T[] {
+  const prev = cache.current;
+  const map = new Map<string, T>();
+  const out = next.map((n) => {
+    const p = prev.get(n.id);
+    const keep = p && shallowSame(p, n) ? p : n;
+    map.set(n.id, keep);
+    return keep;
+  });
+  cache.current = map;
+  return out;
+}
 
 /* ------------------------------------------------------------- comparators */
 
@@ -184,9 +223,14 @@ export interface SearchSnapshot {
 
 export interface SearchSessionOptions {
   reliability?(username: string): number;
+  /** Group by version whatever the tab's own grouping says: Simple's one list. */
+  versions?: boolean;
 }
 
-export interface SearchSession {
+/** The bridge fields (phase, isMock, serverState, client, startupError) come
+ * straight from the connection. */
+export interface SearchSession
+  extends Pick<SidecarConnection, 'phase' | 'isMock' | 'serverState' | 'serverError' | 'client' | 'startupError'> {
   query: string;
   setQuery(q: string): void;
   /** Where the next search goes. Kept with the tab, like the query. */
@@ -208,6 +252,7 @@ export interface SearchSession {
 
   totalFiles: number;
   matchedFiles: number;
+  /** How many people have answered, audio or not. */
   peerCount: number;
   /** Newest ingest tick — the list uses it to decide which rows may animate in. */
   tick: number;
@@ -215,6 +260,7 @@ export interface SearchSession {
   filters: Filters;
   setFilters(next: Filters): void;
   resetFilters(): void;
+  /** The tab's own grouping, kept while `versions` overrides what is shown. */
   groupBy: GroupBy;
   setGroupBy(g: GroupBy): void;
   sort: SortKey;
@@ -224,19 +270,12 @@ export interface SearchSession {
 
   /** Formats present in the current result set, for the filter chips. */
   availableFormats: string[];
-
-  /* ---- the bridge ---- */
-
-  /** Socket state. 'closed' with a null client means deliberate offline/mock. */
-  phase: ConnectionPhase;
-  /** True when replaying the fixture rather than talking to a real sidecar. */
-  isMock: boolean;
-  /** Soulseek login state, distinct from the socket. Null until reported. */
-  serverState: string | null;
-  /** The live client, for Settings. Null in mock mode. */
-  client: SidecarClient | null;
-  /** Why the Tauri shell could not start a sidecar, if it could not. */
-  startupError: string | null;
+  /**
+   * The filtered results grouped both by track and by release, for best
+   * picks. Built when called, because only Simple shows picks; its identity
+   * changes whenever the filtered results do, so it can key a memo.
+   */
+  pickPool(): PickPool;
 
   /* ---- tabs ---- */
 
@@ -256,7 +295,7 @@ export function useSearchSession(
 ): SearchSession {
   const grouper = useMemo(() => createGrouper(), []);
 
-  const { client, sidecar, phase, serverState, startupError } = conn;
+  const { client, sidecar, phase, serverState, serverError, startupError } = conn;
 
   /* Empty. This used to open with a demo query already typed in, which is
    * convenient exactly once — while building the fixture — and thereafter is
@@ -381,7 +420,29 @@ export function useSearchSession(
 
   /* ---- derive: filter → group → sort ---- */
 
-  const { rows: nextRows, matchedFiles, availableFormats } = useMemo(() => {
+  const group: GroupBy = options.versions ? 'version' : groupBy;
+  /* Switching mode regroups the list, which re-sorts it like choosing a
+     grouping does. The tab's own grouping is untouched, for Collector. */
+  const shownGroup = useRef(group);
+  if (shownGroup.current !== group) {
+    shownGroup.current = group;
+    resortAll.current = true;
+  }
+
+  /* The same list while the formats are the same, so the filter bar is not
+     redrawn by every burst of results that brings no new format. */
+  const formatsSeen = useRef<string[]>([]);
+  const sameClusters = useRef(new Map<string, TrackCluster>());
+  const sameReleases = useRef(new Map<string, Release>());
+  const sameRows = useRef(new Map<string, Row>());
+  const sameChildren = useRef(new Map<string, Row>());
+  const sameFormats = (next: string[]) => {
+    const prev = formatsSeen.current;
+    if (prev.length !== next.length || prev.some((f, i) => f !== next[i])) formatsSeen.current = next;
+    return formatsSeen.current;
+  };
+
+  const { rows: nextRows, kept, tracks, folders, matchedFiles, availableFormats } = useMemo(() => {
     void tick;
     const all = grouper.all;
     const inc = terms(filters.include);
@@ -395,11 +456,27 @@ export function useSearchSession(
     }
 
     const out: Row[] = [];
-    if (groupBy === 'track') {
-      for (const t of grouper.tracks(kept)) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
-    } else if (groupBy === 'release') {
-      for (const r of grouper.releases(kept)) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
-    } else if (groupBy === 'file') {
+    /* Kept for the best picks, which want both groupings: whichever one the
+       rows already built is not built twice. */
+    let tracks: TrackCluster[] | null = null;
+    let folders: Release[] | null = null;
+    if (group === 'version') {
+      folders = steady(sameReleases, grouper.releases(kept));
+      const folderOf = new Map(folders.map((r) => [r.files[0].releaseKey, r]));
+      for (const t of steady(sameClusters, grouper.versions(kept))) {
+        out.push({ kind: 'track', id: t.id, track: t, tick: t.tick, folder: folderOf.get(t.best.releaseKey) ?? null });
+      }
+      for (const v of releaseVersions(folders)) {
+        const tick = Math.min(...v.copies.map((r) => r.tick));
+        out.push({ kind: 'release', id: v.id, release: v.copies[0], copies: v.copies, tick });
+      }
+    } else if (group === 'track') {
+      tracks = steady(sameClusters, grouper.tracks(kept));
+      for (const t of tracks) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
+    } else if (group === 'release') {
+      folders = steady(sameReleases, grouper.releases(kept));
+      for (const r of folders) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
+    } else if (group === 'file') {
       // No grouper method — one row per kept file, already the filtered list.
       for (const s of kept) out.push({ kind: 'file', id: s.id, source: s, tick: s.tick });
     } else {
@@ -409,15 +486,27 @@ export function useSearchSession(
     }
 
     return {
-      rows: out,
+      rows: steady(sameRows, out),
+      kept,
+      tracks,
+      folders,
       matchedFiles: kept.length,
-      availableFormats: [...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      availableFormats: sameFormats([...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))),
     };
-  }, [grouper, filters, groupBy, tick]);
+  }, [grouper, filters, group, tick]);
+
+  const pickPool = useCallback(
+    (): PickPool => ({ tracks: tracks ?? grouper.tracks(kept), releases: folders ?? grouper.releases(kept) }),
+    [grouper, kept, tracks, folders],
+  );
 
   /* ---- order: frozen prefix + free suffix + queued ---- */
 
-  const ordered = useMemo(() => {
+  /* Rows that would land above the first visible one are only REPORTED here;
+     the effect below queues them. Queuing them from inside this memo set
+     state mid-render, which made React throw the render away and draw the
+     whole search again on every burst of results. */
+  const ordering = useMemo((): { rows: Row[]; queued: Row[]; resorted: boolean } => {
     const byId = new Map<string, Row>();
     for (const r of nextRows) byId.set(r.id, r);
 
@@ -427,8 +516,7 @@ export function useSearchSession(
       resortAll.current = false;
       const sorted = [...nextRows].sort((a, b) => compare(a, b, sort));
       order.current = sorted.map((r) => r.id);
-      if (pending.length) setPending([]);
-      return sorted;
+      return { rows: sorted, queued: [], resorted: true };
     }
 
     const anchor = Math.max(0, Math.min(viewport.current.first, order.current.length));
@@ -467,16 +555,22 @@ export function useSearchSession(
     const result = [...prefix, ...suffixExisting];
     order.current = result.map((r) => r.id);
 
-    if (queued.length) {
+    return { rows: result, queued, resorted: false };
+  }, [nextRows, sort]);
+  const ordered = ordering.rows;
+
+  useEffect(() => {
+    const { queued, resorted } = ordering;
+    if (resorted) {
+      setPending((prev) => (prev.length ? [] : prev));
+    } else if (queued.length) {
       setPending((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         const add = queued.filter((q) => !ids.has(q.id));
         return add.length ? [...prev, ...add] : prev;
       });
     }
-    return result;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nextRows, sort]);
+  }, [ordering]);
 
   /* ---- expansion: source rows are flattened in, so one virtualiser sees all ---- */
 
@@ -486,36 +580,19 @@ export function useSearchSession(
     for (const row of ordered) {
       out.push(row);
       if (!expanded.has(row.id)) continue;
-      if (row.kind === 'track') {
-        const srcs = row.track.sources;
-        srcs.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === srcs.length - 1, tick: s.tick,
-            context: 'peers',
-          }),
-        );
-      } else if (row.kind === 'release') {
-        const files = row.release.files;
-        files.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === files.length - 1, tick: s.tick,
-            context: 'files',
-          }),
-        );
-      } else if (row.kind === 'user') {
-        const files = row.group.files;
-        files.forEach((s, i) =>
-          out.push({
-            kind: 'source', id: `${row.id}/${s.id}`, source: s,
-            parentId: row.id, last: i === files.length - 1, tick: s.tick,
-            context: 'files',
-          }),
-        );
-      }
+      const children = row.kind === 'track' ? row.track.sources
+        : row.kind === 'release' ? row.release.files
+          : row.kind === 'user' ? row.group.files : null;
+      if (!children) continue;
+      const context = row.kind === 'track' ? 'peers' : 'files';
+      children.forEach((s, i) =>
+        out.push({
+          kind: 'source', id: `${row.id}/${s.id}`, source: s,
+          parentId: row.id, last: i === children.length - 1, tick: s.tick, context,
+        }),
+      );
     }
-    return out;
+    return steady(sameChildren, out);
   }, [ordered, expanded]);
 
   /* ---- controls ---- */
@@ -621,6 +698,7 @@ export function useSearchSession(
     sort, setSort,
     expanded, toggleExpanded,
     availableFormats,
-    phase, isMock: client === null, serverState, client, startupError,
+    pickPool,
+    phase, isMock: client === null, serverState, serverError, client, startupError,
   };
 }

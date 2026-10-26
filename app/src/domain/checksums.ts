@@ -28,6 +28,7 @@
  */
 
 import type { ChecksumEntry, ChecksumReport } from '../../../shared/protocol.ts';
+import { count } from './format.ts';
 
 export type ChecksumVerdict = 'match' | 'mismatch' | 'unchecked';
 export type ChecksumTone = 'good' | 'warn' | 'bad' | 'unknown';
@@ -55,10 +56,6 @@ export interface ChecksumSummary {
   unparsedLines: number;
   tone: ChecksumTone;
   headline: string;
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n === 1 ? one : many}`;
 }
 
 export function summarise(report: ChecksumReport): ChecksumSummary {
@@ -116,22 +113,22 @@ function headlineOf(s: ChecksumSummary): string {
   }
 
   if (s.audioMismatched > 0) {
-    return `${plural(s.audioMismatched, 'file')} ${s.audioMismatched === 1 ? 'is' : 'are'} `
+    return `${count(s.audioMismatched, 'file')} ${s.audioMismatched === 1 ? 'is' : 'are'} `
       + 'not the audio the fingerprint names.';
   }
   if (s.mismatched > 0) {
-    return `${plural(s.mismatched, 'file')} ${s.mismatched === 1 ? 'does' : 'do'} `
+    return `${count(s.mismatched, 'file')} ${s.mismatched === 1 ? 'does' : 'do'} `
       + 'not match the .md5, which a tag edit alone would do.';
   }
   if (s.matched > 0) {
     const checked = s.matched + s.mismatched;
-    const head = `${s.matched} of ${plural(checked, 'file')} verified.`;
+    const head = `${s.matched} of ${count(checked, 'file')} verified.`;
     return s.missing > 0
-      ? `${head} ${plural(s.missing, 'more file is', 'more files are')} named but not here.`
+      ? `${head} ${count(s.missing, 'more file is', 'more files are')} named but not here.`
       : head;
   }
   if (s.missing > 0) {
-    return `The checksum file names ${plural(s.missing, 'file')} that ${
+    return `The checksum file names ${count(s.missing, 'file')} that ${
       s.missing === 1 ? 'is' : 'are'} not in this folder.`;
   }
   return 'Nothing here could be checked.';

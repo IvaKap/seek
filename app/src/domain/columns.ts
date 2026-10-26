@@ -46,8 +46,6 @@ export interface ColumnSet<Id extends string> {
 }
 
 export interface ColumnEngine<Id extends string> extends ColumnSet<Id> {
-  spec(id: Id): ColumnSpec<Id>;
-  defaults: Id[];
   normalise(raw: unknown): Id[];
   reorder(ids: Id[], id: Id, to: number): Id[];
   /** The `grid-template-columns` value for these columns, in this order. */
@@ -115,8 +113,6 @@ export function makeColumns<Id extends string>(
 
   return {
     all,
-    defaults,
-    spec,
     label: (id) => spec(id).label,
     isPinned: (id) => Boolean(spec(id).pinned),
     normalise,

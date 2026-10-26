@@ -34,6 +34,10 @@
   background: var(--accent); color: var(--text-on-accent);
   font-size: var(--fs-micro); text-align: center;
 }
+/* Simple / Collector, above the status row: full width, two equal halves. */
+.sidebar__mode { padding: var(--sp-2) var(--sp-4); }
+.sidebar__mode .segmented { display: flex; }
+.sidebar__mode .segmented__item { flex: 1; justify-content: center; }
 
 /* =============================================================== header == */
 
@@ -92,6 +96,7 @@
 .quick__caret[data-open='true'] { transform: rotate(180deg); }
 
 .chip {
+  font-variant-numeric: tabular-nums;
   display: inline-flex; align-items: center; gap: var(--sp-1);
   height: 1.625rem; padding: 0 var(--sp-3);
   border-radius: var(--radius-pill);
@@ -108,7 +113,6 @@
   background: var(--accent); border-color: transparent;
   color: var(--text-on-accent); font-weight: var(--fw-medium);
 }
-.chip__count { opacity: 0.7; }
 
 /* Advanced panel. Height is animated only here, where there is no transform
    equivalent — grid-template-rows 0fr→1fr keeps it off the layout path for the
@@ -306,14 +310,14 @@
 .wants__hint { text-transform: none; letter-spacing: 0; color: var(--text-quaternary); }
 .wants__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
-.want {
+.want, .cat {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
   background: var(--bg-raised);
 }
-@media (hover: hover) and (pointer: fine) { .want:hover { background: var(--bg-hover); } }
+@media (hover: hover) and (pointer: fine) { .want:hover, .cat:hover { background: var(--bg-hover); } }
 .want__art {
   width: 2.5rem; height: 2.5rem; flex: none;
   border-radius: var(--radius-sm); overflow: hidden;
@@ -471,14 +475,6 @@
   display: grid; gap: var(--sp-2);
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
 }
-.cat {
-  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center; gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
-  background: var(--bg-raised);
-}
-@media (hover: hover) and (pointer: fine) { .cat:hover { background: var(--bg-hover); } }
 /* Owned records recede rather than disappear: the shape of a catalogue you
    have most of is itself information. */
 .cat[data-owned='true'] { opacity: 0.6; }
@@ -576,26 +572,69 @@
   display: flex; align-items: center; justify-content: space-between;
   gap: var(--sp-4); margin-top: var(--sp-3); flex-wrap: wrap;
 }
-.resultbar__count {
-  display: flex; align-items: baseline; gap: var(--sp-2);
-  font-size: var(--fs-secondary); letter-spacing: var(--tr-secondary);
-  color: var(--text-secondary);
+.resultbar__controls { display: flex; align-items: center; gap: var(--sp-2); margin-left: auto; }
+
+/* Collector's status, at the end of the pill row: what the filters let
+   through, who answered, and whether Seek is still listening. Inline, not
+   flex: a flex container would strip the spaces between the number the
+   spring writes and the words after it. */
+.status {
+  margin: 0 0 0 auto;
+  font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); white-space: nowrap;
 }
-.resultbar__count > .tnum:first-child {
-  font-size: var(--fs-section); line-height: var(--lh-section);
-  letter-spacing: var(--tr-section); font-weight: var(--fw-semibold);
-  color: var(--text-primary);
-}
-.resultbar__of, .resultbar__live, .resultbar__closed { color: var(--text-tertiary); }
-.resultbar__live::before {
-  content: ''; display: inline-block;
-  width: 0.375rem; height: 0.375rem; margin-right: var(--sp-1);
+.status[data-live='true']::before {
+  content: ''; display: inline-block; vertical-align: middle;
+  width: 0.375rem; height: 0.375rem; margin: -2px var(--sp-2) 0 0;
   border-radius: 50%; background: var(--accent);
   animation: pulse 1.6s ease-in-out infinite;
 }
 @keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
-.resultbar__closed { border-bottom: 1px dotted var(--separator-strong); cursor: help; }
-.resultbar__controls { display: flex; align-items: center; gap: var(--sp-2); }
+.status__closed { border-bottom: 1px dotted var(--separator-strong); cursor: help; }
+
+/* ========================================================= saved views == */
+
+/* A row of tabs drawn like the segmented control, for sets whose items come
+   and go or carry a count: Collector's saved views and the Downloads chips.
+   No sliding indicator, because the items change width as counts change. */
+.tabset {
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 2px;
+  border-radius: var(--radius-sm); background: var(--bg-sunken);
+  border: 0.5px solid var(--separator);
+}
+.tabset__tab { display: flex; align-items: center; border-radius: calc(var(--radius-sm) - 1px); }
+.tabset__tab[data-on='true'] { background: var(--bg-raised); box-shadow: var(--shadow-raised); }
+.tabset__label {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  height: 1.5rem; padding: 0 var(--sp-3); border: 0; background: transparent;
+  font: inherit; font-size: var(--fs-caption); letter-spacing: var(--tr-caption);
+  color: var(--text-secondary); white-space: nowrap; cursor: default;
+}
+.tabset__tab[data-on='true'] .tabset__label { color: var(--text-primary); font-weight: var(--fw-medium); }
+.tabset__n { color: var(--text-tertiary); font-weight: 400; }
+
+/* The presets of docs/PRODUCT.md §3. A view you made carries an × to remove it. */
+.views { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-width: 0; }
+.views__remove {
+  margin-left: calc(-1 * var(--sp-2)); padding: 0 var(--sp-2);
+  border: 0; background: transparent; color: var(--text-tertiary);
+  font: inherit; line-height: 1; cursor: default;
+}
+.views__remove:hover { color: var(--text-primary); }
+.views__save {
+  height: 1.5rem; padding: 0 var(--sp-2); border: 0; border-radius: var(--radius-sm);
+  background: transparent; font: inherit; font-size: var(--fs-caption);
+  color: var(--accent); white-space: nowrap; cursor: default;
+}
+.views__save:disabled { color: var(--text-quaternary); }
+@media (hover: hover) and (pointer: fine) { .views__save:not(:disabled):hover { background: var(--bg-hover); } }
+.views__name { display: flex; align-items: center; gap: var(--sp-1); }
+.views__input {
+  width: 10rem; height: 1.5rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: var(--bg-raised); color: var(--text-primary);
+  font: inherit; font-size: var(--fs-caption);
+}
 
 /* ===================================================== segmented control == */
 
@@ -811,6 +850,7 @@
   display: flex; justify-content: center; pointer-events: none;
 }
 .pill {
+  font-variant-numeric: tabular-nums;
   pointer-events: auto;
   display: inline-flex; align-items: center; gap: var(--sp-2);
   height: 1.875rem; padding: 0 var(--sp-4);
@@ -845,7 +885,9 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row__artist { color: var(--text-primary); font-weight: var(--fw-medium); }
-.row__dash { color: var(--text-quaternary); }
+/* `pre`: the title is a flex row, and a flex item drops the spaces at either
+   end of its text, which ran "Burial—Archangel" together. */
+.row__dash { color: var(--text-quaternary); white-space: pre; }
 .row__name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; }
 .row__name[data-raw='true'] { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .row__unparsed {
@@ -854,8 +896,7 @@
   font-size: var(--fs-micro); letter-spacing: var(--tr-micro); color: var(--text-tertiary);
   cursor: help; flex: none;
 }
-.row__year { margin-left: var(--sp-2); color: var(--text-tertiary); font-size: var(--fs-secondary); }
-.row__free {
+.row__free, .row__tag {
   margin-left: var(--sp-2); padding: 0 var(--sp-1);
   border-radius: var(--radius-sm); background: var(--bg-sunken);
   font-size: var(--fs-micro); color: var(--text-secondary);
@@ -913,9 +954,13 @@
   font-size: var(--fs-micro); color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22rem;
 }
-.dl__status[data-tone='refused'] { background: var(--warn-soft); color: var(--warn); }
-.dl__status[data-tone='broken'] { color: var(--danger); }
+/* Refused is red and stalled amber on every screen: Simple, Board, Folders,
+   Mini Seek and Collector once disagreed, and a colour that changes meaning
+   between two views of one list means nothing. */
+.dl__status[data-tone='refused'] { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.dl__status[data-tone='broken'] { color: var(--warn); }
 .dl__status[data-tone='waiting'] { color: var(--text-tertiary); }
+.dl__status[data-tone='done'] { color: var(--success); }
 
 /* Warn-coloured, not neutral: unlike "free", this is not a nicety about the
    row, it is the reason the download will be refused unless you are on that
@@ -1397,7 +1442,6 @@
 /* A sentence, not a token: the whole width of a block row. */
 .settings__input--wide { width: 100%; margin-top: var(--sp-2); }
 .settings__input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.settings__suffix { font-size: var(--fs-caption); color: var(--text-tertiary); }
 .settings__static { font-size: var(--fs-secondary); color: var(--text-tertiary); }
 /* A filesystem path is long, monospaced and worth selecting. It wraps rather
    than truncating: a path you cannot read all of is a path you cannot use. */
@@ -1497,10 +1541,14 @@
   border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
 }
 
+/* Wraps rather than running off the window's edge: a narrow window used to
+   cut "Clear 827 finished" in half and push View and Mini Seek out of reach. */
 .dls__tools {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end;
+  gap: var(--sp-2);
   margin-left: auto; min-width: 0;
 }
+.dls__tools > * { flex: none; }
 .dls__tools .browse__filter { max-width: 16rem; }
 @container (max-width: 44em) {
   .dls__tools .browse__filter { max-width: 9rem; }
@@ -1833,7 +1881,9 @@
   font-size: var(--fs-caption); color: var(--text-tertiary);
 }
 
-.dls__header { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
+.dls__header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-3) var(--sp-4); }
+/* Downloads' chips, a row of their own under the title and the tools. */
+.dls__show { flex-basis: 100%; width: fit-content; max-width: 100%; }
 .dls__heading { min-width: 0; }
 
 /* ------------------------------------------------- downloads, table density */
@@ -1864,9 +1914,12 @@
      Cancel, and every column to its left shifted to compensate. The header,
      whose last cell is empty, sized it to ZERO and lined up with nothing at
      all. Fixed width is what makes independent grids agree. */
-  /* active: name | files | size | progress | speed | eta | from | actions */
+  /* active: name | status | files | size | progress | speed | eta | format | from | actions.
+     The actions track is a sliver: they show on hover only, and already spill
+     left over an opaque copy of the row (below). At 8rem it stood empty, and
+     the release name got 171 px at 1280. */
   grid-template-columns:
-    minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 7.5rem 8rem;
+    minmax(8rem, 2fr) minmax(8rem, 0.8fr) 3.5rem 5rem 6.5rem 5.5rem 4.5rem 3.75rem 7.5rem 1.5rem;
 }
 .dls[data-density='table'][data-filter='finished'] .dl__row,
 .dls[data-density='table'][data-filter='finished'] .dl__thead {
@@ -1885,26 +1938,37 @@
   grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem minmax(6rem, 1fr) 7.5rem 8rem;
 }
 
-/* Columns drop rather than crushing the name. Order of sacrifice: ETA first
-   (the percentage already answers "how far"), then speed, then the file count.
-   The release name, its size and its progress are never dropped — squeezing
-   the column that IDENTIFIES the row to 20px, which is what happened at
-   1100px, is the failure this ordering exists to prevent. */
-@container dls (max-width: 66em) {
+/* Columns drop rather than crushing the name. Order of sacrifice on
+   Downloads: ETA and the file count first (the percentage already answers
+   "how far", and the details pane lists the files), then speed, then the
+   format, then size and peer. The release name, its status and its progress
+   are never dropped — squeezing the column
+   that IDENTIFIES the row to 20px, which is what happened at 1100px, is the
+   failure this ordering exists to prevent. The queries stack, so each one
+   hides its column on top of the ones before it. */
+@container dls (max-width: 72em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 5.5rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 5.5rem 3.75rem 7.5rem 1.5rem;
+  }
+  .dls[data-filter='active'] .dl__row > :is(:nth-child(3), :nth-child(7)),
+  .dls[data-filter='active'] .dl__thead > :is(:nth-child(3), :nth-child(7)) { display: none; }
+}
+@container dls (max-width: 64em) {
+  .dls[data-density='table'][data-filter='active'] .dl__row,
+  .dls[data-density='table'][data-filter='active'] .dl__thead {
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 3.75rem 7.5rem 1.5rem;
   }
   .dls[data-filter='active'] .dl__row > :nth-child(6),
   .dls[data-filter='active'] .dl__thead > :nth-child(6) { display: none; }
 }
-@container dls (max-width: 58em) {
+@container dls (max-width: 56em) {
   .dls[data-density='table'][data-filter='active'] .dl__row,
   .dls[data-density='table'][data-filter='active'] .dl__thead {
-    grid-template-columns: minmax(8rem, 1fr) 3.5rem 5rem 6.5rem 7.5rem 8rem;
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 5rem 6.5rem 7.5rem 1.5rem;
   }
-  .dls[data-filter='active'] .dl__row > :nth-child(5),
-  .dls[data-filter='active'] .dl__thead > :nth-child(5) { display: none; }
+  .dls[data-filter='active'] .dl__row > :nth-child(8),
+  .dls[data-filter='active'] .dl__thead > :nth-child(8) { display: none; }
 }
 @container dls (max-width: 44em) {
   /* Down to what identifies the row and how far along it is. */
@@ -1912,13 +1976,27 @@
   .dls[data-density='table'] .dl__thead {
     grid-template-columns: minmax(8rem, 1fr) 5rem 6.5rem 8rem;
   }
+  .dls[data-density='table'][data-filter='active'] .dl__row,
+  .dls[data-density='table'][data-filter='active'] .dl__thead {
+    grid-template-columns: minmax(8rem, 2fr) minmax(8rem, 0.8fr) 6.5rem 1.5rem;
+  }
   .dls[data-density='table'][data-filter='finished'] .dl__row,
   .dls[data-density='table'][data-filter='finished'] .dl__thead {
     grid-template-columns: minmax(8rem, 1fr) 5rem 8rem;
   }
-  .dls .dl__row > :nth-child(2), .dls .dl__thead > :nth-child(2),
-  .dls[data-filter='active'] .dl__row > :nth-child(7),
-  .dls[data-filter='active'] .dl__thead > :nth-child(7),
+  /* failed: name | size | reason | actions. It had no template here, so its
+     five remaining cells wrapped onto four tracks and Retry landed under the
+     name. The reason stays: it is why the row is in this list. */
+  .dls[data-density='table'][data-filter='failed'] .dl__row,
+  .dls[data-density='table'][data-filter='failed'] .dl__thead {
+    grid-template-columns: minmax(8rem, 1fr) 5rem minmax(6rem, 1fr) 8rem;
+  }
+  .dls[data-filter='failed'] .dl__row > :nth-child(5),
+  .dls[data-filter='failed'] .dl__thead > :nth-child(5),
+  .dls:not([data-filter='active']) .dl__row > :nth-child(2),
+  .dls:not([data-filter='active']) .dl__thead > :nth-child(2),
+  .dls[data-filter='active'] .dl__row > :is(:nth-child(4), :nth-child(9)),
+  .dls[data-filter='active'] .dl__thead > :is(:nth-child(4), :nth-child(9)),
   .dls[data-filter='finished'] .dl__row > :nth-child(4),
   .dls[data-filter='finished'] .dl__thead > :nth-child(4) { display: none; }
 }
@@ -1932,6 +2010,10 @@
   border-bottom: 1px solid var(--separator);
 }
 .dl__thead span:not(:first-child) { text-align: right; }
+.dls[data-filter='active'] .dl__thead > span:nth-child(2) { text-align: left; }
+/* The status reads left to right, like the name beside it. */
+.dl__cell.dl__cell--status { text-align: left; }
+.dl__cell--status .dl__status { display: inline-block; vertical-align: middle; margin-left: 0; max-width: 100%; }
 
 .dls[data-density='table'] .dl__row {
   padding: 0 var(--sp-2);
@@ -1941,6 +2023,55 @@
 @media (hover: hover) and (pointer: fine) {
   .dls[data-density='table'] .dl__row:hover { background: var(--bg-hover); }
 }
+
+/* -------------------------------------------- downloads, the details pane */
+/* Downloads · Collector, at table density: the release a row was chosen for,
+   beneath the list as the pane grid's third row, so the table above keeps its
+   height. It scrolls inside itself past 45% of the window. */
+/* After the hover rule and as specific, so the chosen row stays blue under
+   the pointer; its hover actions sit on the same blue, not a grey box. */
+.dls[data-density='table'][data-inspecting='true'] .dl__row[data-open='true'] { background: var(--bg-selected); }
+.dls[data-density='table'][data-inspecting='true'] .dl__row[data-open='true'] .dl__rowactions {
+  background: linear-gradient(var(--bg-selected), var(--bg-selected)), var(--bg-content);
+}
+.inspector {
+  display: flex; flex-direction: column; min-height: 0; max-height: 45vh;
+  border-top: 0.5px solid var(--separator-strong);
+  background: var(--bg-window);
+}
+.inspector__head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.inspector__what { display: flex; flex-direction: column; gap: 1px; flex: 1 1 12rem; min-width: 0; }
+.inspector__title {
+  margin: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inspector__sub {
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.inspector__close {
+  display: inline-flex; padding: var(--sp-1); border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-tertiary); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .inspector__close:hover { background: var(--bg-hover); color: var(--text-primary); }
+}
+.inspector__body { min-height: 0; overflow-y: auto; padding: 0 var(--sp-5) var(--sp-4); }
+.inspector__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.facts {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-2) var(--sp-4);
+  margin: var(--sp-2) 0 0; font-size: var(--fs-secondary);
+}
+.facts dt { color: var(--text-tertiary); }
+.facts dd { margin: 0; min-width: 0; color: var(--text-primary); }
+.facts dd[data-tone='refused'] { color: var(--danger); }
+.facts dd[data-tone='broken'] { color: var(--warn); }
+.facts dd[data-tone='done'] { color: var(--success); }
+.facts__who { display: flex; align-items: center; gap: var(--sp-2); }
+.facts__path { overflow-wrap: anywhere; }
 
 /* The disclosure is its own button rather than the whole row, because the row
    also carries action buttons — and a button inside a button is invalid HTML
@@ -2000,6 +2131,18 @@
 /* Actions are the only thing here that earns its space on hover alone: they
    are always reachable by keyboard, and showing five buttons per row turns a
    status board back into a control panel. */
+/* No fixed track holds every set: Send can read "Send the rest" and a checksum
+   verdict "No checksum file", and a finished row now carries five buttons. So
+   when they spill left they sit ON an opaque copy of the hovered row's
+   background, fading in over the cells beneath, instead of printing through
+   the peer name. */
+.dls[data-density='table'] .dl__rowactions {
+  position: relative; z-index: 1;
+  padding-left: var(--sp-5);
+  background: linear-gradient(var(--bg-hover), var(--bg-hover)), var(--bg-content);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--sp-5));
+  mask-image: linear-gradient(to right, transparent, #000 var(--sp-5));
+}
 @media (hover: hover) and (pointer: fine) {
   .dls[data-density='table'] .dl__rowactions { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
   .dls[data-density='table'] .dl__row:hover .dl__rowactions,
@@ -2081,9 +2224,9 @@
 .dl__chev { color: var(--text-tertiary); transition: transform var(--dur-base) var(--ease-out); }
 .dl__chev[data-open='true'] { transform: rotate(180deg); }
 
-.prog { height: 3px; background: var(--bg-sunken); overflow: hidden; }
+.prog { display: block; height: 3px; background: var(--bg-sunken); overflow: hidden; }
 .prog__fill {
-  height: 100%; width: 100%; transform-origin: left center;
+  display: block; height: 100%; width: 100%; transform-origin: left center;
   background: var(--accent);
   /* transform, never width — width animates layout on every packet. */
   transition: transform var(--dur-base) var(--ease-out);
@@ -2139,8 +2282,8 @@
 /* Refused is amber, not red: someone answered, and the answer was no. That is
    a different thing from a connection falling over, and the two want different
    reactions from the reader. */
-.dl__state[data-tone='refused']  { color: var(--warn); }
-.dl__state[data-tone='broken']   { color: var(--danger); }
+.dl__state[data-tone='refused']  { color: var(--danger); }
+.dl__state[data-tone='broken']   { color: var(--warn); }
 
 /* --- post-download verdict ------------------------------------------------
    The FINDING, not the search-time prediction (PRODUCT §6). Deliberately worded
@@ -2178,6 +2321,9 @@
 .verify--done[data-tone='warn'] { color: var(--warn); }
 .verify--done[data-tone='bad']  { color: var(--danger); }
 .verify--done[data-tone='unknown'] { color: var(--text-tertiary); }
+/* Send to Rekordbox: green once every file is in the folder, red when one was refused. */
+.handoff[data-tone='good'] { color: var(--success); }
+.handoff[data-tone='bad']  { color: var(--danger); }
 
 /* ==================================================== table density ====== */
 /* One shared column grid. `display: contents` on the intermediate wrappers
@@ -2499,7 +2645,6 @@
   display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
   padding-bottom: var(--sp-2); border-bottom: 1px solid var(--separator);
 }
-.browse__who { font-size: var(--fs-body); color: var(--text-primary); }
 .browse__stat { font-size: var(--fs-caption); color: var(--text-secondary); }
 .shares__blocked { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
 .lib__offline { display: flex; align-items: center; gap: var(--sp-3); justify-content: space-between; }
@@ -3575,7 +3720,7 @@
   padding: var(--sp-2) var(--sp-3);
   text-align: left;
 }
-.libtable__head {
+.libtable__head, .yt__head {
   position: sticky; top: 0; z-index: 1;
   background: var(--material-header);
   backdrop-filter: saturate(180%) blur(20px);
@@ -3648,14 +3793,6 @@
   gap: var(--sp-3); align-items: center;
   padding: var(--sp-2);
   width: max-content; min-width: 100%;
-}
-.yt__head {
-  position: sticky; top: 0; z-index: 1;
-  background: var(--material-header);
-  backdrop-filter: saturate(180%) blur(20px);
-  border-bottom: 0.5px solid var(--separator);
-  font-size: var(--fs-micro); letter-spacing: var(--tr-micro);
-  text-transform: uppercase; color: var(--text-tertiary);
 }
 /* ------------------------------------------------------------- colhead -- */
 /* A table header cell (ui/columnHeaders.tsx), shared by the search table and
@@ -3961,3 +4098,516 @@
 .peer__menu { flex: none; align-self: flex-start; }
 .up__user--link { border: none; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
 .up__user--link:hover { color: var(--accent); text-decoration: underline; }
+
+/* ================================================================ corner == */
+/* The corner panel (ui/CornerPanel.tsx). Inside the pane, so it floats over
+   the list and never over the sidebar; under sheets and popovers. */
+
+.corner {
+  position: absolute; right: var(--sp-4); bottom: var(--sp-4); z-index: 35;
+  width: 20rem;
+  display: flex; flex-direction: column;
+  border: 0.5px solid var(--separator-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  animation: cornerIn var(--dur-base) var(--ease-out) both;
+}
+@keyframes cornerIn { from { opacity: 0; transform: translateY(8px); } }
+
+.corner__head { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); }
+.corner__title { flex: 1; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.corner__dim { color: var(--text-tertiary); font-weight: 400; }
+.corner__link {
+  padding: 0; border: 0; background: none; cursor: default;
+  font: inherit; font-size: var(--fs-caption); color: var(--accent);
+}
+.corner__fold {
+  display: grid; place-items: center; width: 1.25rem; height: 1.25rem;
+  border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
+}
+.corner__fold:hover { background: var(--bg-hover); }
+
+.corner__rows { list-style: none; margin: 0; padding: 0; }
+.corner__row {
+  display: flex; flex-direction: column; gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 0.5px solid var(--separator);
+}
+.corner__name { font-size: var(--fs-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.corner__name b { font-weight: var(--fw-medium); }
+.corner__dash { color: var(--text-quaternary); }
+.corner__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.corner__sub { font-size: var(--fs-micro); color: var(--text-tertiary); }
+.corner__row[data-kind='finished'] .corner__line { color: var(--success); }
+.corner__row[data-kind='trouble'] .corner__line { color: var(--warn); }
+.corner__row .corner__link { align-self: flex-start; }
+
+/* Room for it. `--corner-h` is how much of the pane's bottom the panel takes,
+   set by the panel itself and gone with it. A list scrolls its last rows clear
+   of the panel; Chat's composer is pinned, so its column ends above it. */
+.scroller { padding-bottom: var(--corner-h, 0px); }
+.pane__scroll { padding-bottom: max(var(--sp-10), calc(var(--corner-h, 0px) + var(--sp-4))); }
+.btree__list, .btree__tree { padding-bottom: var(--corner-h, 0px); }
+.chat__main { padding-bottom: var(--corner-h, 0px); }
+
+/* Folded: two lines of summary, a pill in the same corner. */
+.corner--pill {
+  width: auto; flex-direction: row; align-items: center;
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-caption); color: var(--text-primary); text-align: left; cursor: default;
+}
+.corner__pill-text { display: flex; flex-direction: column; }
+
+/* ========================================================== best picks == */
+
+/* Simple's lead: two or three cards above the results, titles two sizes above
+   the list's file names. They scroll away with the list. */
+.picks { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3) var(--sp-5) var(--sp-4); }
+.picks__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.picks__row {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+}
+.pick {
+  container-type: inline-size;
+  display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0;
+  padding: var(--sp-3);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-raised);
+}
+.pick__kind {
+  font-size: var(--fs-micro); font-weight: var(--fw-semibold); letter-spacing: 0.02em;
+  color: var(--accent);
+}
+.pick__head { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.pick__art { position: relative; width: 2.75rem; height: 2.75rem; border-radius: var(--radius-md); }
+.pick__body { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.pick__title {
+  margin: 0; font-size: var(--fs-body-lg); line-height: 1.3; letter-spacing: var(--tr-body-lg);
+  font-weight: var(--fw-semibold);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.pick__title [data-raw='true'] { font-weight: 400; color: var(--text-secondary); }
+.pick__dash { color: var(--text-quaternary); font-weight: 400; }
+.pick__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+/* Pinned to the bottom so the Gets line up across a row of cards. */
+.pick__foot {
+  margin-top: auto;
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--sp-2);
+}
+.pick__about {
+  flex: 1 1 0; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.pick__about .quality__label { font-size: var(--fs-caption); white-space: nowrap; }
+.pick__peer { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pick__get { flex: none; max-width: 100%; margin-left: auto; }
+.pick__get span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Too narrow for the details and "Get all 13" side by side: every card in the
+   row is the same width, so they all stack alike. */
+@container (max-width: 17rem) {
+  .pick__foot { flex-direction: column; align-items: stretch; }
+}
+
+/* Collector's lead: the same picks as one line of chips above the table,
+   each a Get for exactly the copy it names. Scrolls away with the list. */
+.pickchips {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.pickchips .picks__title { font-size: var(--fs-caption); }
+.pickchips__row { display: flex; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.pickchip {
+  display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%;
+  height: 1.625rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  font: inherit; font-size: var(--fs-caption); color: var(--text-primary); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) { .pickchip:hover { background: var(--bg-hover); } }
+.pickchip__kind { color: var(--text-tertiary); }
+.pickchip__title {
+  max-width: 14rem; font-weight: var(--fw-medium);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pickchip__title[data-raw='true'] { font-weight: 400; color: var(--text-secondary); }
+.pickchip__peer { min-width: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The Get at the end, in the queue button's colours for each state. */
+.pickchip > svg { flex: none; }
+.pickchip > svg, .pickchip > span:last-child { color: var(--accent); white-space: nowrap; }
+.pickchip[data-q='queued'] > svg, .pickchip[data-q='queued'] > span:last-child { color: var(--text-secondary); }
+.pickchip[data-q='done'] > svg, .pickchip[data-q='done'] > span:last-child { color: var(--success); }
+.pickchip[data-q='failed'] > svg, .pickchip[data-q='failed'] > span:last-child { color: var(--warn); }
+
+/* ========================================================== all copies == */
+
+/* Simple's status line: who has answered, the number that grows, in place of
+   Collector's file count. */
+.answered {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.answered[data-live='true']::before {
+  content: ''; flex: none;
+  width: 0.375rem; height: 0.375rem; border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* "All copies · 8 versions · 19 copies", and the sort. Scrolls with the list. */
+.copies-head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-5);
+}
+.copies-head__title {
+  margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold);
+  color: var(--text-secondary);
+}
+.copies-head__count { margin-left: var(--sp-2); font-weight: 400; color: var(--text-tertiary); }
+
+/* One version: a title, then one line of facts in plain words. */
+.row--simple {
+  box-sizing: border-box; min-height: 3.25rem;
+  padding-top: var(--sp-2); padding-bottom: var(--sp-2);
+}
+.simple__art { position: relative; width: 2rem; height: 2rem; }
+.simple__facts {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--sp-3);
+  font-size: var(--fs-secondary); line-height: var(--lh-secondary); color: var(--text-secondary);
+}
+.simple__facts .quality__label { font-size: var(--fs-caption); }
+/* The verdict is the words here, not a glyph beside a column, so it is read
+   at reading contrast. */
+.simple__facts .quality[data-state='good'] .quality__trigger,
+.pick__about .quality[data-state='good'] .quality__trigger { color: var(--text-secondary); }
+.simple__facts .quality[data-state='unverified'] .quality__trigger,
+.pick__about .quality[data-state='unverified'] .quality__trigger { color: var(--text-tertiary); }
+.simple__copies {
+  flex: none; display: inline-flex; align-items: center; gap: var(--sp-1);
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.simple__compare {
+  padding: 2px var(--sp-1); margin: -2px calc(var(--sp-1) * -1);
+  border-radius: var(--radius-sm); color: var(--accent); cursor: default;
+}
+@media (hover: hover) and (pointer: fine) { .simple__compare:hover { background: var(--bg-active); } }
+/* "Get" in words, like the picks above: wider than the icon it replaces. */
+.row--simple .row__actions { width: auto; min-width: 4.5rem; }
+
+/* =================================================== downloads · simple == */
+/* Simple's Downloads (ui/DownloadsSimple.tsx): one release on a card, then
+   the rest in sections by what each needs from you. */
+
+.dlsimple {
+  display: flex; flex-direction: column; gap: var(--sp-5);
+  width: 100%; max-width: 55rem; padding-top: var(--sp-2);
+}
+
+.dlsimple__lead {
+  display: grid; grid-template-columns: 7rem minmax(0, 1fr); gap: var(--sp-4) var(--sp-5);
+  padding: var(--sp-4);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-lg);
+  background: var(--bg-raised); box-shadow: var(--shadow-raised);
+}
+.art--lead { width: 7rem; height: 7rem; margin: 0; border-radius: var(--radius-md); }
+.dlsimple__lead-body { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.dlsimple__lead-top {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--sp-1) var(--sp-3);
+}
+.dlsimple__name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dlsimple__eyebrow { font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--accent); }
+.dlsimple__title {
+  font-size: var(--fs-section); font-weight: var(--fw-semibold); letter-spacing: -0.014em;
+  overflow-wrap: anywhere;
+}
+.dlsimple__facts { font-size: var(--fs-secondary); color: var(--text-secondary); }
+.dlsimple__pct { font-size: var(--fs-title); font-weight: var(--fw-semibold); letter-spacing: -0.021em; }
+.dlsimple__lead .prog { height: 6px; border-radius: 3px; }
+.dlsimple__stats {
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+.dlsimple__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.dlsimple__open { grid-column: 1 / -1; min-width: 0; }
+
+/* Five minutes of speed. Drawn once per sample, never animated. */
+.speed { margin: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.speed__chart { display: block; width: 100%; height: 4rem; }
+.speed__grid { fill: none; stroke: var(--separator); stroke-width: 1; }
+.speed__area { fill: var(--accent); opacity: 0.14; }
+.speed__line { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; }
+.speed__axis {
+  display: flex; justify-content: space-between; gap: var(--sp-2);
+  font-size: var(--fs-micro); color: var(--text-tertiary);
+}
+
+.dlsimple__section { display: flex; flex-direction: column; gap: var(--sp-1); }
+.dlsimple__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); color: var(--text-secondary); }
+.dlsimple__rows { list-style: none; margin: 0; padding: 0; }
+.dlsimple__more { padding: var(--sp-2) 0; }
+
+.dlrow {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--sp-3);
+  border-bottom: 0.5px solid var(--separator);
+}
+.dlrow__hit {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); align-items: center; gap: var(--sp-3);
+  min-width: 0; padding: var(--sp-2) 0;
+  border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: default;
+}
+.art--row { width: 2.5rem; height: 2.5rem; margin: 0; }
+.dlrow__main { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dlrow__title { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.dlrow__name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlrow .prog { height: 4px; border-radius: 2px; }
+.dlrow__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlrow[data-tone='refused'] .dlrow__line { color: var(--danger); }
+.dlrow[data-tone='broken'] .dlrow__line { color: var(--warn); }
+.prog[data-state='trouble'] .prog__fill { background: var(--warn); }
+.dlrow__open { grid-column: 1 / -1; min-width: 0; padding-bottom: var(--sp-2); }
+
+.dlsimple__review {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4); border-radius: var(--radius-md); background: var(--accent-soft);
+}
+.dlsimple__review-text { flex: 1 1 15rem; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dlsimple__review h2 { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.dlsimple__review p { margin: 0; font-size: var(--fs-caption); color: var(--text-secondary); }
+
+@media (max-width: 34rem) {
+  .dlsimple__lead { grid-template-columns: 4rem minmax(0, 1fr); }
+  .art--lead { width: 4rem; height: 4rem; }
+}
+
+/* ============================================================ mini seek == */
+/* Mini Seek (ui/MiniSeek.tsx): the window made small. The full window stays
+   mounted beneath it, hidden, so nothing left open is lost on the way back. */
+
+.app[data-mini='true'] { display: block; }
+.app[data-mini='true'] > .sidebar,
+.app[data-mini='true'] > .pane,
+.app[data-mini='true'] > .updbar { display: none; }
+
+.mini { display: flex; flex-direction: column; height: 100%; background: var(--bg-raised); color: var(--text-primary); }
+
+/* The traffic lights sit over the left of this bar, so the title is centred. */
+.mini__bar {
+  flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  height: 38px; padding: 0 var(--sp-3); border-bottom: 0.5px solid var(--separator);
+}
+.mini__title { grid-column: 2; margin: 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); }
+.mini__back {
+  grid-column: 3; justify-self: end; display: grid; place-items: center; width: 1.5rem; height: 1.5rem;
+  padding: 0; border: 0; border-radius: var(--radius-sm); background: none; color: var(--text-secondary);
+}
+.mini__back:hover { background: var(--bg-hover); }
+
+.mini__search {
+  flex: none; display: flex; align-items: center; gap: var(--sp-2);
+  margin: var(--sp-2) var(--sp-3); height: 2rem; padding: 0 var(--sp-2);
+  border: 0.5px solid var(--border-control); border-radius: var(--radius-md);
+  background: var(--bg-raised); color: var(--text-tertiary);
+}
+.mini__search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mini__search input {
+  flex: 1; min-width: 0; border: 0; background: none; outline: none;
+  font: inherit; font-size: var(--fs-secondary); color: var(--text-primary);
+}
+.mini__key { font: inherit; font-size: var(--fs-micro); color: var(--text-tertiary); }
+
+.mini__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.mini__empty { margin: var(--sp-5) var(--sp-3); font-size: var(--fs-secondary); color: var(--text-tertiary); text-align: center; }
+.mini__h { margin: 0; padding: var(--sp-1) var(--sp-3); font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--text-secondary); }
+.mini__rows { list-style: none; margin: 0; padding: 0; }
+.mini__row { display: flex; align-items: center; gap: 10px; padding: var(--sp-2) var(--sp-3); }
+.mini .art--row { width: 2rem; height: 2rem; }
+.mini__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mini__name { font-size: var(--fs-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mini .prog { height: 3px; border-radius: 2px; }
+.mini__line { font-size: var(--fs-micro); color: var(--text-secondary); }
+.mini__row[data-tone='refused'] .mini__line { color: var(--danger); }
+.mini__row[data-tone='broken'] .mini__line { color: var(--warn); }
+.mini__act { align-self: flex-start; height: 1.5rem; }
+
+.mini__review {
+  flex: none; display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-2); padding: var(--sp-2) 10px;
+  border-radius: var(--radius-md); background: var(--accent-soft);
+}
+.mini__review .art--row { width: 1.5rem; height: 1.5rem; }
+.mini__review-text { flex: 1; min-width: 0; font-size: var(--fs-caption); }
+
+.mini__foot {
+  flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3); border-top: 0.5px solid var(--separator);
+}
+.mini__ontop { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-caption); }
+.mini__ontop input { margin: 0; accent-color: var(--accent); }
+
+/* ------------------------------------------------------- downloads, board */
+/* Downloads · Board (Simple): five columns, a card per release. The columns
+   share the width; below five 11rem columns the board scrolls sideways, a
+   column at a time. Not wrapped: a second row put Ready, the column you act
+   on, under every queued card. The board is its own scroller, filling the
+   pane, so its sideways scrollbar sits at the window's foot rather than under
+   the longest column, out of sight. */
+.board__scroll { display: flex; flex-direction: column; overflow: hidden; padding-bottom: var(--sp-2); }
+.board__tools { flex-direction: column; align-items: flex-end; gap: var(--sp-1); }
+.board__folder {
+  max-width: 22rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-size: var(--fs-caption); color: var(--text-tertiary);
+}
+.board__notices:empty { display: none; }
+.board {
+  flex: 1 1 0; min-height: 0; overflow: auto;
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+  padding: var(--sp-2) 0 var(--sp-4);
+  scroll-snap-type: x proximity;
+}
+/* A styled scrollbar is one WebKit always draws. The overlay kind macOS uses
+   by default stays hidden until a scroll starts, so at the window's narrowest
+   nothing said that Ready and Sent were off to the right. */
+.board::-webkit-scrollbar { width: 8px; height: 8px; }
+.board::-webkit-scrollbar-track { background: transparent; }
+.board::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--text-quaternary); }
+.board__col {
+  flex: 1 1 0; min-width: 11rem; scroll-snap-align: start;
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: var(--sp-2) calc(var(--sp-2) + 2px);
+  border: 0.5px solid var(--separator); border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+.board__colhead { display: flex; flex-direction: column; gap: 2px; padding: 2px 2px 0; }
+.board__h { margin: 0; font-size: var(--fs-secondary); font-weight: var(--fw-semibold); }
+.board__n { margin-left: 2px; font-weight: normal; color: var(--text-tertiary); }
+.board__note { font-size: var(--fs-micro); color: var(--text-secondary); }
+.board__empty { margin: 0; padding: var(--sp-2) 2px; font-size: var(--fs-caption); color: var(--text-secondary); }
+.board__cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.board__card {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding: calc(var(--sp-2) + 2px);
+  border: 0.5px solid var(--separator-strong); border-radius: var(--radius-md);
+  background: var(--bg-raised); box-shadow: var(--shadow-raised);
+}
+/* Stalled: a border that says it, as the canvas has it. */
+.board__card[data-tone='broken'] { border: 1px solid var(--warn); }
+.board__head { display: flex; align-items: center; gap: calc(var(--sp-2) + 2px); min-width: 0; }
+.board__name { display: flex; flex-direction: column; gap: 4px; flex: 1 1 0; min-width: 0; }
+.board__title {
+  font-size: var(--fs-secondary); overflow-wrap: anywhere;
+  /* Two lines, then the card's tooltip: three made every card a paragraph. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.board__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.board__chip {
+  padding: 1px 6px; border-radius: var(--radius-sm);
+  font-size: var(--fs-micro); color: var(--accent); background: var(--accent-soft);
+}
+.board__line { font-size: var(--fs-caption); color: var(--text-secondary); }
+.board__card[data-tone='refused'] .board__line { color: var(--danger); }
+.board__card[data-tone='broken'] .board__line { color: var(--warn); }
+.board__line[data-check='good'] { color: var(--success); }
+.board__line[data-check='warn'] { color: var(--warn); }
+.board__line[data-check='bad'] { color: var(--danger); }
+.board__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.board__more { padding: 0 2px; font-size: var(--fs-caption); color: var(--text-tertiary); }
+/* Needs attention: refused, stalled or failed, at the top of Queued and set
+   apart from the releases that are only waiting their turn. */
+.board__lane {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding-bottom: var(--sp-2); border-bottom: 0.5px solid var(--separator-strong);
+}
+.board__laneh { margin: 0; padding: 0 2px; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--text-primary); }
+
+/* ----------------------------------------------------- downloads, folders */
+/* Downloads · Folders (Simple): the releases as folders, each opening to its
+   files. One grid shared by the head and every row, so the columns line up. */
+.dlf {
+  display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-2) 0 var(--sp-4);
+  container-type: inline-size;
+}
+.dlf__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.dlf__crumbs {
+  flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden;
+  font-size: var(--fs-secondary); color: var(--text-secondary);
+}
+/* The last crumb gives way first, and with an ellipsis: every crumb shrinking
+   at once cut a long path into fragments that named nothing. It keeps a few
+   words; past that the others shrink too, each ending in "…" rather than
+   pushing the rest out of the bar uncut, and none takes more than 12rem. */
+.dlf__crumb { display: inline-flex; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 12rem; white-space: nowrap; }
+.dlf__crumb[aria-current] { flex-shrink: 1000; min-width: min(8rem, 40%); max-width: none; }
+.dlf__crumbtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dlf__crumb[aria-current] { color: var(--text-primary); font-weight: var(--fw-medium); }
+.dlf__sep { color: var(--text-quaternary); }
+.dlf__table {
+  border: 0.5px solid var(--separator); border-radius: var(--radius-lg);
+  background: var(--bg-raised); padding: var(--sp-1);
+}
+.dlf__head, .dlf__row {
+  /* The status shares the slack with the name: capped at 16rem it clipped
+     "254 MB of 526 MB · 1.7 MB/s" even at 1280 px. */
+  display: grid; grid-template-columns: minmax(0, 3fr) 4rem 5.25rem minmax(9rem, 2fr);
+  align-items: center; column-gap: var(--sp-2);
+}
+/* Narrow: Files and Size go before the names do. Both are a click away, in
+   the selected row's path and in Finder; a name cut to its first word is not. */
+@container (max-width: 40rem) {
+  .dlf__head, .dlf__row { grid-template-columns: minmax(0, 3fr) minmax(8rem, 2fr); }
+  .dlf__files, .dlf__size { display: none; }
+}
+/* No side padding on the grid itself: rows have none, and padding here put
+   every header on a different track from its column. Only Name is indented,
+   to where a row's label starts (chevron, icon and their two gaps). */
+.dlf__head {
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--text-tertiary);
+  border-bottom: 0.5px solid var(--separator);
+}
+.dlf__head > :first-child { padding-left: calc(var(--sp-2) + 12px + 14px + 2 * 6px); }
+.dlf__rows { list-style: none; margin: 0; padding: 0; }
+.dlf__row { min-height: 28px; border-radius: var(--radius-sm); }
+.dlf__row[data-current] { background: var(--bg-selected); }
+.dlf__name {
+  display: flex; align-items: center; gap: 6px; min-width: 0; height: 28px;
+  padding: 0 var(--sp-2) 0 calc(var(--sp-2) + var(--depth, 0) * 20px);
+  border: 0; background: none; font: inherit; font-size: var(--fs-secondary);
+  color: var(--text-primary); text-align: left; cursor: default;
+}
+.dlf__name svg { flex: none; color: var(--text-tertiary); }
+.dlf__row[data-current] .dlf__name { color: var(--accent); }
+.dlf__row[data-pending] .dlf__name { color: var(--text-tertiary); }
+.dlf__row[data-pending] .dlf__name svg { color: var(--text-quaternary); }
+.dlf__label { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlf__chev { transition: transform var(--dur-fast) var(--ease-out); }
+.dlf__chev[data-open] { transform: rotate(90deg); }
+.dlf__chev[data-hidden] { visibility: hidden; }
+.dlf__files, .dlf__size { text-align: right; font-size: var(--fs-caption); color: var(--text-secondary); }
+.dlf__status {
+  display: flex; align-items: center; gap: var(--sp-2); min-width: 0;
+  font-size: var(--fs-caption); color: var(--text-secondary);
+}
+.dlf__status .prog { flex: 0 0 3rem; }
+.dlf__statustext { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dlf__status[data-tone='done'], .dlf__status[data-tone='good'] { color: var(--success); }
+.dlf__status[data-tone='active'] { color: var(--accent); }
+.dlf__status[data-tone='waiting'] { color: var(--text-tertiary); }
+.dlf__status[data-tone='refused'], .dlf__status[data-tone='bad'] { color: var(--danger); }
+.dlf__status[data-tone='broken'], .dlf__status[data-tone='warn'] { color: var(--warn); }
+.dlf__foot { margin: 0; font-size: var(--fs-caption); color: var(--text-tertiary); }
+@container (max-width: 40em) {
+  .dlf__head, .dlf__row { grid-template-columns: minmax(0, 1fr) 4.5rem minmax(6rem, 10rem); }
+  .dlf__files { display: none; }
+}

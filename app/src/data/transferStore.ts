@@ -26,9 +26,11 @@
  * whole list per packet is exactly the jitter the brief forbids.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FolderContentsEvent, TransferFolderParams } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import { readUntilAnswered, reportFailure, showNotice } from './failures.ts';
+import { spanWords } from '../domain/format.ts';
 
 export type TransferState =
   | 'queued' | 'rejected' | 'getting_status' | 'transferring' | 'paused' | 'cancelled'
@@ -36,7 +38,7 @@ export type TransferState =
   | 'connection_timeout' | 'download_folder_error' | 'local_file_error'
   | 'unknown';
 
-export type TransferDirection = 'download' | 'upload';
+type TransferDirection = 'download' | 'upload';
 
 export interface Transfer {
   id: string;
@@ -122,6 +124,9 @@ export const isTerminal = (s: TransferState) => (
   s === 'finished' || isFailed(s) || isCancelled(s)
 );
 
+/** A release's first finished file: what Show in Finder and a checksum check start from. */
+export const firstFinished = (g: TransferGroup) => g.transfers.find((t) => t.state === 'finished');
+
 /** Split a remote virtual path on the backslash Soulseek actually uses. */
 function splitPath(path: string): { folder: string; name: string } {
   const norm = path.replace(/\//g, '\\');
@@ -182,7 +187,7 @@ const BADGE_RANK: Record<QueueBadge, number> = {
   downloading: 5, queued: 4, paused: 3, failed: 2, done: 1, idle: 0,
 };
 
-export interface QueueMaps {
+interface QueueMaps {
   /** By `transferKey` — one file's exact state, for a track/source/file row. */
   files: Map<string, TransferState>;
   /** By `folderKey` — the liveliest badge across a folder, for a release card. */
@@ -198,7 +203,7 @@ export function buildQueueMaps(all: Transfer[]): QueueMaps {
   const folders = new Map<string, QueueBadge>();
   for (const t of all) {
     files.set(transferKey(t.username, t.path), t.state);
-    const fk = `${t.username}\0${splitPath(t.path).folder}`;
+    const fk = groupOf(t);
     const next = queueBadge(t.state);
     const cur = folders.get(fk);
     if (cur === undefined || BADGE_RANK[next] > BADGE_RANK[cur]) folders.set(fk, next);
@@ -285,7 +290,8 @@ export function group(transfers: Transfer[], quietSeconds = 0, now = Date.now())
  * The previous objects wherever nothing changed, so React can skip them. A
  * group is the same when its files are the very same objects (the store
  * replaces a transfer's object on every update) and its time-dependent bits
- * agree. Without this every one of 700 finished releases was a new object on
+ * agree as shown: `quietFor` is only ever read out in minutes, and comparing
+ * the seconds replaced every queued or paused release on every tick. Without this every one of 700 finished releases was a new object on
  * every progress tick, and the whole list redrew 2.5 times a second.
  */
 export function keepUnchanged(prev: TransferGroup[], next: TransferGroup[]): TransferGroup[] {
@@ -293,7 +299,7 @@ export function keepUnchanged(prev: TransferGroup[], next: TransferGroup[]): Tra
   let same = prev.length === next.length;
   const out = next.map((n, i) => {
     const p = before.get(n.key);
-    const kept = p && p.state === n.state && p.quietFor === n.quietFor
+    const kept = p && p.state === n.state && spanWords(p.quietFor) === spanWords(n.quietFor)
       && sameItems(p.transfers, n.transfers) ? p : n;
     if (kept !== prev[i]) same = false;
     return kept;
@@ -384,7 +390,9 @@ export interface TransferSession {
   enqueue(username: string, path: string, size: number, destination?: string | null): Promise<void>;
   /** `recurse` takes the subfolders too — what a folder whose label counts
    *  everything inside it promises. `count`, when the caller knows it, asks
-   *  first past LARGE_FOLDER_FILES: one click should not queue 3,000 files. */
+   *  first past LARGE_FOLDER_FILES: one click should not queue 3,000 files.
+   *  A folder that turns out bigger than `count` (a search shows a fraction
+   *  of one) is held back by the sidecar and asked about then. */
   enqueueFolder(
     username: string, folderPath: string, recurse?: boolean,
     opts?: { destination?: string | null; count?: number },
@@ -415,9 +423,9 @@ export interface TransferSession {
 
 /** Folders with more files than this ask before queueing — the number
  *  Nicotine+ asks at too (userbrowse.py). */
-export const LARGE_FOLDER_FILES = 1000;
+const LARGE_FOLDER_FILES = 1000;
 
-export interface PendingFolder {
+interface PendingFolder {
   username: string;
   folderPath: string;
   recurse: boolean;
@@ -425,8 +433,13 @@ export interface PendingFolder {
   count: number;
 }
 
+/* Questions wait their turn, once per folder. A held folder is announced
+   whenever its peer answers, so two can arrive while one is on screen. */
+const withQuestion = (q: PendingFolder[], f: PendingFolder) => (
+  q.some((x) => x.username === f.username && x.folderPath === f.folderPath) ? q : [...q, f]);
+
 /** Enough of a cancelled download to queue it again. */
-export interface CancelledFile {
+interface CancelledFile {
   username: string;
   path: string;
   size: number;
@@ -492,7 +505,7 @@ export function useTransfers(
     /* Uploads are never reclassified. A peer who stops taking a file from you
      * is their problem, not a download of yours that needs cleaning up, and
      * `uploads.py` has no paused or stalled state to reason about anyway. */
-    setUploadGroups(group(uploads, 0, now));
+    setUploadGroups((prev) => keepUnchanged(prev, group(uploads, 0, now)));
   }, []);
 
   useEffect(() => {
@@ -527,10 +540,14 @@ export function useTransfers(
       );
     };
     const onFolder = (data: unknown) => {
-      const d = data as {
-        requestId: string; folderPath: string; enqueued: number;
-        folders?: { path: string; files: unknown[] }[];
-      };
+      const d = data as FolderContentsEvent;
+      if (d.held) {
+        // Bigger than the search showed. The sidecar held it back rather than
+        // queue it, so ask now, with the real count.
+        const held = { username: d.username, folderPath: d.folderPath, ...d.held };
+        setQuestions((q) => withQuestion(q, held));
+        return;
+      }
       if (!d.requestId || d.enqueued !== 0) return;
       const name = d.folderPath.split('\\').pop() || d.folderPath;
       const inSubfolders = (d.folders ?? []).some((f) => f.path !== d.folderPath && f.files.length > 0);
@@ -664,16 +681,23 @@ export function useTransfers(
     }
   }, [client]);
 
-  const [pendingFolder, setPendingFolder] = useState<PendingFolder | null>(null);
+  const [questions, setQuestions] = useState<PendingFolder[]>([]);
+  const pendingFolder = questions[0] ?? null;
 
-  const sendFolder = useCallback(async (f: Omit<PendingFolder, 'count'>) => {
+  /* `confirmAbove` lets the sidecar, the only side that sees the real count,
+     hold back a folder the caller underestimated: a search shows a fraction
+     of one. Null once the person has agreed. */
+  const sendFolder = useCallback(async (
+    f: Omit<PendingFolder, 'count'>, confirmAbove: number | null,
+  ) => {
     if (!client) return;
     setError(null);
+    const params = {
+      username: f.username, folderPath: f.folderPath, recurse: f.recurse,
+      destination: f.destination, confirmAbove,
+    } satisfies TransferFolderParams;
     try {
-      await client.request('transfer.enqueueFolder', {
-        username: f.username, folderPath: f.folderPath, recurse: f.recurse,
-        destination: f.destination,
-      });
+      await client.request('transfer.enqueueFolder', params);
     } catch (e) {
       setError((e as Error).message);
       reportFailure('Download the folder', e);
@@ -686,17 +710,18 @@ export function useTransfers(
   ) => {
     const f = { username, folderPath, recurse, destination: opts.destination ?? null };
     if ((opts.count ?? 0) > LARGE_FOLDER_FILES) {
-      setPendingFolder({ ...f, count: opts.count ?? 0 });
+      const asked = { ...f, count: opts.count ?? 0 };
+      setQuestions((q) => withQuestion(q, asked));
       return;
     }
-    await sendFolder(f);
+    await sendFolder(f, LARGE_FOLDER_FILES);
   }, [sendFolder]);
 
   const confirmFolder = useCallback(() => {
-    if (pendingFolder) void sendFolder(pendingFolder);
-    setPendingFolder(null);
+    if (pendingFolder) void sendFolder(pendingFolder, null);
+    setQuestions((q) => q.slice(1));
   }, [pendingFolder, sendFolder]);
-  const dismissFolder = useCallback(() => setPendingFolder(null), []);
+  const dismissFolder = useCallback(() => setQuestions((q) => q.slice(1)), []);
 
   /* A read first, then an ordinary clear, so anything awaiting review is left
      out: clearing its transfer would leave the review card pointing at nothing. */
@@ -756,7 +781,15 @@ export function useTransfers(
       .catch((e) => reportFailure('Open the file', e));
   }, [client]);
 
-  return {
+  const pause = useCallback((ids: string[]) => cmd('transfer.pause', { transferIds: ids }), [cmd]);
+  const resume = useCallback((ids: string[]) => cmd('transfer.resume', { transferIds: ids }), [cmd]);
+  const retry = useCallback((ids: string[]) => cmd('transfer.retry', { transferIds: ids }), [cmd]);
+  const clear = useCallback((ids: string[]) => cmd('transfer.clear', { transferIds: ids }), [cmd]);
+
+  /* One object per change, not per render: App's keyboard handler, the
+     auto-download planner and every menu builder key on it, and a fresh one
+     each render re-ran all of them on every unrelated state change. */
+  return useMemo(() => ({
     groups, all,
     activeCount: all.filter((t) => isActive(t.state)).length,
     uploadGroups,
@@ -765,16 +798,13 @@ export function useTransfers(
     uploadCount: uploadGroups.reduce((n, g) => n + g.active, 0),
     enqueue, enqueueFolder,
     pendingFolder, confirmFolder, dismissFolder, forgetMissing,
-    pause: (ids) => cmd('transfer.pause', { transferIds: ids }),
-    resume: (ids) => cmd('transfer.resume', { transferIds: ids }),
-    cancel,
-    retry: (ids) => cmd('transfer.retry', { transferIds: ids }),
-    clear: (ids) => cmd('transfer.clear', { transferIds: ids }),
+    pause, resume, cancel, retry, clear,
     error,
     note,
     cancelled,
     undoCancel,
     reveal,
     open,
-  };
+  }), [groups, all, uploadGroups, enqueue, enqueueFolder, pendingFolder, confirmFolder, dismissFolder,
+    forgetMissing, pause, resume, cancel, retry, clear, error, note, cancelled, undoCancel, reveal, open]);
 }

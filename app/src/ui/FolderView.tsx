@@ -15,61 +15,16 @@ import { useMemo, useState } from 'react';
 import type { BrowseFile, Shelf } from '../data/browseStore.ts';
 import { fileSize } from '../domain/format.ts';
 import { fileName } from '../data/transferStore.ts';
+import { buildFolderTree } from './FolderTree.tsx';
+import type { FolderNode } from './FolderTree.tsx';
 import { IconDownload, IconLibrary, IconRelease } from '../icons/index.tsx';
 
-interface Node {
-  name: string;
-  path: string;
-  children: Map<string, Node>;
-  files: BrowseFile[];
-  /** Bytes in this subtree, computed once on build. */
-  size: number;
-  fileCount: number;
-}
-
-function emptyNode(name: string, path: string): Node {
-  return { name, path, children: new Map(), files: [], size: 0, fileCount: 0 };
-}
-
-/** Rebuild the directory tree the peer actually has from the flat path list. */
-function buildTree(shelves: Shelf[]): Node {
-  const root = emptyNode('', '');
-  for (const shelf of shelves) {
-    const parts = shelf.path.replace(/\//g, '\\').split('\\').filter(Boolean);
-    let node = root;
-    let acc = '';
-    for (const part of parts) {
-      acc = acc ? `${acc}\\${part}` : part;
-      let next = node.children.get(part);
-      if (!next) {
-        next = emptyNode(part, acc);
-        node.children.set(part, next);
-      }
-      node = next;
-    }
-    node.files = shelf.files;
-  }
-
-  // Roll sizes up once, rather than walking the subtree on every render.
-  const measure = (n: Node): void => {
-    let size = n.files.reduce((sum, f) => sum + f.size, 0);
-    let count = n.files.length;
-    for (const child of n.children.values()) {
-      measure(child);
-      size += child.size;
-      count += child.fileCount;
-    }
-    n.size = size;
-    n.fileCount = count;
-  };
-  measure(root);
-  return root;
-}
-
-function resolve(root: Node, path: string[]): Node {
+/** Walk into the tree by folder name. A stale path from before the peer's
+ * share changed stops at the deepest folder that still exists. */
+function resolve(root: FolderNode, path: string[]): FolderNode {
   let node = root;
   for (const part of path) {
-    const next = node.children.get(part);
+    const next = node.children.find((c) => c.name === part);
     if (!next) break;
     node = next;
   }
@@ -83,11 +38,11 @@ export function FolderView({
   onGetFolder(path: string): void;
   onGetFile(file: BrowseFile): void;
 }) {
-  const root = useMemo(() => buildTree(shelves), [shelves]);
+  const root = useMemo(() => buildFolderTree(shelves), [shelves]);
   const [path, setPath] = useState<string[]>([]);
 
   const node = resolve(root, path);
-  const folders = [...node.children.values()].sort((a, b) => b.size - a.size);
+  const folders = [...node.children].sort((a, b) => b.size - a.size);
 
   return (
     <div className="finder">

@@ -242,8 +242,3 @@ export function transferStatus(t: {
       };
   }
 }
-
-/** Every state that means the transfer is not going to progress on its own. */
-export function needsAttention(line: TransferStatusLine): boolean {
-  return line.tone === 'broken' || line.tone === 'refused';
-}

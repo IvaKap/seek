@@ -21,7 +21,6 @@ import { useReducedMotion } from './prefs.ts';
  */
 export function useSpringValue(
   apply: (value: number) => void,
-  initial = 0,
   config: SpringConfig = SPRING_DEFAULT,
 ): (target: number, velocity?: number) => void {
   const reduced = useReducedMotion();
@@ -30,7 +29,7 @@ export function useSpringValue(
   applyRef.current = apply;
 
   if (handleRef.current === null) {
-    handleRef.current = driveSpring((v) => applyRef.current(v), initial, config);
+    handleRef.current = driveSpring((v) => applyRef.current(v), config);
   }
 
   useEffect(() => () => handleRef.current?.stop(), []);
@@ -62,7 +61,6 @@ export function useSpringNumber(
       const el = ref.current;
       if (el) el.textContent = formatRef.current(v);
     },
-    0,
     // No bounce: a count that overshoots and comes back has, for one frame,
     // told the user a number that was never true.
     { response: 0.5, damping: 1.0 },

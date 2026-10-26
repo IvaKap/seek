@@ -28,16 +28,7 @@ import {
 } from '../domain/transferStats.ts';
 import { peerTone } from '../domain/score.ts';
 import { IconEmpty } from '../icons/index.tsx';
-
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="stat">
-      <span className="stat__label">{label}</span>
-      <span className="stat__value tnum">{value}</span>
-      {sub && <span className="stat__sub tnum">{sub}</span>}
-    </div>
-  );
-}
+import { Tile } from './StatsView.tsx';
 
 /** started / completed / rate, for one direction. */
 function Direction({

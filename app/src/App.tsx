@@ -4,24 +4,32 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sidebar } from './ui/Sidebar.tsx';
+import { SIDEBAR_KEY, Sidebar } from './ui/Sidebar.tsx';
+import { inProgress } from './ui/DownloadsSimple.tsx';
 import { UpdateBanner } from './ui/UpdateBanner.tsx';
 import type { ConnectionStatus, Section } from './ui/Sidebar.tsx';
 import type { SearchSession } from './data/searchStore.ts';
 import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
-import { SectionView } from './ui/views.tsx';
-import type { Density, SearchDensity } from './ui/ViewMenu.tsx';
+import { SettingsView } from './ui/SettingsView.tsx';
+import { CornerPanel } from './ui/CornerPanel.tsx';
+import { signInProblem, signedOutByServer } from './domain/signInProblem.ts';
+import { MiniSeek } from './ui/MiniSeek.tsx';
+import { keepOnTop, restore, shrink } from './data/miniWindow.ts';
+import type { Density } from './ui/ViewMenu.tsx';
+import { LAYOUT_KEY, MODE_KEY, densityKey, initialMode, loadLayout, loadViews } from './ui/viewMode.ts';
+import type { DensityScreen, DownloadsLayout, Mode, Views } from './ui/viewMode.ts';
 import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useSidecarConnection } from './data/connectionStore.ts';
-import { WISHLIST_REASON, useSearchTabs } from './data/searchTabs.ts';
+import { useSearchTabs } from './data/searchTabs.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
 import { useAnalysis } from './data/analysisStore.ts';
-import { useChecksums } from './data/checksumStore.ts';
+import { useAutoChecksums, useChecksums } from './data/checksumStore.ts';
+import { useHandoff } from './data/handoffStore.ts';
 import { useBrowse } from './data/browseStore.ts';
 import { useArtwork } from './data/artworkStore.ts';
 import { useLibrary } from './data/libraryStore.ts';
@@ -54,7 +62,8 @@ import { judge, judgeRelease } from './domain/preferences.ts';
 import { useWishHits } from './data/wishHits.ts';
 import { useAutoDownloads } from './data/autoDownloads.ts';
 import { useAutoGreet } from './data/autoGreet.ts';
-import { FollowedView, HistoryView, SavedView, serialiseFilters } from './ui/DiscoveryViews.tsx';
+import { FollowedView, HistoryView, SavedView } from './ui/DiscoveryViews.tsx';
+import { serialiseFilters } from './domain/types.ts';
 import { DownloadsView } from './ui/DownloadsView.tsx';
 import { ChatView } from './ui/ChatView.tsx';
 import { CommandPalette } from './ui/CommandPalette.tsx';
@@ -90,20 +99,12 @@ const NUMBER_KEYS: Record<string, Section> = {
   '9': 'sessions',
 };
 
-const DENSITY_KEY = 'seek.density';
-/* Downloads keeps its OWN density. The two lists answer different questions —
- * search results are things you are still judging, transfers are things you
- * have already decided on — and a collector who wants roomy release cards while
- * choosing usually wants a dense table while watching them arrive. */
-const DL_DENSITY_KEY = 'seek.density.downloads';
-/* And the collection keeps its own, for the same reason again: picking through
- * records wants covers, auditing what you own wants a table, and neither
- * answer should be imposed by what you last chose on a different screen. */
-const LIB_DENSITY_KEY = 'seek.density.library';
 /* The table's columns. Local, like density, and for the same reason: it is a
    view preference about this machine's window, not an account setting the
    sidecar has any use for. */
 const COLUMNS_KEY = 'seek.columns';
+/* Whether Mini Seek stays above other apps. A preference about this window. */
+const MINI_ON_TOP_KEY = 'seek.miniOnTop';
 
 function storedColumns(): ColumnId[] {
   try {
@@ -115,14 +116,21 @@ function storedColumns(): ColumnId[] {
   }
 }
 
-function storedDensity(key: string, fallback: Density): Density {
+/** A stored view choice, or null when there is none or storage is off. */
+function stored(key: string): string | null {
   try {
-    const raw = localStorage.getItem(key);
-    return raw === 'compact' || raw === 'table' || raw === 'comfortable' || raw === 'grid'
-      ? raw : fallback;
+    return localStorage.getItem(key);
   } catch {
-    return fallback;
+    return null;
   }
+}
+
+/** Remember a view choice. Storage can be full or switched off; then the
+ * choice simply isn't remembered, which is not worth a word. */
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch { /* not remembered */ }
 }
 
 /**
@@ -131,7 +139,7 @@ function storedDensity(key: string, fallback: Density): Density {
  * when a search would return `not_connected` is exactly the confidently-wrong
  * behaviour this app exists to avoid.
  */
-function connectionStatus(session: SearchSession): ConnectionStatus {
+function connectionStatus(session: Pick<SearchSession, 'startupError' | 'isMock' | 'phase' | 'serverState' | 'serverError'>): ConnectionStatus {
   /* The shell could not start the engine, or gave up restarting it. First,
      because in that state there may be no client at all, and "mock data" or
      "unreachable" would hide the reason the shell already knows. */
@@ -159,6 +167,14 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
   if (session.serverState === 'away') {
     return { dot: 'online', label: 'Away', detail: 'Signed in, and shown to others as away.' };
   }
+  const problem = signInProblem(session.serverError);
+  if (!isSignedIn(session.serverState) && problem) {
+    return {
+      dot: 'offline',
+      label: signedOutByServer(session.serverError) ? 'Signed out' : 'Sign-in refused',
+      detail: `${problem} Sign in from Settings.`,
+    };
+  }
   if (!isSignedIn(session.serverState)) {
     return {
       dot: 'pending',
@@ -179,34 +195,20 @@ function screenOf(section: string): string {
 
 export default function App() {
   const [section, setSection] = useState<Section>('search');
-  /* Table by default for search too: the people who live in Seek are collectors
-     who read long result lists, and the airy card density fights that habit
-     (r/tauri feedback). The rest of the UI stays as designed — this is the one
-     screen where density is function, not decoration. A stored choice still
-     wins, so only fresh installs land here. */
-  const [density, setDensity] = useState<SearchDensity>(
-    () => storedDensity(DENSITY_KEY, 'table'),
-  );
-  /* Table by default here, unlike search. A transfer list is a status board:
-     the question is "what is happening to all of it", and the card layout
-     answered that for four releases per screen. */
+  /* Simple or Collector, and each screen's density in it (ui/viewMode.ts). */
+  const [mode, setMode] = useState<Mode>(() => initialMode(stored, [SIDEBAR_KEY, COLUMNS_KEY]));
+  const [views, setViews] = useState<Views>(() => loadViews(mode, stored));
+  const [downloadsLayout, setDownloadsLayout] = useState<DownloadsLayout>(() => loadLayout(stored));
+  const changeLayout = useCallback((next: DownloadsLayout) => {
+    setDownloadsLayout(next);
+    remember(LAYOUT_KEY, next);
+  }, []);
   const [columns, setColumns] = useState<ColumnId[]>(storedColumns);
   const changeColumns = useCallback((next: ColumnId[]) => {
     setColumns(next);
-    try {
-      localStorage.setItem(COLUMNS_KEY, JSON.stringify(next));
-    } catch {
-      /* nothing to do — the choice simply won't be remembered */
-    }
+    remember(COLUMNS_KEY, JSON.stringify(next));
   }, []);
 
-  const [dlDensity, setDlDensity] = useState<Density>(
-    () => storedDensity(DL_DENSITY_KEY, 'table'),
-  );
-  /* Grid by default: the collection is the one list here you read by cover. */
-  const [libDensity, setLibDensity] = useState<Density>(
-    () => storedDensity(LIB_DENSITY_KEY, 'grid'),
-  );
   const searchRef = useRef<HTMLInputElement>(null);
   /* Entering Search readies the field — focus and select, so you can just type
    * and the last query is replaced. Same as the ⌘F handler, but on section
@@ -224,7 +226,9 @@ export default function App() {
   const prefs = usePrefs(prefsClient);
   /* One connection, shared. The search session is per-tab and takes it. */
   const conn = useSidecarConnection();
-  const session = useSearchSession(conn, { reliability: prefs.reliability });
+  /* Simple groups by version whatever the tab's own grouping says, which stays
+     put for Collector (data/searchStore.ts). */
+  const session = useSearchSession(conn, { reliability: prefs.reliability, versions: mode === 'simple' });
   /* Several searches open at once. One runs at a time — the transport allows no
    * more — so a tab is a search put away with everything needed to bring it
    * back. See data/searchTabs.ts. */
@@ -259,6 +263,8 @@ export default function App() {
   const updates = useUpdates(prefs.loaded ? prefs.settings.checkUpdates : null);
   const analysis = useAnalysis(session.client);
   const checksums = useChecksums(session.client);
+  const handoff = useHandoff(session.client, engine.settings?.rekordboxFolder ?? null);
+  useAutoChecksums(transfers.groups, checksums);
   const artwork = useArtwork(session.client);
   const library = useLibrary(session.client);
   const youtube = useYoutube(session.client);
@@ -279,10 +285,9 @@ export default function App() {
   const autoDownloads = useAutoDownloads(
     session.client, wishHits, transfers, analysis, prefs.settings, isSignedIn(session.serverState),
   );
-  awaitingReview.current = new Set(
-    autoDownloads.claims.filter((c) => c.status === 'awaiting-review' && c.transferId)
-      .map((c) => c.transferId as string),
-  );
+  const awaiting = autoDownloads.claims.filter((c) => c.status === 'awaiting-review');
+  const downloading = useMemo(() => inProgress(transfers.groups), [transfers.groups]);
+  awaitingReview.current = new Set(awaiting.filter((c) => c.transferId).map((c) => c.transferId));
   /* Greet somebody the first time they finish downloading from you. Mounted
      here for the same reason as auto-download: an upload completes whether or
      not the Uploads screen is open. Off unless switched on in Settings. */
@@ -298,6 +303,8 @@ export default function App() {
      Soulseek throttles a client that searches faster than the server allows,
      and CLAUDE.md records that as the thing which gets an account limited. */
   const [searchingWant, setSearchingWant] = useState<WantEntry | null>(null);
+  /** The tab that want's search runs in: another tab's results are no verdict. */
+  const wantTab = useRef<string | undefined>(undefined);
   useDownloadNotifications(transfers.groups);
   useChatNotifications(chat.conversations, chat.active);
   useWishNotifications(wishHits.byQuery);
@@ -309,6 +316,21 @@ export default function App() {
   const history = useRef<Section[]>(['search']);
   const cursor = useRef(0);
 
+  const rooms = useMemo(
+    () => chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target),
+    [chat.conversations],
+  );
+
+  /* One object per change of the five things it reads, so the sidebar can
+     skip the redraws a streaming search would otherwise give it. */
+  const status = useMemo(
+    () => connectionStatus({
+      startupError: session.startupError, isMock: session.isMock, phase: session.phase,
+      serverState: session.serverState, serverError: session.serverError,
+    }),
+    [session.startupError, session.isMock, session.phase, session.serverState, session.serverError],
+  );
+
   const go = useCallback((next: Section) => {
     setSection((cur) => {
       if (cur === next) return cur;
@@ -317,6 +339,10 @@ export default function App() {
       return next;
     });
   }, []);
+  /* Settings opens on Account, except when something sends you to a folder. */
+  const [settingsTab, setSettingsTab] = useState<'folders' | undefined>();
+  useEffect(() => { if (section !== 'settings') setSettingsTab(undefined); }, [section]);
+  const openFolders = useCallback(() => { setSettingsTab('folders'); go('settings'); }, [go]);
 
   /* Search for a want list entry, then judge the outcome.
    *
@@ -329,16 +355,19 @@ export default function App() {
     want.update(entry.id, { status: 'searching' });
     const query = want.queryFor(entry);
     setSection('search');
-    searchTabs.openWith(query);
+    wantTab.current = searchTabs.openWith(query);
   }, [want, searchTabs]);
 
   useEffect(() => {
+    if (!searchingWant) return;
+    const here = searchTabs.activeId === wantTab.current;
     // The search the user launched from the want list has stopped listening.
-    if (!searchingWant || session.running) return;
-    if (!session.closedReason) return;
-    // A wish's stored results replaced the search: no verdict from those.
-    // Put the entry back to waiting, or it reads "Searching" for good.
-    if (session.closedReason === WISHLIST_REASON) {
+    if (here && (session.running || !session.closedReason)) return;
+    /* "Not found" only after a search that ran its course: it timed out or
+       hit the result cap, in the tab it was started in. Signed out, stopped,
+       a wish's stored results, or another tab on screen is no verdict, and
+       the entry goes back to waiting rather than reading "Searching" for good. */
+    if (!here || (session.closedReason !== 'timeout' && session.closedReason !== 'result_cap')) {
       want.update(searchingWant.id, { status: 'pending' });
       setSearchingWant(null);
       return;
@@ -352,7 +381,7 @@ export default function App() {
       status: resultsMatch(searchingWant, names) ? 'found' : 'not_found',
     });
     setSearchingWant(null);
-  }, [searchingWant, session.running, session.closedReason, session.rows, want]);
+  }, [searchingWant, searchTabs.activeId, session.running, session.closedReason, session.rows, want]);
 
   /* Every URL already on the want list. Both the Dig Bar card and the
      catalogue grid ask "have I saved this one", and computing it once keeps
@@ -518,33 +547,58 @@ export default function App() {
     go('wishlist');
   }, [session.client, go]);
 
-  const changeDensity = useCallback((d: Density) => {
-    // Search now supports every density, Grid included, so the value is stored
-    // and applied as-is.
-    setDensity(d);
-    try {
-      localStorage.setItem(DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
-  }, []);
+  const saveSearch = useCallback(() => {
+    const q = session.query.trim();
+    if (!q) return;
+    void session.client?.request('saved.add', { query: q, filtersJson: serialiseFilters(session.filters) })
+      .catch((e) => reportFailure('Save this search', e));
+  }, [session.client, session.query, session.filters]);
 
-  const changeDlDensity = useCallback((d: Density) => {
-    setDlDensity(d);
-    try {
-      localStorage.setItem(DL_DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
-  }, []);
+  /* A screen's density is remembered for the mode it was chosen in. */
+  const onDensity = useMemo(() => {
+    const one = (screen: DensityScreen) => (d: Density) => {
+      setViews((v) => ({ ...v, [screen]: d }));
+      remember(densityKey(screen, mode), d);
+    };
+    return { search: one('search'), downloads: one('downloads'), library: one('library') };
+  }, [mode]);
 
-  const changeLibDensity = useCallback((d: Density) => {
-    setLibDensity(d);
-    try {
-      localStorage.setItem(LIB_DENSITY_KEY, d);
-    } catch {
-      /* nothing to do — density simply won't be remembered */
-    }
+  const switchMode = useCallback((next: Mode) => {
+    setMode(next);
+    setViews(loadViews(next, stored));
+  }, []);
+  /* Written at once, so a first launch's Simple sticks: the next launch would
+     otherwise find the sidebar's key and take this for an older install. */
+  useEffect(() => remember(MODE_KEY, mode), [mode]);
+
+  /* What the corner panel counts as already seen: anything that finished
+     before this launch, or before you last left Downloads or Completed. */
+  const [seenUntil, setSeenUntil] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    if (screenOf(section) !== 'downloads') return;
+    setSeenUntil(Date.now() / 1000);
+    return () => setSeenUntil(Date.now() / 1000);
+  }, [section]);
+
+  /* Mini Seek: the same window made small (data/miniWindow.ts). A reload
+     while small would leave the window small with nothing drawn for it, so a
+     fresh start puts the full window's rules back first. */
+  const [mini, setMini] = useState(false);
+  const [onTop, setOnTop] = useState(() => stored(MINI_ON_TOP_KEY) !== 'false');
+  useEffect(() => { void restore().catch(() => {}); }, []);
+  const enterMini = useCallback(() => {
+    setMini(true);
+    void shrink(onTop).catch((e) => reportFailure('Shrink to Mini Seek', e));
+  }, [onTop]);
+  const leaveMini = useCallback((to?: Section) => {
+    setMini(false);
+    if (to) go(to);
+    void restore().catch((e) => reportFailure('Go back to the full window', e));
+  }, [go]);
+  const changeOnTop = useCallback((on: boolean) => {
+    setOnTop(on);
+    remember(MINI_ON_TOP_KEY, String(on));
+    void keepOnTop(on).catch((e) => reportFailure('Keep Mini Seek on top', e));
   }, []);
 
   useEffect(() => {
@@ -570,6 +624,20 @@ export default function App() {
        * swap two letters), and taking them broke every text field. */
       const meta = MAC ? e.metaKey : e.ctrlKey;
       if (!meta) return;
+
+      /* ⇧⌘M into Mini Seek and out. Inside it there are no screens or tabs for
+       * the rest to act on; ⌘W goes back to the full window, never quits. */
+      if (e.shiftKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault();
+        // Held down, the key repeats: in, out, in, as fast as it auto-repeats.
+        if (e.repeat) return;
+        if (mini) leaveMini(); else enterMini();
+        return;
+      }
+      if (mini) {
+        if (e.key === 'w') { e.preventDefault(); leaveMini(); }
+        return;
+      }
 
       if (e.key === 'k') {
         e.preventDefault();
@@ -637,6 +705,12 @@ export default function App() {
         go(NUMBER_KEYS[e.key]);
         return;
       }
+      /* ⌘\, as the sidebar says: Simple to Collector and back. */
+      if (e.key === '\\') {
+        e.preventDefault();
+        switchMode(mode === 'simple' ? 'collector' : 'simple');
+        return;
+      }
       if (e.key === '[') {
         e.preventDefault();
         if (cursor.current > 0) {
@@ -655,7 +729,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [go, session, preview]);
+  }, [go, session, preview, mode, switchMode, mini, enterMini, leaveMini]);
 
   // Start the recorded session so the app is never a dead screen.
   //
@@ -663,22 +737,18 @@ export default function App() {
   // the unmount tears the sidecar down. A "run once" guard would skip the restart
   // and leave a permanently empty list in development. `run()` resets cleanly, so
   // being invoked twice is harmless.
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
-  const tabsRef = useRef(searchTabs);
-  tabsRef.current = searchTabs;
   useEffect(() => {
     // Only against recorded data. Firing a real Soulseek search for someone
     // else's demo query the instant the app opens would be presumptuous, and
     // it burns a search slot the user did not ask for.
-    if (!sessionRef.current.isMock) return;
+    if (!session.isMock) return;
     /* Through `openWith`, like every other search, and for a reason beyond
      * tidiness: it runs in the fresh tab rather than opening one, AND it
      * records that this tab has now searched. Calling `run` directly left the
      * first tab looking untouched, so the user's NEXT search reused it instead
      * of opening a tab — the fixture quietly behaving unlike the real app. */
-    tabsRef.current.openWith('burial');
-  }, []);
+    searchTabs.openWith('burial');
+  }, []); // Mount only: the first render's session and tabs are the ones to use.
 
   /* Actions, not a mirror of the navigation. Rebuilt whenever the state they
    * close over changes, so a command always acts on what is true now. */
@@ -729,10 +799,11 @@ export default function App() {
       },
       { id: 'group.track', group: 'Group by', label: 'Track', run: () => session.setGroupBy('track') },
       { id: 'group.release', group: 'Group by', label: 'Release', run: () => session.setGroupBy('release') },
+      { id: 'group.version', group: 'Group by', label: 'Version', run: () => session.setGroupBy('version') },
       // "Files" is the classic flat list; like the pane's own control it forces
       // table density, the only one it reads right in.
       { id: 'group.file', group: 'Group by', label: 'Files (classic list)',
-        run: () => { session.setGroupBy('file'); setDensity('table'); } },
+        run: () => { session.setGroupBy('file'); onDensity.search('table'); } },
       { id: 'sort.best', group: 'Sort by', label: 'Best', run: () => session.setSort('best') },
       { id: 'sort.quality', group: 'Sort by', label: 'Quality', run: () => session.setSort('quality') },
       { id: 'sort.speed', group: 'Sort by', label: 'Speed', run: () => session.setSort('speed') },
@@ -756,33 +827,27 @@ export default function App() {
       },
       { id: 'filter.reset', group: 'Filter', label: 'Reset all filters', run: () => session.resetFilters() },
 
-      { id: 'view.comfortable', group: 'View', label: 'Comfortable rows', run: () => changeDensity('comfortable') },
-      { id: 'view.compact', group: 'View', label: 'Compact rows', run: () => changeDensity('compact') },
-      { id: 'view.table', group: 'View', label: 'Table rows', run: () => changeDensity('table') },
+      { id: 'view.comfortable', group: 'View', label: 'Comfortable rows', run: () => onDensity.search('comfortable') },
+      { id: 'view.compact', group: 'View', label: 'Compact rows', run: () => onDensity.search('compact') },
+      { id: 'view.table', group: 'View', label: 'Table rows', run: () => onDensity.search('table') },
+      {
+        id: 'view.mode', group: 'View', shortcut: '⌘\\',
+        label: mode === 'simple' ? 'Switch to Collector' : 'Switch to Simple',
+        run: () => switchMode(mode === 'simple' ? 'collector' : 'simple'),
+      },
+      { id: 'view.mini', group: 'View', label: 'Mini Seek', shortcut: '⇧⌘M', hint: 'a small window that can stay on top', run: enterMini },
     ];
 
     if (session.client) {
       list.push({
         id: 'wish.add', group: 'Wishlist', label: 'Add this search to the wishlist',
         hint: session.query || undefined,
-        run: () => {
-          const q = session.query.trim();
-          if (!q) return;
-          void session.client?.request('wishlist.add', { query: q })
-      .catch((e) => reportFailure('Add to wishlist', e));
-          go('wishlist');
-        },
+        run: () => addWish(session.query),
       });
       list.push({
         id: 'saved.add', group: 'Saved', label: 'Save this search with its filters',
         hint: session.query || undefined,
-        run: () => {
-          const q = session.query.trim();
-          if (!q) return;
-          void session.client?.request('saved.add', {
-            query: q, filtersJson: serialiseFilters(session.filters),
-          }).catch((e) => reportFailure('Save this search', e));
-        },
+        run: saveSearch,
       });
     }
 
@@ -806,7 +871,12 @@ export default function App() {
     }
 
     return list;
-  }, [go, session, transfers, browse, changeDensity, labels.labels.length]);
+  }, [go, session, transfers, browse, onDensity, mode, switchMode, labels.labels.length, addWish, saveSearch, enterMini]);
+
+  /* Stable, so the search rows (memoised) are not all redrawn by every App render. */
+  const { browse: browseUser } = browse;
+  const openBrowse = useCallback((who: string) => { browseUser(who); go('browsing'); }, [browseUser, go]);
+  const peerOf = useCallback((u: string) => prefs.peers.get(u), [prefs.peers]);
 
   const userActions = useMemo<UserMenuActions>(() => ({
     browse: (who) => { browse.browse(who); go('browsing'); },
@@ -904,7 +974,23 @@ export default function App() {
   }, [people, userActions]);
 
   return (
-    <div className="app">
+    <div className="app" data-mini={mini ? 'true' : undefined}>
+      {/* Over the full window, which stays mounted beneath it so nothing you
+          left open is lost on the way back. */}
+      {mini && (
+        <MiniSeek
+          session={transfers}
+          artwork={artwork}
+          awaiting={awaiting}
+          onTop={onTop}
+          onKeepOnTop={changeOnTop}
+          onSearch={(q) => { leaveMini('search'); searchTabs.openWith(q); }}
+          onFindAnother={(q) => { leaveMini('search'); searchTabs.openWith(q); }}
+          onReview={() => leaveMini('completed')}
+          onOpen={() => leaveMini('downloads')}
+          onBack={() => leaveMini()}
+        />
+      )}
       <UpdateBanner
         state={updates}
         onInstall={updates.install}
@@ -930,9 +1016,9 @@ export default function App() {
       <Sidebar
         active={section}
         onSelect={go}
-        downloadCount={transfers.activeCount}
+        downloadCount={downloading}
         browsingUser={browse.current?.username ?? null}
-        status={connectionStatus(session)}
+        status={status}
         client={session.client}
         roomUnread={roomUnread}
         privateUnread={privateUnread}
@@ -941,6 +1027,8 @@ export default function App() {
         hasSessions={sessions.sessions.length > 0}
         hasLabels={labels.labels.length > 0}
         uploadCount={transfers.uploadCount}
+        mode={mode}
+        onMode={switchMode}
       />
       <main className="pane" data-scrolled="false">
         {/* Keyed by SCREEN, not by sidebar entry: going somewhere else is a
@@ -953,17 +1041,18 @@ export default function App() {
           <SearchView
             session={session}
             searchRef={searchRef}
-            density={density}
-            onDensity={changeDensity}
+            density={views.search}
+            onDensity={onDensity.search}
+            simple={mode === 'simple'}
             columns={columns}
             onColumns={changeColumns}
             tabs={searchTabs}
             transfers={transfers}
             artwork={artwork}
             library={library}
-            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
+            onBrowse={openBrowse}
             prefs={prefs.settings}
-            peers={(username) => prefs.peers.get(username)}
+            peers={peerOf}
             discover={discover.enabled ? discover : undefined}
             onOpenSettings={() => go('settings')}
             onWant={want.enabled ? addPreviewToWant : undefined}
@@ -972,14 +1061,9 @@ export default function App() {
             onWantTracklist={want.enabled ? addTracklistToWant : undefined}
             onWantPlaylist={want.enabled ? addPlaylistToWant : undefined}
             onContext={openMenu}
-            rooms={chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target)}
+            rooms={rooms}
             onWish={() => addWish(session.query)}
-            onSave={() => {
-              void session.client?.request('saved.add', {
-                query: session.query.trim(),
-                filtersJson: serialiseFilters(session.filters),
-              }).catch((e) => reportFailure('Save this search', e));
-            }}
+            onSave={saveSearch}
           />
         ) : section === 'chat' || section === 'messages' ? (
           <ChatView
@@ -1011,14 +1095,14 @@ export default function App() {
           <FollowedView
             client={session.client}
             signedIn={isSignedIn(session.serverState)}
-            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
+            onBrowse={openBrowse}
           />
         ) : section === 'collections' ? (
           <LibraryView
             library={library}
             artwork={artwork}
-            density={libDensity}
-            onDensity={changeLibDensity}
+            density={views.library}
+            onDensity={onDensity.library}
             onSearch={(q) => { setSection('search'); searchTabs.openWith(q); }}
             youtube={youtube}
             onBrowseArtist={(artist) => {
@@ -1042,11 +1126,7 @@ export default function App() {
             library={library}
             artwork={artwork}
             wantedUrls={wantedUrls}
-            onSearch={(entry) => {
-              const q = `${entry.artist} ${entry.title}`.replace(/\s+/g, ' ').trim();
-              setSection('search');
-              searchTabs.openWith(q);
-            }}
+            onSearch={searchCatalogEntry}
             onWant={(entry) => {
               void want.add([{
                 artist: entry.artist,
@@ -1074,7 +1154,7 @@ export default function App() {
         ) : section === 'uploads' ? (
           <UploadsView
             session={transfers}
-            peers={(u) => prefs.peers.get(u)}
+            peers={peerOf}
             onUserMenu={openUserMenu}
             // null when the engine has not reported yet — NOT false. See the
             // prop's own note: the two are different claims.
@@ -1106,7 +1186,7 @@ export default function App() {
             browse={browse}
             transfers={transfers}
             signedIn={isSignedIn(session.serverState)}
-            peers={(u) => prefs.peers.get(u)}
+            peers={peerOf}
             rules={prefs.settings}
             onUserMenu={openUserMenu}
           />
@@ -1120,18 +1200,30 @@ export default function App() {
             checksums={checksums}
             client={session.client}
             preview={preview}
-            density={dlDensity}
-            onDensity={changeDlDensity}
+            density={views.downloads}
+            onDensity={onDensity.downloads}
             autoClaims={autoDownloads.claims}
             onApproveAuto={autoDownloads.approve}
             onRejectAuto={autoDownloads.reject}
             discovery={downloadsDiscovery}
+            simple={mode === 'simple'}
+            onFindAnother={(q) => { go('search'); searchTabs.openWith(q); }}
+            peers={peerOf}
+            onBrowse={openBrowse}
+            onShowCompleted={() => go('completed')}
+            onMini={enterMini}
+            handoff={handoff}
+            onSetRekordboxFolder={openFolders}
+            layout={downloadsLayout}
+            onLayout={changeLayout}
+            downloadFolder={engine.settings?.downloadFolder ?? null}
           />
-        ) : (
-          <SectionView
-            section={section}
+        ) : section === 'settings' ? (
+          <SettingsView
+            initialTab={settingsTab}
             client={session.client}
             serverState={session.serverState}
+            serverError={session.serverError}
             prefs={prefs}
             engine={engine}
             profile={profile}
@@ -1139,8 +1231,19 @@ export default function App() {
             youtube={youtube}
             people={people}
           />
-        )}
+        ) : null}
         </ErrorBoundary>
+        {/* Not on the Downloads screens: the list it summarises is right there. */}
+        {screenOf(section) !== 'downloads' && (
+          <CornerPanel
+            key={mode}
+            groups={transfers.groups}
+            since={seenUntil}
+            mode={mode}
+            onShowAll={() => go('downloads')}
+            onShowCompleted={() => go('completed')}
+          />
+        )}
       </main>
       <Failures />
     </div>

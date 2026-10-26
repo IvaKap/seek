@@ -93,14 +93,12 @@ export function audioSpec(sampleRate: number | null, bitDepth: number | null): s
   return bitDepth ? `${rate}/${bitDepth}` : `${rate} kHz`;
 }
 
-export function bitrate(kbps: number | null, vbr: boolean): string {
-  if (!kbps) return '—';
-  return `${Math.round(kbps)}${vbr ? ' VBR' : ''}`;
-}
-
-/** `0 queued` / `1 queued` / `40 queued`. */
-export function queued(n: number): string {
-  return `${n} queued`;
+/** 1 → `1st`, 22 → `22nd`, 1433 → `1,433rd`: a place in someone's queue. */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  const suffix = tens >= 11 && tens <= 13 ? 'th'
+    : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
+  return `${integer(n)}${suffix}`;
 }
 
 export function count(n: number, singular: string, plural = `${singular}s`): string {
@@ -110,4 +108,10 @@ export function count(n: number, singular: string, plural = `${singular}s`): str
 /** Integers with thin separators, for the result count. */
 export function integer(n: number): string {
   return n.toLocaleString('en-US');
+}
+
+/** A peer's upload slots in words: "slot free", "3 waiting" or "no free slot". */
+export function slotWords(peer: { freeSlots: boolean; queueLength: number }): string {
+  if (peer.freeSlots) return 'slot free';
+  return peer.queueLength > 0 ? `${integer(peer.queueLength)} waiting` : 'no free slot';
 }

@@ -78,7 +78,6 @@ export function SegmentedControl<T extends string>({
       const el = indicatorRef.current;
       if (el) el.style.transform = `translate3d(${x}px, 0, 0)`;
     },
-    0,
     SPRING_SNAPPY,
   );
 
@@ -156,12 +155,11 @@ export function Toggle({
 /* -------------------------------------------------------------------- chip */
 
 export function Chip({
-  active, onToggle, children, count,
+  active, onToggle, children,
 }: {
   active: boolean;
   onToggle(): void;
   children: ReactNode;
-  count?: number;
 }) {
   return (
     <button
@@ -174,7 +172,6 @@ export function Chip({
       {/* Colour is never the only signal: the active chip also gets a check. */}
       {active && <IconCheck size={13} painted={1.9} />}
       <span>{children}</span>
-      {count !== undefined && <span className="chip__count tnum">{count}</span>}
     </button>
   );
 }

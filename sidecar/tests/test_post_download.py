@@ -15,7 +15,7 @@ import types
 
 import pytest
 
-from seek_sidecar import enrich
+from seek_sidecar import enrich, protocol, spectral
 from seek_sidecar.core_host import DEFERRED, CommandError, CoreHost
 
 
@@ -195,6 +195,27 @@ class TestMovesAreFollowed:
         host._moved_paths[str(downloads / "rel" / "01.flac")] = new
         assert host._resolve_local_file({"path": str(downloads / "rel" / "01.flac"),
                                          "transferId": None}) == new
+
+
+class TestFailuresNameTheirTransfer:
+    """A decode that fails at once can be announced before the request's own
+    reply reaches the app, and the reply was the only way the app learned
+    which row asked. The row then stayed on "running" for the session."""
+
+    def test_a_failed_analysis_carries_its_transfer(self, tmp_path, monkeypatch):
+        host, downloads = _host(tmp_path, monkeypatch)
+
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("decode failed")
+
+        monkeypatch.setattr(spectral, "analyse", broken)
+        host._run_analysis("req-1", str(downloads / "01.flac"), "tr-9")
+
+        (name, payload) = host.bridge.events[0]
+        assert name == "analysis.failed"
+        assert payload["requestId"] == "req-1"
+        assert payload["transferId"] == "tr-9"
+        protocol.validate_event(name, payload)
 
 
 class TestSlowCommandsDoNotBlock:

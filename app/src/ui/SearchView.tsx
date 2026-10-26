@@ -7,7 +7,7 @@
  * down from the pill row rather than opening a modal.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Filters, GroupBy, Release, SortKey } from '../domain/types.ts';
 import { filtersActive } from '../domain/types.ts';
 import { integer } from '../domain/format.ts';
@@ -28,13 +28,17 @@ import type { LibrarySession } from '../data/libraryStore.ts';
 import { judge, judgeRelease, pickSource } from '../domain/preferences.ts';
 import { copiesOf, groupCopies } from '../domain/bestSources.ts';
 import { CopiesSheet } from './CopiesSheet.tsx';
+import { BestPicks } from './BestPicks.tsx';
+import { Answered, CopiesHeading } from './AllCopies.tsx';
+import { SavedViews } from './SavedViews.tsx';
+import type { SavedView } from '../domain/savedViews.ts';
 import type { DownloadPrefs } from '../domain/preferences.ts';
 import { useSpringNumber } from '../motion/useSpring.ts';
 import { DiscoverPreviewCard } from './DiscoverPreview.tsx';
 import type { DiscoverSession } from '../data/discoverStore.ts';
 import type { PeerLookup } from './PeerHistory.tsx';
 import {
-  IconChevronDown, IconEmpty, IconList, IconRelease, IconSearch, IconStar, IconTrack,
+  IconChevronDown, IconEmpty, IconFilters, IconList, IconRelease, IconSearch, IconStar, IconTrack, IconUsers,
 } from '../icons/index.tsx';
 import { WISHLIST_REASON } from '../data/searchTabs.ts';
 
@@ -46,6 +50,8 @@ import { WISHLIST_REASON } from '../data/searchTabs.ts';
 const GROUPS: Array<{ value: GroupBy; label: string; icon: React.ReactNode }> = [
   { value: 'track', label: 'Track', icon: <IconTrack size={14} painted={1.5} /> },
   { value: 'release', label: 'Release', icon: <IconRelease size={14} painted={1.5} /> },
+  // Simple's list, in Collector's densities: one row per version, its copies beneath.
+  { value: 'version', label: 'Version', icon: <IconUsers size={14} painted={1.5} /> },
   { value: 'file', label: 'Files', icon: <IconList size={14} painted={1.5} /> },
 ];
 
@@ -59,22 +65,19 @@ const SORTS: Array<{ value: SortKey; label: string }> = [
 ];
 
 /** The quick pills. Each maps to a filter the advanced panel also exposes. */
-const QUICK = [
-  { id: 'FLAC', kind: 'format' as const },
-  { id: 'WAV', kind: 'format' as const },
-  { id: 'AIFF', kind: 'format' as const },
-  { id: '320', kind: 'format' as const },
-  { id: 'lossless', kind: 'lossless' as const, label: 'Lossless only' },
-  { id: 'free', kind: 'free' as const, label: 'Free slots' },
-  { id: 'clean', kind: 'clean' as const, label: 'No transcodes' },
-];
+const FORMAT_PILLS = ['FLAC', 'WAV', 'AIFF', '320'];
+const FLAG_PILLS = [
+  { key: 'losslessOnly', label: 'Lossless only' },
+  { key: 'freeSlotsOnly', label: 'Free slots' },
+  { key: 'excludeTranscodes', label: 'No transcodes' },
+] as const;
 
 /**
  * Where the search goes: everyone, your buddies, one room you are in, or one
  * user's shares. Upstream's four modes; Nicotine+ shows the same choice beside
  * its search field.
  */
-function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
+const ScopePicker = memo(function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
   scope: SearchScope;
   rooms: string[];
   userRef: React.RefObject<HTMLInputElement | null>;
@@ -124,15 +127,26 @@ function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
       </label>
     </>
   );
+});
+
+/** A version row's copies, when the release being compared heads one. */
+function versionCopies(rows: Row[], release: Release): Release[] | undefined {
+  for (const r of rows) {
+    if (r.kind === 'release' && r.copies?.some((c) => c.id === release.id)) return r.copies;
+  }
+  return undefined;
 }
 
 export function SearchView({
   session, searchRef, density, onDensity, columns, onColumns, tabs, transfers, onBrowse, onSave,
   artwork, library,
   onContext, onWish, prefs, discover, onOpenSettings, onWant, wanted, onBrowseCatalog, onWantTracklist, onWantPlaylist,
-  peers, rooms = [],
+  peers, rooms = [], simple = false,
 }: {
   session: SearchSession;
+  /** Search · Simple: best picks, then every version in plain words. The
+   *  session groups by version itself (SearchSessionOptions.versions). */
+  simple?: boolean;
   /** Rooms you are in, for searching one of them. */
   rooms?: string[];
   searchRef: React.RefObject<HTMLInputElement | null>;
@@ -177,6 +191,8 @@ export function SearchView({
    * nothing: it is the whole point of the change that got rid of the automatic
    * switch — the data goes on screen and the choice stays with the user. */
   const [comparing, setComparing] = useState<Release | null>(null);
+  /** Simple keeps the filters one click away, like the sidebar's More. */
+  const [filtering, setFiltering] = useState(false);
   const countRef = useRef<HTMLSpanElement>(null);
   const userRef = useRef<HTMLInputElement>(null);
   const setCount = useSpringNumber(countRef, (n) => integer(Math.max(0, Math.round(n))));
@@ -184,6 +200,12 @@ export function SearchView({
   useEffect(() => {
     setCount(session.matchedFiles);
   }, [session.matchedFiles, setCount]);
+  /* Simple has no count, so the node is new when Collector comes back. A
+     spring already at rest would never write it. */
+  useLayoutEffect(() => {
+    if (!simple && countRef.current) countRef.current.textContent = integer(session.matchedFiles);
+    // Only on the switch: the effect above animates every change after it.
+  }, [simple]);
 
   const patch = useCallback(
     (p: Partial<Filters>) => session.setFilters({ ...session.filters, ...p }),
@@ -225,18 +247,25 @@ export function SearchView({
   const rules: DownloadPrefs = prefs
     ?? { preferLossless: false, minBitrate: 0, rejectTranscodes: false };
 
+  /* Both modes lead with the picks: Simple as cards, Collector as a line of
+   * chips. The pool reuses whichever grouping the rows already built. */
+  const pool = useMemo(() => session.pickPool(), [session.pickPool]);
+
+  /* Not `tabs`: that object is new on every render, and a callback that
+     depends on it would redraw every result row with it. */
+  const markUsed = tabs?.markUsed;
   const queueRelease = useCallback((release: Release) => {
     const verdict = judgeRelease(release.files, rules);
     if (!verdict.allowed) { setRefused(verdict.reason ?? null); return; }
     setRefused(null);
     /* This tab has done its job. Stamped rather than closed — you often take a
        second record from the same results — and swept 45 minutes later. */
-    tabs?.markUsed();
+    markUsed?.();
     void transfers.enqueueFolder(release.user, release.folderPath, false, { count: release.files.length });
-  }, [transfers, tabs, rules]);
+  }, [transfers, markUsed, rules]);
 
   const onQueue = useCallback((row: Row) => {
-    tabs?.markUsed();
+    markUsed?.();
     switch (row.kind) {
       case 'track': {
         // Which source to take is a preference, not a fixed rule: the default
@@ -274,10 +303,27 @@ export function SearchView({
         // A user header is a grouping, not a thing to download.
         break;
     }
-  }, [transfers, rules, queueRelease, tabs]);
+  }, [transfers, rules, queueRelease, markUsed]);
 
   const active = filtersActive(session.filters);
   const available = new Set(session.availableFormats);
+
+  /* The classic flat list only reads right in the columnar table density, so
+   * choosing it switches density too. The density control stays live
+   * afterwards — the user can leave table if they want, and picking Files
+   * again brings it back. Grid shows covers, which only release rows have, so
+   * leaving the release grouping leaves grid behind too. */
+  const regroup = useCallback((g: GroupBy) => {
+    session.setGroupBy(g);
+    if (g === 'file') onDensity('table');
+    else if (g !== 'release' && density === 'grid') onDensity('comfortable');
+  }, [session, onDensity, density]);
+
+  const applyView = useCallback((v: SavedView) => {
+    session.setFilters({ ...v.filters, formats: new Set(v.filters.formats) });
+    // Regrouping folds every open row, so only when the view really changes it.
+    if (v.groupBy !== session.groupBy) regroup(v.groupBy);
+  }, [session, regroup]);
 
   /* Index the live downloads so each result's Get button can show whether the
      file it queued is queued / downloading / done. Rebuilt when the transfer
@@ -338,6 +384,17 @@ export function SearchView({
     if (tabs) tabs.openWith(session.query, session.scope);
     else session.run();
   }, [discover, runFromPreview, session, onWant, onBrowseCatalog, tabs]);
+
+  /* Stable, for the memoised controls in the header: an inline arrow here
+     redrew them on every burst of results. */
+  const submitScope = useCallback(() => submit(), [submit]);
+  const searchTrack = useCallback((q: string) => runQuery(q, true), [runQuery]);
+  const { setGroupBy } = session;
+  const changeDensity = useCallback((d: Density) => {
+    onDensity(d);
+    // Grid is a wall of covers, and only releases have covers.
+    if (d === 'grid') setGroupBy('release');
+  }, [onDensity, setGroupBy]);
 
   const onSearchKey = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Escape' && discover?.preview) {
@@ -461,7 +518,7 @@ export function SearchView({
             rooms={rooms}
             userRef={userRef}
             onChange={session.setScope}
-            onSubmit={() => submit()}
+            onSubmit={submitScope}
           />
           <kbd className="search__kbd" aria-hidden>⌘↵</kbd>
         </div>
@@ -479,7 +536,7 @@ export function SearchView({
             tracklist={discover.tracklist}
             onFindTracklist={discover.findTracklist}
             onWantTracklist={onWantTracklist}
-            onSearchTrack={(q) => runQuery(q, true)}
+            onSearchTrack={searchTrack}
             onWantPlaylist={onWantPlaylist}
             playlist={discover?.playlist}
             playlistId={discover?.playlistId}
@@ -500,80 +557,104 @@ export function SearchView({
           </button>
         )}
 
-        <div className="quick">
-          {QUICK.map((q) => {
-            if (q.kind === 'format') {
-              if (!available.has(q.id) && !session.filters.formats.has(q.id)) return null;
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.formats.has(q.id)}
-                  onToggle={() => toggleFormat(q.id)}
-                >
-                  {q.id}
-                </Chip>
-              );
-            }
-            if (q.kind === 'lossless') {
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.losslessOnly}
-                  onToggle={() => patch({ losslessOnly: !session.filters.losslessOnly })}
-                >
-                  {q.label}
-                </Chip>
-              );
-            }
-            if (q.kind === 'free') {
-              return (
-                <Chip
-                  key={q.id}
-                  active={session.filters.freeSlotsOnly}
-                  onToggle={() => patch({ freeSlotsOnly: !session.filters.freeSlotsOnly })}
-                >
-                  {q.label}
-                </Chip>
-              );
-            }
-            return (
-              <Chip
-                key={q.id}
-                active={session.filters.excludeTranscodes}
-                onToggle={() => patch({ excludeTranscodes: !session.filters.excludeTranscodes })}
-              >
-                {q.label}
-              </Chip>
-            );
-          })}
-
+        {simple && (
           <button
             type="button"
-            className="quick__more pressable"
-            aria-expanded={advanced}
-            onClick={() => setAdvanced((v) => !v)}
+            className="btn pressable search__wish"
+            aria-expanded={filtering}
+            title="Formats, free slots, transcodes and every other filter"
+            onClick={() => setFiltering((v) => !v)}
           >
-            <span>Advanced</span>
-            <IconChevronDown
-              size={13}
-              painted={1.6}
-              className="quick__caret"
-              data-open={advanced ? 'true' : undefined}
-            />
+            <IconFilters size={14} painted={1.5} />
+            {active ? 'Filters on' : 'Filters'}
           </button>
-        </div>
+        )}
 
-        {/* Slides down from the pill row. Never a modal. */}
-        <div className="advanced" data-open={advanced ? 'true' : undefined}>
-          <div className="advanced__inner">
-            <FilterBar
-              filters={session.filters}
-              onChange={session.setFilters}
-              onReset={session.resetFilters}
-              availableFormats={session.availableFormats}
-            />
-          </div>
-        </div>
+        {(!simple || filtering) && (
+          <>
+            <div className="quick">
+              {FORMAT_PILLS.map((f) => (available.has(f) || session.filters.formats.has(f)) && (
+                <Chip key={f} active={session.filters.formats.has(f)} onToggle={() => toggleFormat(f)}>
+                  {f}
+                </Chip>
+              ))}
+              {FLAG_PILLS.map(({ key, label }) => (
+                <Chip key={key} active={session.filters[key]} onToggle={() => patch({ [key]: !session.filters[key] })}>
+                  {label}
+                </Chip>
+              ))}
+
+              <button
+                type="button"
+                className="quick__more pressable"
+                aria-expanded={advanced}
+                onClick={() => setAdvanced((v) => !v)}
+              >
+                <span>Advanced</span>
+                <IconChevronDown
+                  size={13}
+                  painted={1.6}
+                  className="quick__caret"
+                  data-open={advanced ? 'true' : undefined}
+                />
+              </button>
+              {simple && onSave && session.query.trim() !== '' && (
+                <button
+                  type="button"
+                  className="btn pressable"
+                  onClick={onSave}
+                  title="Save this query together with the filters currently applied"
+                >
+                  Save
+                </button>
+              )}
+              {!simple && (
+                <p className="status tnum" data-live={session.running ? 'true' : undefined}>
+                  {/* No React children: the spring owns this node's text. A
+                      literal child here would be rewritten to its JSX value on
+                      every render, erasing whatever frame the animation had
+                      just written. */}
+                  <span ref={countRef} />
+                  {active && session.totalFiles !== session.matchedFiles && ` of ${integer(session.totalFiles)}`}
+                  {session.matchedFiles === 1 ? ' file' : ' files'}
+                  {session.peerCount > 0 && ` · ${integer(session.peerCount)} ${session.peerCount === 1 ? 'person' : 'people'}`}
+                  {session.running && (session.peerCount > 0 ? ' · still listening' : ' · asking the network')}
+                  {!session.running && session.closedReason === WISHLIST_REASON && (
+                    <>
+                      {' · '}
+                      <span
+                        className="status__closed"
+                        title="What your wishlist found when it last ran. Press Return in the search field for a live search."
+                      >
+                        found by your wishlist
+                      </span>
+                    </>
+                  )}
+                  {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
+                    <>
+                      {' · '}
+                      <span className="status__closed" title={closedLabel(session.closedReason).title}>
+                        {closedLabel(session.closedReason).text}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* Slides down from the pill row. Never a modal. */}
+            <div className="advanced" data-open={advanced ? 'true' : undefined}>
+              <div className="advanced__inner">
+                <FilterBar
+                  filters={session.filters}
+                  onChange={session.setFilters}
+                  onReset={session.resetFilters}
+                  availableFormats={session.availableFormats}
+                />
+              </div>
+            </div>
+          </>
+        )}
 
         {refused && (
           <p className="refused" role="status">
@@ -584,88 +665,58 @@ export function SearchView({
           </p>
         )}
 
-        <div className="resultbar">
-          <div className="resultbar__count">
-            {/* No React children: the spring owns this node's text. A literal
-                child here would be rewritten to its JSX value on every render,
-                erasing whatever frame the animation had just written. */}
-            <span className="tnum" ref={countRef} />
-            <span className="resultbar__word">
-              {session.matchedFiles === 1 ? 'result' : 'results'}
-            </span>
-            {active && session.totalFiles !== session.matchedFiles && (
-              <span className="resultbar__of tnum">of {integer(session.totalFiles)}</span>
-            )}
-            {session.running && <span className="resultbar__live">searching…</span>}
-            {!session.running && session.closedReason === WISHLIST_REASON && (
-              <span
-                className="resultbar__closed"
-                title="What your wishlist found when it last ran. Press Return in the search field for a live search."
-              >
-                found by your wishlist
-              </span>
-            )}
-            {!session.running && session.closedReason && session.closedReason !== WISHLIST_REASON && (
-              <span className="resultbar__closed" title={closedLabel(session.closedReason).title}>
-                {closedLabel(session.closedReason).text}
-              </span>
-            )}
-          </div>
+        {simple ? (
+          <Answered running={session.running} people={session.peerCount} closedReason={session.closedReason} />
+        ) : (
+          <div className="resultbar">
+            <SavedViews filters={session.filters} groupBy={session.groupBy} onApply={applyView} />
 
-          <div className="resultbar__controls">
-            <SegmentedControl
-              label="Group results by"
-              segments={GROUPS}
-              value={session.groupBy}
-              /* The classic flat list only reads right in the columnar table
-               * density, so choosing it switches density too. The density
-               * control stays live afterwards — the user can leave table if they
-               * want, and picking Files again brings it back. */
-              onChange={(g) => {
-                session.setGroupBy(g);
-                if (g === 'file') onDensity('table');
-                // Grid shows covers, which only release rows have — so leaving
-                // the release grouping leaves grid behind too.
-                else if (g !== 'release' && density === 'grid') onDensity('comfortable');
-              }}
-            />
-            <Select
-              label="Sort results"
-              value={session.sort}
-              onChange={session.setSort}
-              options={SORTS}
-            />
-            {onSave && session.query.trim() !== '' && (
-              <button
-                type="button"
-                className="btn pressable"
-                onClick={onSave}
-                title="Save this query together with the filters currently applied"
-              >
-                Save
-              </button>
-            )}
-            <ViewMenu
-              density={density}
-              /* Grid is a wall of covers, and only releases have covers, so
-                 choosing it groups by release too (the inverse guard is on the
-                 grouping control below). */
-              onDensity={(d) => {
-                onDensity(d);
-                if (d === 'grid') session.setGroupBy('release');
-              }}
-              densities={['comfortable', 'compact', 'table', 'grid']}
-              columns={columns}
-              onColumns={onColumns}
-            />
+            <div className="resultbar__controls">
+              <SegmentedControl
+                label="Group results by"
+                segments={GROUPS}
+                value={session.groupBy}
+                onChange={regroup}
+              />
+              <Select
+                label="Sort results"
+                value={session.sort}
+                onChange={session.setSort}
+                options={SORTS}
+              />
+              {/* "Search", because a view saves the same filters without the
+                  query, one row over. */}
+              {onSave && session.query.trim() !== '' && (
+                <button
+                  type="button"
+                  className="btn pressable"
+                  onClick={onSave}
+                  title="Save this query together with the filters currently applied"
+                >
+                  Save search
+                </button>
+              )}
+              <ViewMenu
+                density={density}
+                /* Grid is a wall of covers, and only releases have covers, so
+                   choosing it groups by release too (the inverse guard is on the
+                   grouping control below). */
+                onDensity={changeDensity}
+                densities={['comfortable', 'compact', 'table', 'grid']}
+                columns={columns}
+                onColumns={onColumns}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       <ResultList
         rows={session.rows}
         currentTick={session.tick}
-        density={density}
+        // Simple has one look; the densities are Collector's to choose.
+        density={simple ? 'comfortable' : density}
+        simple={simple}
         columns={columns}
         onColumns={onColumns}
         expanded={session.expanded}
@@ -683,6 +734,22 @@ export function SearchView({
         pendingCount={session.pendingCount}
         onFoldIn={session.foldInPending}
         onViewport={session.reportViewport}
+        lead={(
+          <>
+            <BestPicks
+              compact={!simple}
+              pool={pool}
+              rules={rules}
+              transfers={transfers}
+              queueStates={queueStates}
+              folderStates={folderStates}
+              artwork={artwork}
+              onQueue={onQueue}
+            />
+            
+            {simple && <CopiesHeading rows={session.rows} sort={session.sort} onSort={session.setSort} />}
+          </>
+        )}
         emptyState={
           <div className="empty">
             <IconEmpty size={28} painted={1.3} className="empty__icon" />
@@ -719,7 +786,7 @@ export function SearchView({
       {comparing && (
         <CopiesSheet
           target={comparing}
-          copies={copiesOf(comparing, copyGroups)}
+          copies={versionCopies(session.rows, comparing) ?? copiesOf(comparing, copyGroups)}
           catalogueTracks={artworkTracks(comparing.id)}
           peers={peers}
           onQueue={(copy) => { queueRelease(copy); setComparing(null); }}

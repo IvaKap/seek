@@ -49,13 +49,12 @@ function fakeSidecar(): Sidecar {
       setTimeout(() => { if (live) h.onResult(batch(query)); }, 10);
     },
     stop() { live = false; },
-    setRate() {},
   } as unknown as Sidecar;
 }
 
 function connection(): SidecarConnection {
   return {
-    phase: 'open', isMock: true, serverState: 'online',
+    phase: 'open', isMock: true, serverState: 'online', serverError: null,
     client: null, sidecar: fakeSidecar(), startupError: null,
   } as unknown as SidecarConnection;
 }

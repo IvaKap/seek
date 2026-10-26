@@ -39,7 +39,7 @@ USER_NICOTINE_CONFIG = os.path.expanduser("~/.config/nicotine/config")
 POLICY_UNSET = {
     "autoAwayMinutes": None, "autoReply": None, "preferBuddies": None,
     "fifoQueue": None, "queueLimitFiles": None, "queueLimitMb": None,
-    "buddiesUnlimited": None,
+    "buddiesUnlimited": None, "rekordboxFolder": None,
 }
 
 @pytest.fixture(scope="module")
@@ -277,6 +277,21 @@ async def test_a_bad_download_folder_is_refused_over_the_wire(host, client, tmp_
     assert host.config.sections["transfers"].get("downloaddir") == before
 
 
+async def test_a_bad_folder_beside_a_good_one_changes_neither(host, client, tmp_path):
+    """A good download folder beside a missing in-progress one used to take
+    effect in the live config while the reply said the patch was refused."""
+    before = host.config.sections["transfers"].get("downloaddir")
+    good = tmp_path / "fine"
+    good.mkdir()
+    reply = await call(host, client, "settings.patch", {"settings": {
+        "downloadFolder": str(good), "incompleteFolder": str(tmp_path / "missing"),
+        "listenPort": None, "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
+        "autoConnect": None, "stallSeconds": None, "portMapping": None, **POLICY_UNSET,
+    }})
+    assert reply["ok"] is False
+    assert host.config.sections["transfers"].get("downloaddir") == before
+
+
 async def test_a_good_download_folder_is_stored_expanded(host, client, tmp_path):
     folder = tmp_path / "muzik"
     folder.mkdir()
@@ -291,6 +306,37 @@ async def test_a_good_download_folder_is_stored_expanded(host, client, tmp_path)
     assert reply["ok"] is True
     assert reply["result"]["settings"]["downloadFolder"] == str(folder)
     assert host.config.sections["transfers"]["downloaddir"] == str(folder)
+
+
+async def test_the_rekordbox_folder_is_checked_stored_and_cleared(host, client, tmp_path, monkeypatch):
+    """Seek's own, so it lands in seek-state.json, never the Nicotine+ config;
+    checked like the download folder, and an empty string clears it."""
+    blank = {"downloadFolder": None, "incompleteFolder": None, "listenPort": None,
+             "maxDownloadSpeed": None, "maxUploadSpeed": None, "uploadSlots": None,
+             "autoConnect": None, "stallSeconds": None, "portMapping": None, **POLICY_UNSET}
+    missing = str(tmp_path / "USB" / "To Rekordbox")
+    reply = await call(host, client, "settings.patch",
+                       {"settings": {**blank, "rekordboxFolder": missing}})
+    assert reply["ok"] is False and reply["error"]["code"] == "bad_request"
+
+    folder = tmp_path / "To Rekordbox"
+    folder.mkdir()
+    heard, say = [], host.bridge.broadcast
+    monkeypatch.setattr(host.bridge, "broadcast", lambda name, data: (heard.append((name, data)), say(name, data)))
+    reply = await call(host, client, "settings.patch",
+                       {"settings": {**blank, "rekordboxFolder": f"{folder}/"}})
+    assert reply["result"]["settings"]["rekordboxFolder"] == str(folder)
+    assert host._load_state()["rekordbox_folder"] == str(folder)
+    assert "rekordbox" not in str(host.config.sections).lower()
+    # What is Sent follows the folder, so the app hears it change.
+    assert ("handoff.state", {"sent": []}) in heard
+
+    reply = await call(host, client, "settings.patch",
+                       {"settings": {**blank, "rekordboxFolder": ""}})
+    assert reply["result"]["settings"]["rekordboxFolder"] is None
+
+    reply = await call(host, client, "handoff.send", {"transferIds": []})
+    assert reply["ok"] is False and "no Rekordbox folder" in reply["error"]["message"]
 
 
 async def test_fs_check_over_the_socket(host, client, tmp_path):

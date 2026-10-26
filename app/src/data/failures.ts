@@ -15,7 +15,7 @@ import { useSyncExternalStore } from 'react';
 import { readableError } from '../domain/folders.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 
-export interface Failure {
+interface Failure {
   id: number;
   text: string;
 }
@@ -39,18 +39,13 @@ export function dismissFailure(id: number): void {
 
 /** `action` is what the person tried, said as they would: "Join #techno". */
 export function reportFailure(action: string, error: unknown): void {
-  const text = `${action} didn't work — ${readableError(error)}`;
-  // The same sentence twice in a row is one notice, not two.
-  if (items.some((f) => f.text === text)) return;
-  const id = ++seq;
-  items = [...items, { id, text }].slice(-MAX_SHOWN);
-  emit();
-  setTimeout(() => dismissFailure(id), SHOW_MS);
+  showNotice(`${action} didn't work — ${readableError(error)}`);
 }
 
 /** A sentence that is not a failure but still has to be seen — a refusal
  *  made on the person's own rules, say. Shown as written. */
 export function showNotice(text: string): void {
+  // The same sentence twice in a row is one notice, not two.
   if (items.some((f) => f.text === text)) return;
   const id = ++seq;
   items = [...items, { id, text }].slice(-MAX_SHOWN);
@@ -89,4 +84,34 @@ export function readUntilAnswered<T>(
   };
   ask();
   return () => { live = false; window.clearTimeout(timer); };
+}
+
+/**
+ * `lost` when an open socket stops being open; `back` when it opens again.
+ *
+ * Events go to whoever is connected when they are sent, so anything still
+ * waiting on one when the socket dropped may never hear it: a copy, a check
+ * or a decode that finished in the gap answered nobody. Returns the cleanup.
+ */
+export function onReconnect(client: SidecarClient, lost: () => void, back?: () => void): () => void {
+  let state: 'new' | 'open' | 'lost' = 'new';
+  return client.onPhase((phase) => {
+    if (phase === 'open') {
+      if (state === 'lost') back?.();
+      state = 'open';
+    } else if (state === 'open') {
+      state = 'lost';
+      lost();
+    }
+  });
+}
+
+/** `prev` without its entries still marked running, or `prev` itself when
+ *  there were none, so a state setter can take it without a wasted render. */
+export function dropRunning<V extends { state: string }>(prev: Map<string, V>): Map<string, V> {
+  let next: Map<string, V> | null = null;
+  for (const [key, value] of prev) {
+    if (value.state === 'running') (next ??= new Map(prev)).delete(key);
+  }
+  return next ?? prev;
 }

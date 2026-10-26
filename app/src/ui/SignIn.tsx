@@ -18,13 +18,17 @@ import type { SidecarClient } from '../data/sidecarClient.ts';
 import { isSignedIn } from '../data/searchStore.ts';
 import { EngineBusyError } from '../data/sidecarClient.ts';
 import { reportFailure } from '../data/failures.ts';
+import { signInProblem } from '../domain/signInProblem.ts';
 
 export function SignIn({
-  client, state, settings,
+  client, state, problem, settings,
 }: {
   client: SidecarClient | null;
   /** Soulseek connection state, not the socket's. */
   state: string | null;
+  /** Why we are not signed in, as the sidecar's code: shown on arrival too,
+   *  not only when the event lands while this form is open. */
+  problem?: string | null;
   /** So the form can say whose account is remembered. */
   settings?: { hasCredentials: boolean; username: string; autoConnect?: boolean };
 }) {
@@ -37,6 +41,7 @@ export function SignIn({
   const [notice, setNotice] = useState<string | null>(null);
 
   const connected = isSignedIn(state);
+  const shown = error ?? (busy ? null : signInProblem(problem));
 
   // Surface the server's own rejection — a wrong password reports through this
   // event, not as a failed command, because the login is asynchronous.
@@ -45,7 +50,7 @@ export function SignIn({
     return client.on('connection.state', (data) => {
       const d = data as { status?: string; error?: string | null };
       if (d.error) {
-        setError(d.error);
+        setError(signInProblem(d.error));
         setNotice(null);
         setBusy(false);
       } else if (isSignedIn(d.status ?? null)) {
@@ -150,7 +155,7 @@ export function SignIn({
         />
       </label>
 
-      {error && <p className="signin__error" role="alert">{error}</p>}
+      {shown && <p className="signin__error" role="alert">{shown}</p>}
       {notice && !error && <p className="signin__notice" role="status">{notice}</p>}
 
       <div className="import__actions">

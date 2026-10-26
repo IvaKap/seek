@@ -23,10 +23,6 @@ export interface UrlGuess {
   url: string;
   /** Null when the host is unfamiliar — still worth asking about. */
   provider: UrlProvider | null;
-  /** True when this is an album/release rather than a single track. */
-  album: boolean;
-  /** True when the URL carries a playlist, which is a Phase D4 concern. */
-  playlist: boolean;
   /**
    * The bare playlist id, when the URL names one. Empty otherwise.
    *
@@ -73,7 +69,6 @@ export function guessUrl(text: string): UrlGuess | null {
   }
 
   const host = parsed.hostname.toLowerCase();
-  const path = parsed.pathname.toLowerCase();
 
   if (YOUTUBE_HOSTS.has(host)) {
     /* `RD…` and `UL…` ids are YouTube's auto-generated radio and mixes. They
@@ -85,36 +80,22 @@ export function guessUrl(text: string): UrlGuess | null {
     return {
       url,
       provider: 'youtube',
-      album: false,
-      // `list=` on a /watch URL means the video sits in a playlist, which is
-      // not the same as the user meaning to import one. Both are D4's problem.
-      playlist: parsed.searchParams.has('list') || path.startsWith('/playlist'),
+      // A /watch URL with `list=` names the playlist its video sits in. That
+      // is not a request to import it: the id is offered, never acted on.
       playlistId: importable ? list : '',
     };
   }
 
   if (DISCOGS_HOSTS.has(host)) {
-    return {
-      url,
-      provider: 'discogs',
-      album: /\/(release|master)\//.test(path),
-      playlist: false,
-      playlistId: '',
-    };
+    return { url, provider: 'discogs', playlistId: '' };
   }
 
   if (host === 'bandcamp.com' || host.endsWith('.bandcamp.com')) {
-    return {
-      url,
-      provider: 'bandcamp',
-      album: path.startsWith('/album/'),
-      playlist: false,
-      playlistId: '',
-    };
+    return { url, provider: 'bandcamp', playlistId: '' };
   }
 
   // An unfamiliar host. Ask anyway — it may be a Bandcamp custom domain.
-  return { url, provider: null, album: false, playlist: false, playlistId: '' };
+  return { url, provider: null, playlistId: '' };
 }
 
 /** How the provider is named on the preview card. */

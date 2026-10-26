@@ -28,7 +28,7 @@ import type { SearchScope, Sidecar, SidecarHandlers } from './mockSidecar.ts';
 import type { WireSearchClosedData, WireSearchResultData } from './adapt.ts';
 import { reportFailure } from './failures.ts';
 
-export interface SidecarEndpoint {
+interface SidecarEndpoint {
   host: string;
   port: number;
   token: string;
@@ -48,7 +48,6 @@ export interface SidecarClient extends Sidecar {
   /** Subscribe to an event name. Returns an unsubscribe function. */
   on(event: string, fn: (data: unknown) => void): () => void;
   onPhase(fn: (phase: ConnectionPhase) => void): () => void;
-  readonly phase: ConnectionPhase;
   /**
    * Connect, or revive a client that was closed. Idempotent.
    *
@@ -122,6 +121,8 @@ const WRITE_VERBS = new Set([
   // failed while the engine applies them anyway.
   'say', 'join', 'leave', 'watch', 'unwatch', 'note', 'create', 'rename',
   'ensureFolder', 'addSheet', 'removeSheet', 'refreshSheet', 'setDownloaded', 'signOut',
+  // Answered once the files are found; the copy itself is reported by event.
+  'send',
   // A read, but a slow one: it looks for every finished download on disk.
   'findMissing',
 ]);
@@ -330,6 +331,11 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
   function whenOpen(ms: number): Promise<boolean> {
     if (ws && ws.readyState === WebSocket.OPEN) return Promise.resolve(true);
     if (closedByUs) return Promise.resolve(false);
+    /* Still 'open' with the socket closing, before `onclose` has run. Waiting
+       here would call `off` from inside `onPhase`, before it exists: the throw
+       rejected this promise and nothing caught it, so the request hung for
+       good. The caller re-checks the socket and reports it as not connected. */
+    if (phase === 'open') return Promise.resolve(true);
     return new Promise((resolve) => {
       const timer = window.setTimeout(() => { off(); resolve(false); }, ms);
       const off = onPhase((p) => {
@@ -379,17 +385,6 @@ export function createSidecarClient(endpoint: SidecarEndpoint): SidecarClient {
    * `open()`. */
 
   return {
-    get running() {
-      return running;
-    },
-    get phase() {
-      return phase;
-    },
-
-    setRate() {
-      /* Replay rate is a fixture concept. The network sets its own pace. */
-    },
-
     start(query: string, next: SidecarHandlers, scope: SearchScope = { mode: 'global' }) {
       handlers = next;
       running = true;

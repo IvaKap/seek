@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { wantlistEntries, wantQuery } from './wantlistImport.ts';
+import { wantlistEntries } from './wantlistImport.ts';
 import type { DiscogsWant } from './wantlistImport.ts';
 
 function want(over: Partial<DiscogsWant> = {}): DiscogsWant {
@@ -119,16 +119,5 @@ describe('wantlistEntries', () => {
   it('claims no confidence, because nothing was parsed', () => {
     const [e] = wantlistEntries([want()]);
     expect('confidence' in e).toBe(false);
-  });
-});
-
-describe('wantQuery', () => {
-  it('joins artist and title', () => {
-    expect(wantQuery(want({ artist: 'Burial', title: 'Untrue' }))).toBe('Burial Untrue');
-  });
-
-  it('drops the empty half rather than leaving a stray space', () => {
-    expect(wantQuery(want({ artist: '', title: 'Untrue' }))).toBe('Untrue');
-    expect(wantQuery(want({ artist: 'Burial', title: '' }))).toBe('Burial');
   });
 });

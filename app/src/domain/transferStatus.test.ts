@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { groupStatus, needsAttention, transferStatus } from './transferStatus.ts';
+import { groupStatus, transferStatus } from './transferStatus.ts';
 
 function t(over: Partial<Parameters<typeof transferStatus>[0]> = {}) {
   return transferStatus({
@@ -30,7 +30,7 @@ describe('the queue, which is where most downloads actually are', () => {
 
   it('does not offer Retry for something that is working', () => {
     expect(t({ state: 'queued', queuePosition: 3 }).retryable).toBe(false);
-    expect(needsAttention(t({ state: 'queued' }))).toBe(false);
+    expect(t({ state: 'queued' }).tone).not.toMatch(/^(broken|refused)$/);
   });
 });
 
@@ -65,7 +65,7 @@ describe('refusals — what "unknown" was hiding', () => {
   });
 
   it('marks every refusal as needing attention', () => {
-    expect(needsAttention(t({ state: 'rejected', error: 'Banned' }))).toBe(true);
+    expect(t({ state: 'rejected', error: 'Banned' }).tone).toMatch(/^(broken|refused)$/);
   });
 });
 

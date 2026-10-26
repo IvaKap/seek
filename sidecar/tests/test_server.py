@@ -340,7 +340,9 @@ def _event_samples():
                              "uploadSlots": 1, "queueSize": 0, "freeSlots": True},
         "user.info.failed": {"username": "u", "reason": "offline"},
         "folder.contents": {"requestId": "r", "username": "u", "folderPath": "A\\B",
-                            "folders": [_folder()], "enqueued": 1},
+                            "folders": [_folder()], "enqueued": 1,
+                            "held": {"count": 1200, "recurse": False,
+                                     "destination": None}},
         "folder.contents.failed": {"requestId": None, "username": "u",
                                    "folderPath": "A\\B", "reason": "offline"},
         "transfer.added": _transfer(),
@@ -364,7 +366,8 @@ def _event_samples():
             "fftSize": 8192, "windowCount": 96, "analysedSeconds": 17.8,
         },
         "analysis.failed": {
-            "requestId": "r", "path": "/tmp/a.flac", "reason": "decode failed",
+            "requestId": "r", "path": "/tmp/a.flac", "transferId": "t",
+            "reason": "decode failed",
         },
         "checksums.result": {
             "requestId": "r", "folderPath": "/tmp/release", "transferId": None,
@@ -385,7 +388,7 @@ def _event_samples():
             ],
         },
         "checksums.failed": {
-            "requestId": "r", "path": "/tmp/release/01.flac",
+            "requestId": "r", "path": "/tmp/release/01.flac", "transferId": None,
             "reason": "no such folder",
         },
         "chat.message": {
@@ -406,6 +409,14 @@ def _event_samples():
         "chat.member": {"room": "electronic", "present": True,
                         "member": {"username": "someone", "status": "online", "files": 120}},
         "users.lists": {"ignored": ["troll"], "banned": []},
+        "handoff.done": {"results": [
+            {"transferId": "a1", "outcome": "copied", "dest": "/Volumes/USB/To Rekordbox/x.flac"},
+            {"transferId": "b2", "outcome": "exists_different", "dest": None},
+        ]},
+        "handoff.state": {"sent": [
+            {"transferId": "a1", "user": "u", "path": "Music\\x.flac",
+             "dest": "/Volumes/USB/To Rekordbox/x.flac", "sentAt": 1.0},
+        ]},
         "wishlist.state": {
             "items": [
                 {"query": "burial untrue", "filters": None, "auto": False},

@@ -25,7 +25,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 from . import (
-    checksums, discover as discover_mod, enrich, library as library_mod,
+    checksums, discover as discover_mod, enrich, handoff, library as library_mod,
     logfile, nicotine_import, registries, translate, youtube_oauth,
 )
 from .protocol import PROTOCOL_VERSION
@@ -37,7 +37,7 @@ from pynicotine import utils
 
 log = logging.getLogger("seek.core")
 
-SIDECAR_VERSION = "0.3.0"
+SIDECAR_VERSION = "0.4.0"
 
 # Upstream speed limits are in KiB/s; our wire is bytes/sec everywhere.
 KIB = 1024
@@ -147,6 +147,14 @@ class CoreHost:
                           # budgets 100 ms from sidecar to screen, and a 100 ms
                           # pump alone would spend all of it.
 
+    #: Why the server last signed us out, for `_on_server_disconnect`. Class
+    #: defaults, so a test host built without __init__ has them too.
+    _relogged = False      # the server said the account signed in elsewhere
+    _signing_out = False   # Seek asked for this disconnect itself
+    #: Set when Seek is quitting, so a long copy to a USB stick stops between
+    #: chunks instead of holding the exit for the whole album.
+    _quitting = False
+
     def __init__(self, bridge, config_folder, data_folder, upstream_path=None,
                  enable_shares=False, log_file=""):
         self.bridge = bridge
@@ -181,7 +189,7 @@ class CoreHost:
         # because they could not be read. Cleared by `shares-scanning`, which
         # only fires when a scan really starts.
         self._share_unavailable = []
-        self._folder_requests = {}   # (username, folderPath) -> request info
+        self._folder_requests = {}   # (username, folderPath) -> [request info], oldest first
         self._peer_extra = {}        # username -> {"files", "folders", "country"}
 
         # Spectral analysis is CPU-bound (decode + FFT) and must never run on
@@ -317,6 +325,7 @@ class CoreHost:
         for name, callback in (
             ("server-login", self._on_server_login),
             ("server-disconnect", self._on_server_disconnect),
+            ("log-message", self._on_upstream_log),
             ("set-connection-stats", self._on_connection_stats),
             ("set-wishlist-interval", self._on_wishlist_interval),
             ("file-search-response", self._on_search_response),
@@ -408,6 +417,7 @@ class CoreHost:
         if self._shutdown_done:
             return
         self._shutdown_done = True
+        self._quitting = True
 
         try:
             self.core.quit()
@@ -502,8 +512,23 @@ class CoreHost:
 
     # -- upstream event handlers -------------------------------------------
 
+    def _on_upstream_log(self, _timestamp_format, msg, *_rest):
+        """Hear upstream say the account signed in somewhere else.
+
+        The server's Relogged message is handled inside the network thread and
+        never reaches the event bus; the only trace it leaves is this log line,
+        written just before the disconnect event is queued. Runs on whichever
+        thread logged, so it only sets a flag. Compared through upstream's own
+        `_`, so a translated line still matches; tests/test_signin.py pins the
+        wording against upstream's source.
+        """
+        if msg == _("Someone logged in to your Soulseek account elsewhere"):  # noqa: F821
+            self._relogged = True
+
     def _on_server_login(self, msg):
+        self._relogged = self._signing_out = False
         if msg.success:
+            log.info("signed in to the Soulseek server")
             # Upstream's own login handler runs first and restores a saved
             # away status (users.py), so ask it rather than assume online.
             away = self.core.users.login_status == self.UserStatus.AWAY
@@ -514,6 +539,8 @@ class CoreHost:
                 "error": None,
             })
         else:
+            # A code such as INVALIDPASS: no name, no password.
+            log.warning("sign-in refused: %s", msg.rejection_reason or "no reason given")
             self._connection.update({
                 "status": "failed",
                 "username": None,
@@ -521,9 +548,30 @@ class CoreHost:
             })
         self.bridge.broadcast("connection.state", dict(self._connection))
 
-    def _on_server_disconnect(self, _msg):
+    def _on_server_disconnect(self, msg):
+        """Signed out, and why, because "Not signed in" alone sent a person
+        hunting. A dropped connection upstream retries by itself; the server
+        ending the session it does not, so that one is reported as an error:
+        `relogged` when the server said the account signed in elsewhere, and
+        `server_closed` for the rarer endings (a message it could not read)."""
+        manual = getattr(msg, "manual_disconnect", False)
+        error = None
+        if self._relogged:
+            error = "relogged"
+        elif self._connection.get("status") == "failed":
+            # A refused login closes the connection too; its reason stands.
+            error = self._connection.get("error")
+        elif manual and not self._signing_out and not getattr(self, "_shutdown_done", False):
+            error = "server_closed"
+        self._relogged = self._signing_out = False
+        if error in ("relogged", "server_closed"):
+            log.warning("signed out by the server (%s); not signing in again by itself", error)
+        elif manual:
+            log.info("signed out")
+        else:
+            log.info("lost the connection to the server; upstream will reconnect")
         self._connection.update({
-            "status": "offline", "username": None, "publicAddress": None,
+            "status": "offline", "username": None, "publicAddress": None, "error": error,
         })
         self.bridge.broadcast("connection.state", dict(self._connection))
         for payload in self.searches.close_all("disconnected"):
@@ -937,28 +985,43 @@ class CoreHost:
         if msg.dir is None or msg.list is None:
             return
         key = (msg.username, msg.dir)
-        request = self._folder_requests.pop(key, None)
+        # One answer settles every Get still waiting on this folder, oldest
+        # first. A second Get used to REPLACE the first, losing its Download
+        # to… folder; now the first queues, and upstream drops the second's
+        # files as duplicates — what would have happened had the peer answered
+        # between the two clicks.
+        requests = self._folder_requests.pop(key, [])
         folders = translate.folder_refs_from_contents(msg.list)
 
         enqueued = 0
-        if request is not None:
-            enqueued = self._enqueue_folder_files(
-                msg.username, msg.dir, folders,
-                request["destination"], request["recurse"],
+        held = None
+        for request in requests:
+            files = self._folder_files(msg.dir, folders, request["recurse"])
+            limit = request["confirmAbove"]
+            if limit is not None and len(files) > limit:
+                # Only here is the real count known: a search shows a fraction
+                # of a folder. Held, not queued; the app asks and sends again.
+                if held is None:
+                    held = {"count": len(files), "recurse": request["recurse"],
+                            "destination": request["destination"]}
+                continue
+            enqueued += self._enqueue_folder_files(
+                msg.username, msg.dir, files, request["destination"],
             )
 
         self.bridge.broadcast("folder.contents", {
-            "requestId": request["requestId"] if request else "",
+            "requestId": requests[0]["requestId"] if requests else "",
             "username": msg.username,
             "folderPath": msg.dir,
             "folders": folders,
             "enqueued": enqueued,
+            "held": held,
         })
 
     def _on_folder_contents_failed(self, username, folder_path, is_offline=False):
-        request = self._folder_requests.pop((username, folder_path), None)
+        requests = self._folder_requests.pop((username, folder_path), [])
         self.bridge.broadcast("folder.contents.failed", {
-            "requestId": request["requestId"] if request else None,
+            "requestId": requests[0]["requestId"] if requests else None,
             "username": username,
             "folderPath": folder_path,
             "reason": "offline" if is_offline else "failed",
@@ -3906,26 +3969,35 @@ class CoreHost:
                 out[record.direction].append(upstream)
         return out
 
-    def _enqueue_folder_files(self, username, root, folders, destination, recurse):
-        count = 0
+    @staticmethod
+    def _folder_files(root, folders, recurse):
+        """The (folder path, file) pairs a request for `root` takes: the
+        folder's own files, plus its subfolders' when `recurse`."""
+        out = []
         for folder in folders:
             path = folder["path"]
             if not recurse and path != root:
                 continue
             if recurse and path != root and not path.startswith(root + "\\"):
                 continue
+            out.extend((path, file) for file in folder["files"])
+        return out
+
+    def _enqueue_folder_files(self, username, root, files, destination):
+        targets = {}
+        for path, file in files:
             # Into the chosen folder, but with the release's own folders kept,
             # as upstream's Download to does (userbrowse.download_folder). This
             # used to drop every file of every subfolder flat into the target.
-            target = self.core.downloads.get_folder_destination(
-                username, path, root_folder_path=root, download_folder_path=destination or None
-            )
-            for file in folder["files"]:
-                self.core.downloads.enqueue_download(
-                    username, file["path"], folder_path=target, size=file["size"]
+            if path not in targets:
+                targets[path] = self.core.downloads.get_folder_destination(
+                    username, path, root_folder_path=root,
+                    download_folder_path=destination or None,
                 )
-                count += 1
-        return count
+            self.core.downloads.enqueue_download(
+                username, file["path"], folder_path=targets[path], size=file["size"]
+            )
+        return len(files)
 
     def _close_search(self, token, reason):
         for payload in self.searches.flush():
@@ -3996,6 +4068,7 @@ class CoreHost:
 
         self._connection.update({"status": "connecting", "error": None})
         self.bridge.broadcast("connection.state", dict(self._connection))
+        log.info("signing in")
         self.core.connect()
         # Persist so a restart does not lose the login — after connecting, so
         # a failed save never stands between you and this session. Neither
@@ -4008,6 +4081,7 @@ class CoreHost:
         # Signing out means staying out, next launch included: automatic
         # sign-in used to bring the account straight back. Signing in again
         # does not turn it back on — the Settings switch is the one control.
+        self._signing_out = True
         self.core.disconnect()
         self.config.sections["server"]["auto_connect_startup"] = False
         self.bridge.broadcast("app.settings", self._app_settings())
@@ -4175,11 +4249,12 @@ class CoreHost:
         username = params["username"]
         folder_path = params["folderPath"]
         request_id = registries.transfer_id(username, folder_path)
-        self._folder_requests[(username, folder_path)] = {
+        self._folder_requests.setdefault((username, folder_path), []).append({
             "requestId": request_id,
             "destination": params.get("destination"),
             "recurse": bool(params.get("recurse")),
-        }
+            "confirmAbove": params.get("confirmAbove"),
+        })
         self.core.downloads.request_folder(username, folder_path)
         return {"requestId": request_id}
 
@@ -4372,7 +4447,8 @@ class CoreHost:
             # reports, and a path is a list of what someone downloads.
             log.warning("spectral analysis failed: %s", type(error).__name__)
             self.bridge.broadcast("analysis.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         self.bridge.broadcast("analysis.result", payload)
@@ -4431,12 +4507,160 @@ class CoreHost:
         except Exception as error:
             log.warning("checksum check failed: %s", type(error).__name__)
             self.bridge.broadcast("checksums.failed", {
-                "requestId": request_id, "path": path, "reason": str(error),
+                "requestId": request_id, "path": path, "transferId": transfer_id,
+                "reason": str(error),
             })
             return
         report["requestId"] = request_id
         report["transferId"] = transfer_id
         self.bridge.broadcast("checksums.result", report)
+
+    # -- the Rekordbox hand-off (see handoff.py) -----------------------------
+
+    #: Most hand-offs remembered. The oldest records go first; the files stay.
+    HANDOFF_CAP = 5000
+
+    def _handoff_path(self):
+        # Its own file, not seek-state.json: at the cap the record is 1.6 MB,
+        # and every save of anything re-reads and rewrites the whole state,
+        # which made each finished download cost ~50 ms on the main thread.
+        return os.path.join(self.data_folder, "seek-handoff.json")
+
+    def _handoff_sent(self):
+        """The ledger, minus any row the validator would drop the event over.
+
+        Unreadable is empty: losing the record loses no file, and sending again
+        finds each copy already there."""
+        try:
+            with open(self._handoff_path(), encoding="utf-8") as handle:
+                rows = json.load(handle)
+        except FileNotFoundError:
+            rows = []
+        except (OSError, ValueError):
+            log.exception("seek-handoff.json unreadable; starting the record again")
+            rows = []
+        return [
+            row for row in (rows if isinstance(rows, list) else [])
+            if isinstance(row, dict)
+            and all(isinstance(row.get(k), str) for k in ("transferId", "user", "path", "dest"))
+            and isinstance(row.get("sentAt"), (int, float))
+        ]
+
+    def _save_handoff(self, rows):
+        """Atomic, like `_save_state`. Logged, not raised: the copies happened,
+        and an unsaved record is no reason to report them as failed."""
+        path = self._handoff_path()
+        tmp = f"{path}.tmp"
+        try:
+            os.makedirs(self.data_folder, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(rows, handle)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except OSError:
+            log.exception("could not save the hand-off record")
+
+    def _handoff_present(self):
+        """The record's rows whose copy is in the Rekordbox folder now.
+
+        What went where is history; what is THERE is the disk's to say. A new
+        folder, or another stick mounted under the same name, holds none of the
+        old copies, and calling them Sent would leave nothing to send them with.
+        """
+        folder = self._resolve_path(self._load_state().get("rekordbox_folder"))
+        if not folder:
+            return []
+        inside = os.path.join(folder, "")
+        # ponytail: one stat per row, 5,000 at the cap; list each release
+        # folder once instead if a slow drive ever makes this felt.
+        return [row for row in self._handoff_sent()
+                if row["dest"].startswith(inside) and os.path.isfile(row["dest"])]
+
+    def _cmd_handoff_list(self, _params):
+        return {"sent": self._handoff_present()}
+
+    def _cmd_handoff_send(self, params):
+        """Find the files here; check the folder and copy on the post worker.
+
+        The files are found on THIS thread because finding one asks the core,
+        and the core is not to be read from a worker. The folder is looked at
+        on the worker (`handoff.folder_problem`): a sleeping USB drive takes
+        seconds to answer, and this thread runs every transfer and search.
+
+        The post worker, not a pool of its own, because Organise moves files
+        there: one queue means a copy never races a move of the same file.
+        ponytail: a big copy delays artwork and Organise for downloads that
+        finish behind it; give the hand-off its own pool if that is ever felt.
+        """
+        folder = self._resolve_path(self._load_state().get("rekordbox_folder"))
+        if not folder:
+            raise CommandError("bad_request", "no Rekordbox folder is set")
+
+        jobs = []
+        for transfer_id in params["transferIds"]:
+            record = self.transfers.get(transfer_id)
+            job = {"transferId": transfer_id, "source": None, "outcome": None,
+                   "user": record.username if record else "",
+                   "path": record.path if record else ""}
+            if record is None or record.direction != "download":
+                # The resolver would happily answer for an upload, with a path
+                # in the download folder that is not that file.
+                job["outcome"] = "file_missing"
+            else:
+                try:
+                    job["source"] = self._resolve_local_file({"path": None, "transferId": transfer_id})
+                except CommandError as error:
+                    job["outcome"] = "not_finished" if error.code == "bad_request" else "file_missing"
+            jobs.append(job)
+        # Read here, with the files: a folder changed while the copy waits its
+        # turn must not change where the files land.
+        self._post_pool.submit(self._handoff_now, folder, self._download_root(), jobs)
+        return {}
+
+    def _handoff_now(self, folder, root, jobs):
+        """Worker-thread body. Never raises into the pool."""
+        try:
+            results, ledger = self._handoff_copy(folder, root, jobs)
+        except Exception:                              # noqa: BLE001 - worker
+            log.exception("hand-off failed")
+            results, ledger = [{"transferId": job["transferId"], "outcome": handoff.IO_ERROR,
+                                "dest": None} for job in jobs], None
+        self.bridge.broadcast("handoff.done", {"results": results})
+        if ledger is not None:
+            self.bridge.broadcast("handoff.state", {"sent": self._handoff_present()})
+
+    def _handoff_copy(self, folder, root, jobs):
+        now = time.time()
+        results, ledger = [], None
+        unavailable = handoff.folder_problem(folder)
+        quitting = lambda: self._quitting  # noqa: E731
+        for job in jobs:
+            outcome, dest = job["outcome"], None
+            if outcome is None:
+                outcome = unavailable or (handoff.STOPPED if quitting() else None)
+            if outcome is None:
+                # Organise may have moved it while this job waited its turn.
+                source = self._follow_move(job["source"])
+                dest = handoff.destination(folder, source, root)
+                outcome = handoff.send_file(source, dest, quitting)
+                if outcome in (handoff.COPIED, handoff.ALREADY_THERE):
+                    # Recorded file by file: a quit, or a kill after the
+                    # shell's grace period, keeps every copy that landed.
+                    ledger = self._record_handoff({
+                        "transferId": job["transferId"], "user": job["user"],
+                        "path": job["path"], "dest": dest, "sentAt": now})
+                else:
+                    dest = None
+            results.append({"transferId": job["transferId"], "outcome": outcome, "dest": dest})
+        return results, ledger
+
+    def _record_handoff(self, row):
+        with _STATE_LOCK:
+            kept = [r for r in self._handoff_sent() if r["transferId"] != row["transferId"]]
+            ledger = (kept + [row])[-self.HANDOFF_CAP:]
+            self._save_handoff(ledger)
+        return ledger
 
     # -- chat --------------------------------------------------------------
     #
@@ -4918,14 +5142,25 @@ class CoreHost:
         transfers = self.config.sections["transfers"]
         server = self.config.sections["server"]
 
-        if patch.get("downloadFolder") is not None:
-            transfers["downloaddir"] = self._require_writable_dir(
-                "the download folder", patch["downloadFolder"]
-            )
-        if patch.get("incompleteFolder") is not None:
-            transfers["incompletedir"] = self._require_writable_dir(
-                "the in-progress folder", patch["incompleteFolder"]
-            )
+        # Checked before anything else changes, saved after, like stallSeconds.
+        rekordbox = patch.get("rekordboxFolder")
+        if rekordbox is not None:
+            rekordbox = (self._require_writable_dir("the Rekordbox folder", rekordbox)
+                         if str(rekordbox).strip() else "")
+
+        # Every folder is checked before any is set: a good download folder
+        # beside a bad in-progress one used to take effect in the live config
+        # while the reply said the patch was refused.
+        download = patch.get("downloadFolder")
+        if download is not None:
+            download = self._require_writable_dir("the download folder", download)
+        incomplete = patch.get("incompleteFolder")
+        if incomplete is not None:
+            incomplete = self._require_writable_dir("the in-progress folder", incomplete)
+        if download is not None:
+            transfers["downloaddir"] = download
+        if incomplete is not None:
+            transfers["incompletedir"] = incomplete
         if patch.get("uploadSlots") is not None:
             transfers["uploadslots"] = int(patch["uploadSlots"])
         if patch.get("listenPort") is not None:
@@ -4996,6 +5231,10 @@ class CoreHost:
             # Saved, not just set: it lived only on the registry, so every
             # restart quietly put it back to 45 s.
             self._store(stall_seconds=self.transfers.stall_seconds)
+        if rekordbox is not None:
+            self._store(rekordbox_folder=rekordbox)
+            # Another folder holds other copies: what is Sent changes with it.
+            self.bridge.broadcast("handoff.state", {"sent": self._handoff_present()})
         return {"settings": self._read_settings()}
 
     def _read_settings(self):
@@ -5030,6 +5269,7 @@ class CoreHost:
             "queueLimitFiles": int(transfers.get("filelimit") or 0),
             "queueLimitMb": int(transfers.get("queuelimit") or 0),
             "buddiesUnlimited": bool(transfers.get("friendsnolimits")),
+            "rekordboxFolder": self._resolve_path(self._load_state().get("rekordbox_folder")) or None,
         }
 
 

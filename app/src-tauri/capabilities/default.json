@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Seek's own commands plus the core defaults. Without a capability file Tauri v2 grants the webview nothing at all, and every invoke fails. The two window permissions are what `data-tauri-drag-region` invokes to move the window and to zoom it on a double-click; core:default does not include either, which is why the window could not be moved.",
+  "description": "Seek's own commands plus the core defaults. Without a capability file Tauri v2 grants the webview nothing at all, and every invoke fails. The two window permissions are what `data-tauri-drag-region` invokes to move the window and to zoom it on a double-click; core:default does not include either, which is why the window could not be moved. The six window setters are Mini Seek's (src/data/miniWindow.ts): it shrinks this same window, can keep it on top, and puts the full frame back.",
   "windows": [
     "main"
   ],
@@ -9,6 +9,12 @@
     "core:default",
     "core:window:allow-start-dragging",
     "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-set-size",
+    "core:window:allow-set-min-size",
+    "core:window:allow-set-position",
+    "core:window:allow-set-resizable",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-fullscreen",
     "notification:default",
     "dialog:allow-open",
     "updater:default",

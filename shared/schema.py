@@ -524,6 +524,14 @@ STRUCTS = {
             ("folderPath", "str", "Full remote folder path."),
             ("recurse", "bool?", "Include subfolders. Defaults false."),
             ("destination", "str?", "Absolute local folder. Null uses the default."),
+            (
+                "confirmAbove",
+                "int?",
+                "Hold the folder back instead of queueing it when it holds more "
+                "files than this, and say so in `folder.contents` `held`. Only "
+                "the sidecar sees the real count: a search shows a fraction of "
+                "a folder. Null queues whatever arrives.",
+            ),
         ],
     ),
     "TransferFolderResult": (
@@ -2227,6 +2235,14 @@ STRUCTS = {
                 "The two limits above do not apply to buddies. "
                 "Upstream's `transfers.friendsnolimits`.",
             ),
+            (
+                "rekordboxFolder",
+                "str?",
+                "Where `handoff.send` copies finished downloads for Rekordbox to "
+                "import. Seek's own, so it lives in seek-state.json, not the "
+                "Nicotine+ config. An empty string in a patch clears it. Seek "
+                "never touches the Rekordbox database: this is a plain folder.",
+            ),
         ],
     ),
     # ---- event payloads ----------------------------------------------------
@@ -2239,8 +2255,13 @@ STRUCTS = {
             (
                 "error",
                 "str?",
-                "Server rejection text on a failed login (e.g. wrong password). "
-                "Null otherwise.",
+                "Why we are not signed in, as a code the app words: the server's "
+                "rejection of a login (INVALIDPASS, INVALIDUSERNAME, SVRFULL, …), "
+                "'relogged' when the server signed us out because the account "
+                "signed in elsewhere, or 'server_closed' when it ended the "
+                "session for another reason. Neither of the last two is retried "
+                "automatically. Null otherwise, including a dropped connection, "
+                "which upstream retries by itself.",
             ),
         ],
     ),
@@ -2325,15 +2346,32 @@ STRUCTS = {
             ("freeSlots", "bool", ""),
         ],
     ),
+    "HeldFolder": (
+        "A folder request held back because the folder holds more files than "
+        "its `confirmAbove`. Nothing was queued for it: ask, then send "
+        "`transfer.enqueueFolder` again with these values and "
+        "`confirmAbove: null`.",
+        [
+            ("count", "int", "Files the request would have queued."),
+            ("recurse", "bool", ""),
+            ("destination", "str?", ""),
+        ],
+    ),
     "FolderContentsEvent": (
         "Reply to `transfer.enqueueFolder`'s underlying folder request. Emitted "
-        "before the resulting `transfer.added` events.",
+        "before the resulting `transfer.added` events. One answer settles every "
+        "request still waiting on that folder, oldest first.",
         [
             ("requestId", "str", "Matches TransferFolderResult.requestId."),
             ("username", "str", ""),
             ("folderPath", "str", ""),
             ("folders", "FolderRef[]", ""),
             ("enqueued", "int", "How many files were queued as a result."),
+            (
+                "held",
+                "HeldFolder?",
+                "The oldest request held back by its `confirmAbove`, if any.",
+            ),
         ],
     ),
     "FolderContentsFailedEvent": (
@@ -2569,10 +2607,17 @@ STRUCTS = {
         [("requestId", "str", "Correlates the later analysis.result event.")],
     ),
     "AnalysisFailedEvent": (
-        "",
+        "A post-download check (spectral or checksums) could not run.",
         [
             ("requestId", "str", ""),
             ("path", "str?", ""),
+            (
+                "transferId",
+                "str?",
+                "The transfer the check was asked for. A check that fails at "
+                "once can be announced before its request's reply, which is "
+                "the only other way the app learns which row asked.",
+            ),
             ("reason", "str", "Developer-facing text. Not for display."),
         ],
     ),
@@ -3038,6 +3083,50 @@ STRUCTS = {
             ("message", "str", ""),
             ("at", "float", "Unix epoch seconds."),
         ],
+    ),
+    # ---- the Rekordbox hand-off ----------------------------------------------
+    "HandoffSendParams": (
+        "Copy finished downloads into the Rekordbox folder. COPY, never move: "
+        "the download folder keeps its files, so Verify, the checksum check and "
+        "Show in Finder go on working.",
+        [("transferIds", "str[]", "Finished downloads. Anything else is refused file by file.")],
+    ),
+    "HandoffResult": (
+        "What happened to one file.",
+        [
+            ("transferId", "str", ""),
+            (
+                "outcome",
+                "str",
+                "copied | already_there (the same-sized file was there; counted "
+                "as sent) | not_finished | file_missing | exists_different (a "
+                "different file holds the name; never overwritten) | io_error | "
+                "folder_unavailable (the Rekordbox folder is gone or read-only: an "
+                "unplugged stick) | stopped (Seek quit mid-copy; nothing left behind).",
+            ),
+            ("dest", "str?", "Absolute path of the copy. Null unless copied or already there."),
+        ],
+    ),
+    "HandoffDone": (
+        "The outcome of one `handoff.send`, file by file.",
+        [("results", "HandoffResult[]", "One per transferId, in order.")],
+    ),
+    "HandoffSent": (
+        "One file Seek has put in the Rekordbox folder. Seek's record, kept so "
+        "a restart still knows what went; the folder itself may have changed "
+        "since, and this does not check.",
+        [
+            ("transferId", "str", "Stable across a restart: a hash of user and path."),
+            ("user", "str", "Who it came from."),
+            ("path", "str", "The remote virtual path."),
+            ("dest", "str", "Absolute path of the copy."),
+            ("sentAt", "float", "Unix epoch seconds."),
+        ],
+    ),
+    "HandoffState": (
+        "",
+        [("sent", "HandoffSent[]", "What is in the Rekordbox folder now: the record's files whose copy is "
+                   "still there, under the folder set now. Newest last. Capped; the oldest go first.")],
     ),
 }
 
@@ -3508,6 +3597,15 @@ COMMANDS = {
         "EnsureFolderParams",
         "PathCheck",
     ),
+    "handoff.send": (
+        "Copy finished downloads into the Rekordbox folder, keeping each "
+        "file's place under the download folder. Never overwrites. Answered "
+        "at once, because a release can take a minute to copy to a USB stick; "
+        "`handoff.done` reports each file, then `handoff.state` the record.",
+        "HandoffSendParams",
+        None,
+    ),
+    "handoff.list": ("What Seek put in the Rekordbox folder that is still there.", None, "HandoffState"),
     "fs.reveal": (
         "Show a file or folder in Finder, selected.",
         "RevealParams",
@@ -3586,6 +3684,8 @@ EVENTS = {
     "chat.member": ("Someone joined or left a room.", "ChatMemberChange"),
     "shares.state": ("Share configuration or scan state changed.", "ShareState"),
     "wishlist.state": ("The wishlist or its interval changed.", "WishlistState"),
+    "handoff.done": ("A `handoff.send` finished, file by file.", "HandoffDone"),
+    "handoff.state": ("What is in the Rekordbox folder changed: files went, or the folder did.", "HandoffState"),
     "buddies.state": ("The buddy list changed.", "BuddyState"),
     "library.state": ("Index changed, or a scan progressed.", "LibraryState"),
     "app.settings": ("Preferences changed.", "AppSettings"),

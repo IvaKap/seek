@@ -31,7 +31,7 @@ export interface CatalogEntry {
   url: string;
 }
 
-export interface CatalogRequest {
+interface CatalogRequest {
   sourceKind: UrlProvider;
   kind: 'label' | 'artist';
   id?: number | null;
@@ -62,7 +62,7 @@ export interface Catalog {
   needs: string;
 }
 
-export interface CatalogSession {
+interface CatalogSession {
   catalog: Catalog | null;
   browse(request: CatalogRequest): void;
   clear(): void;

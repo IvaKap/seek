@@ -21,6 +21,7 @@ describe('requestBudget', () => {
     'connection.connect', 'app.settings.patch',
     'shares.set', 'shares.rescan', 'import.apply', 'want.add', 'want.remove',
     'transfer.cancel', 'transfer.retry', 'transfer.clear', 'wishlist.add',
+    'handoff.send',
   ];
 
   it.each(writes)('%s is a write and gets the long budget', (cmd) => {

@@ -25,10 +25,10 @@
 import type { ComponentType, ReactNode, SVGProps } from 'react';
 import {
   Search, ArrowDownUp, Library, Settings, Music4, Folder, User, Check,
-  ChevronDown, ChevronRight, X, AlertTriangle, HelpCircle,
+  ChevronDown, ChevronRight, X, AlertTriangle,
   Users, Download, ArrowUp, SlidersHorizontal, Inbox,
   MessageSquare, Star, Link2, Youtube, Disc3, Store, FolderOpen, Plus, Minus, Info,
-  FolderCheck, Clover, List,
+  FolderCheck, Clover, List, Minimize2, Maximize2,
 } from 'lucide-react';
 
 /** Painted stroke, in CSS px. The brief's range is 1.5–1.75. */
@@ -55,8 +55,6 @@ function wrap(Component: LucideIcon, displayName: string) {
       <Component
         size={size}
         strokeWidth={strokeFor(size, painted)}
-        strokeLinecap="round"
-        strokeLinejoin="round"
         aria-hidden
         focusable={false}
         // Optical alignment: Lucide's glyphs sit on the geometric centre of the
@@ -182,7 +180,6 @@ export const IconChevronDown = wrap(ChevronDown, 'ChevronDown');
 export const IconChevronRight = wrap(ChevronRight, 'ChevronRight');
 export const IconClose = wrap(X, 'Close');
 export const IconWarning = wrap(AlertTriangle, 'Warning');
-export const IconUnknown = wrap(HelpCircle, 'Unknown');
 export const IconDownload = wrap(Download, 'Download');
 export const IconArrowUp = wrap(ArrowUp, 'ArrowUp');
 export const IconFilters = wrap(SlidersHorizontal, 'Filters');
@@ -192,8 +189,10 @@ export const IconFolderOpen = wrap(FolderOpen, 'FolderOpen');
 export const IconList = wrap(List, 'List');
 export const IconPlus = wrap(Plus, 'Plus');
 export const IconMinus = wrap(Minus, 'Minus');
-/* Distinct from IconUnknown, which is the quality indicator's "we don't know".
- * This one opens an explanation that exists. */
+/* Into Mini Seek and back out of it. */
+export const IconMinimize = wrap(Minimize2, 'Minimize');
+export const IconMaximize = wrap(Maximize2, 'Maximize');
+/* Opens an explanation that exists. */
 export const IconInfo = wrap(Info, 'Info');
 
 /* Discovery sources. Lucide has a YouTube glyph but nothing for Bandcamp or
@@ -204,6 +203,15 @@ export const IconLink = wrap(Link2, 'Link');
 export const IconYouTube = wrap(Youtube, 'YouTube');
 export const IconBandcamp = wrap(Store, 'Bandcamp');
 export const IconDiscogs = wrap(Disc3, 'Discogs');
+
+/** Where a dig came from: YouTube, Bandcamp, Discogs, or a plain link. */
+export function SourceIcon({ kind, size }: { kind: string | null; size: number }) {
+  const props = { size, painted: 1.5 } as const;
+  if (kind === 'youtube') return <IconYouTube {...props} />;
+  if (kind === 'bandcamp') return <IconBandcamp {...props} />;
+  if (kind === 'discogs') return <IconDiscogs {...props} />;
+  return <IconLink {...props} />;
+}
 
 /* SIDEBAR SECTIONS, supplied as Lucide SVGs and mapped by name.
  *

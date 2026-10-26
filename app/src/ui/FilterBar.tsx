@@ -11,6 +11,7 @@
  * control teaches people to ignore that corner of the screen.
  */
 
+import { memo } from 'react';
 import type { Filters } from '../domain/types.ts';
 import { filtersActive } from '../domain/types.ts';
 import { Chip, NumberField, Toggle } from './controls.tsx';
@@ -18,7 +19,7 @@ import { IconClose } from '../icons/index.tsx';
 
 const PRESET_LOSSLESS = 'my usual';
 
-export function FilterBar({
+export const FilterBar = memo(function FilterBar({
   filters, onChange, onReset, availableFormats,
 }: {
   filters: Filters;
@@ -187,4 +188,4 @@ export function FilterBar({
       </div>
     </div>
   );
-}
+});

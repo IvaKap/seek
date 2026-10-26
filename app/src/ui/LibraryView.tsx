@@ -12,7 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LibrarySession } from '../data/libraryStore.ts';
-import { fileSize } from '../domain/format.ts';
+import { fileSize, since } from '../domain/format.ts';
 import { canChooseFolder, chooseFolder } from '../data/choose.ts';
 import { IconLibrary, IconSearch } from '../icons/index.tsx';
 import type { LibraryRelease } from '../data/libraryStore.ts';
@@ -134,15 +134,6 @@ function LibraryGrid({
       ))}
     </div>
   );
-}
-
-function when(seconds: number): string {
-  if (!seconds) return 'never';
-  const delta = Date.now() / 1000 - seconds;
-  if (delta < 90) return 'just now';
-  if (delta < 3600) return `${Math.round(delta / 60)} minutes ago`;
-  if (delta < 86400) return `${Math.round(delta / 3600)} hours ago`;
-  return `${Math.round(delta / 86400)} days ago`;
 }
 
 /**
@@ -324,7 +315,7 @@ export function LibraryView({
             ? 'Playlists, cross-referenced to Discogs.'
             : state.scannedAt
               ? `${state.releaseCount.toLocaleString()} releases, `
-                + `${state.trackCount.toLocaleString()} tracks · scanned ${when(state.scannedAt)}`
+                + `${state.trackCount.toLocaleString()} tracks · scanned ${since(state.scannedAt)}`
               : 'Not scanned yet.'}
         </p>
         <div className="browse__form lib__actions">

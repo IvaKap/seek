@@ -16,29 +16,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { SidecarClient } from '../data/sidecarClient.ts';
 import { readUntilAnswered, reportFailure } from '../data/failures.ts';
 import type { Filters } from '../domain/types.ts';
-import { EMPTY_FILTERS } from '../domain/types.ts';
+import { deserialiseFilters } from '../domain/types.ts';
 import { IconEmpty, IconSearch, IconUser, IconUsers } from '../icons/index.tsx';
-
-/* Filters contain a Set, which JSON cannot carry. These two are the only places
- * that know that, so the shape stays in one file. */
-export function serialiseFilters(f: Filters): string {
-  return JSON.stringify({ ...f, formats: [...f.formats] });
-}
-
-export function deserialiseFilters(json: string): Filters {
-  if (!json) return EMPTY_FILTERS;
-  try {
-    const raw = JSON.parse(json) as Record<string, unknown>;
-    return {
-      ...EMPTY_FILTERS,
-      ...raw,
-      formats: new Set(Array.isArray(raw.formats) ? (raw.formats as string[]) : []),
-    };
-  } catch {
-    // A corrupt saved filter should not take the screen down with it.
-    return EMPTY_FILTERS;
-  }
-}
 
 function Empty({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (

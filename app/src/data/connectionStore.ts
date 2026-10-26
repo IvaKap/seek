@@ -40,6 +40,8 @@ export interface SidecarConnection {
   isMock: boolean;
   /** Soulseek login state, distinct from the socket. Null until reported. */
   serverState: string | null;
+  /** Why we are not signed in, as the sidecar's code (domain/signInProblem.ts). */
+  serverError: string | null;
   /** The live client, for everything that is not a search. Null in mock mode. */
   client: SidecarClient | null;
   /** Whichever of the two can run a search — real or fixture replay. */
@@ -105,6 +107,7 @@ export function useSidecarConnection(): SidecarConnection {
 
   const [phase, setPhase] = useState<ConnectionPhase>(client ? 'connecting' : 'closed');
   const [serverState, setServerState] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!client) return;
@@ -137,8 +140,9 @@ export function useSidecarConnection(): SidecarConnection {
       // The field is `status`, not `state` — see ConnectionState in the schema.
       // Reading the wrong key here silently pinned this to null, which made the
       // app report "Not signed in" forever even after a successful login.
-      const d = data as { status?: string };
+      const d = data as { status?: string; error?: string | null };
       setServerState(d.status ?? null);
+      setServerError(d.error ?? null);
     });
     return () => {
       offPhase();
@@ -156,7 +160,7 @@ export function useSidecarConnection(): SidecarConnection {
   }, [client]);
 
   return useMemo(
-    () => ({ phase, isMock: client === null, serverState, client, sidecar, startupError }),
-    [phase, client, serverState, sidecar, startupError],
+    () => ({ phase, isMock: client === null, serverState, serverError, client, sidecar, startupError }),
+    [phase, client, serverState, serverError, sidecar, startupError],
   );
 }

@@ -67,7 +67,7 @@ function enrichFolders(folders: WireBrowseFolder[]): BrowseFolder[] {
   return folders.map((f) => ({ path: f.path, private: f.private, files: f.files.map(enrichFile) }));
 }
 
-export interface BrowseState {
+interface BrowseState {
   username: string;
   state: 'loading' | 'ready' | 'failed';
   folders: BrowseFolder[];
@@ -96,7 +96,7 @@ export interface Shelf {
  * someone already watches them, so after the first answer these keep
  * updating live for free).
  */
-export interface PeerFacts {
+interface PeerFacts {
   freeSlots: boolean;
   advertisedSpeed: number;
   queueLength: number;
@@ -111,7 +111,7 @@ export interface PeerFacts {
  * case, not a failure, and is why `pictureUri` is nullable on a `ready` state
  * rather than `ready` requiring one.
  */
-export interface PeerProfile {
+interface PeerProfile {
   state: 'loading' | 'ready' | 'failed';
   description: string;
   pictureUri: string | null;
