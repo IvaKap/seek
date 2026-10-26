@@ -20,6 +20,9 @@ export function outcomeLine(outcome: string): string {
     case 'exists_different':
       return 'A different file with this name is already in the Rekordbox folder, and Seek never replaces one.';
     case 'io_error': return 'The copy failed. Is the drive full, or unplugged?';
+    case 'folder_unavailable':
+      return 'The Rekordbox folder is not there, or cannot be written to. Is the drive plugged in?';
+    case 'stopped': return 'Seek quit before it was copied. Nothing half-copied was left behind.';
     default: return 'It could not be sent.';
   }
 }

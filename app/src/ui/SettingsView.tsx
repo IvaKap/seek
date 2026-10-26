@@ -235,12 +235,14 @@ function SecretRow({
 /* ------------------------------------------------------------------ screen */
 
 export function SettingsView({
-  client, serverState, prefs, engine, profile, connections, youtube, people, initialTab,
+  client, serverState, serverError, prefs, engine, profile, connections, youtube, people, initialTab,
 }: {
   /** The tab to open on. Account when absent. */
   initialTab?: Tab;
   client: SidecarClient | null;
   serverState: string | null;
+  /** Why we are not signed in, as the sidecar's code. */
+  serverError?: string | null;
   prefs: PrefsSession;
   engine: EngineSession;
   profile: ProfileSession;
@@ -321,7 +323,7 @@ export function SettingsView({
                 footnote="Seek keeps its own configuration. Importing copies from Nicotine+ once; it does not link the two, and Nicotine+ is left untouched."
               >
                 <div className="settings__row settings__row--block">
-                  <SignIn client={client} state={serverState} settings={prefs.settings} />
+                  <SignIn client={client} state={serverState} problem={serverError} settings={prefs.settings} />
                 </div>
                 <Row
                   label="Sign in automatically"

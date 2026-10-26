@@ -13,6 +13,7 @@ import type { SidecarClient } from './data/sidecarClient.ts';
 import { SearchView } from './ui/SearchView.tsx';
 import { SettingsView } from './ui/SettingsView.tsx';
 import { CornerPanel } from './ui/CornerPanel.tsx';
+import { signInProblem, signedOutByServer } from './domain/signInProblem.ts';
 import { MiniSeek } from './ui/MiniSeek.tsx';
 import { keepOnTop, restore, shrink } from './data/miniWindow.ts';
 import type { Density } from './ui/ViewMenu.tsx';
@@ -22,7 +23,7 @@ import { normaliseColumns } from './domain/searchColumns.ts';
 import type { ColumnId } from './domain/searchColumns.ts';
 import { isSignedIn, useSearchSession } from './data/searchStore.ts';
 import { useSidecarConnection } from './data/connectionStore.ts';
-import { WISHLIST_REASON, useSearchTabs } from './data/searchTabs.ts';
+import { useSearchTabs } from './data/searchTabs.ts';
 import { useChatSession } from './data/chatStore.ts';
 import { useTransfers } from './data/transferStore.ts';
 import { useUpdates } from './data/updateStore.ts';
@@ -166,6 +167,14 @@ function connectionStatus(session: SearchSession): ConnectionStatus {
   if (session.serverState === 'away') {
     return { dot: 'online', label: 'Away', detail: 'Signed in, and shown to others as away.' };
   }
+  const problem = signInProblem(session.serverError);
+  if (!isSignedIn(session.serverState) && problem) {
+    return {
+      dot: 'offline',
+      label: signedOutByServer(session.serverError) ? 'Signed out' : 'Sign-in refused',
+      detail: `${problem} Sign in from Settings.`,
+    };
+  }
   if (!isSignedIn(session.serverState)) {
     return {
       dot: 'pending',
@@ -294,6 +303,8 @@ export default function App() {
      Soulseek throttles a client that searches faster than the server allows,
      and CLAUDE.md records that as the thing which gets an account limited. */
   const [searchingWant, setSearchingWant] = useState<WantEntry | null>(null);
+  /** The tab that want's search runs in: another tab's results are no verdict. */
+  const wantTab = useRef<string | undefined>(undefined);
   useDownloadNotifications(transfers.groups);
   useChatNotifications(chat.conversations, chat.active);
   useWishNotifications(wishHits.byQuery);
@@ -329,16 +340,19 @@ export default function App() {
     want.update(entry.id, { status: 'searching' });
     const query = want.queryFor(entry);
     setSection('search');
-    searchTabs.openWith(query);
+    wantTab.current = searchTabs.openWith(query);
   }, [want, searchTabs]);
 
   useEffect(() => {
+    if (!searchingWant) return;
+    const here = searchTabs.activeId === wantTab.current;
     // The search the user launched from the want list has stopped listening.
-    if (!searchingWant || session.running) return;
-    if (!session.closedReason) return;
-    // A wish's stored results replaced the search: no verdict from those.
-    // Put the entry back to waiting, or it reads "Searching" for good.
-    if (session.closedReason === WISHLIST_REASON) {
+    if (here && (session.running || !session.closedReason)) return;
+    /* "Not found" only after a search that ran its course: it timed out or
+       hit the result cap, in the tab it was started in. Signed out, stopped,
+       a wish's stored results, or another tab on screen is no verdict, and
+       the entry goes back to waiting rather than reading "Searching" for good. */
+    if (!here || (session.closedReason !== 'timeout' && session.closedReason !== 'result_cap')) {
       want.update(searchingWant.id, { status: 'pending' });
       setSearchingWant(null);
       return;
@@ -352,7 +366,7 @@ export default function App() {
       status: resultsMatch(searchingWant, names) ? 'found' : 'not_found',
     });
     setSearchingWant(null);
-  }, [searchingWant, session.running, session.closedReason, session.rows, want]);
+  }, [searchingWant, searchTabs.activeId, session.running, session.closedReason, session.rows, want]);
 
   /* Every URL already on the want list. Both the Dig Bar card and the
      catalogue grid ask "have I saved this one", and computing it once keeps
@@ -1189,6 +1203,7 @@ export default function App() {
             initialTab={settingsTab}
             client={session.client}
             serverState={session.serverState}
+            serverError={session.serverError}
             prefs={prefs}
             engine={engine}
             profile={profile}

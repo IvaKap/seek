@@ -224,6 +224,13 @@ describe('keepUnchanged', () => {
     expect(keepUnchanged(first, group([a1], 0, NOW))).toBe(first);
   });
 
+  it('keeps a queued release while its quiet time reads the same', () => {
+    const queued = t({ path: '@@x\\Q\\1.flac', state: 'queued' });
+    const first = group([queued], 0, NOW);
+    expect(keepUnchanged(first, group([queued], 0, NOW + 400))).toBe(first);
+    expect(keepUnchanged(first, group([queued], 0, NOW + 3 * 3_600_000))).not.toBe(first);
+  });
+
   it('notices a release that left', () => {
     const first = group([a1, b1], 0, NOW);
     expect(keepUnchanged(first, group([a1], 0, NOW))).toHaveLength(1);

@@ -64,18 +64,49 @@ class TestTheCopy:
         assert handoff.send_file(src, dest) == handoff.ALREADY_THERE
 
     def test_a_failed_copy_leaves_nothing_behind(self, tmp_path, monkeypatch):
-        """An import running mid-copy must never find half a track."""
+        """An import running mid-copy must never find half a track, and the
+        folders made for it do not stay behind empty."""
+        (tmp_path / "RB").mkdir()
         src = _file(tmp_path / "in" / "01.flac")
-        dest = str(tmp_path / "RB" / "01.flac")
+        dest = str(tmp_path / "RB" / "Artist" / "Album" / "01.flac")
 
-        def half(source, target):
+        def half(source, target, _stopping):
             with open(target, "wb") as handle:
                 handle.write(b"\0")
             raise OSError("disk full")
 
-        monkeypatch.setattr(handoff.shutil, "copy2", half)
+        monkeypatch.setattr(handoff, "_copy", half)
         assert handoff.send_file(src, dest) == handoff.IO_ERROR
         assert os.listdir(tmp_path / "RB") == []
+
+    def test_a_folder_already_there_is_kept_when_a_copy_fails(self, tmp_path, monkeypatch):
+        (tmp_path / "RB" / "Artist").mkdir(parents=True)
+        src = _file(tmp_path / "in" / "01.flac")
+        monkeypatch.setattr(handoff, "_copy", lambda *a: (_ for _ in ()).throw(OSError("full")))
+        assert handoff.send_file(src, str(tmp_path / "RB" / "Artist" / "Album" / "01.flac")) == handoff.IO_ERROR
+        assert os.listdir(tmp_path / "RB") == ["Artist"]
+
+    def test_a_source_gone_since_is_missing_not_a_drive_fault(self, tmp_path):
+        assert (handoff.send_file(str(tmp_path / "in" / "gone.flac"), str(tmp_path / "RB" / "x.flac"))
+                == handoff.FILE_MISSING)
+        assert not (tmp_path / "RB").exists()
+
+    def test_a_long_name_can_be_sent(self, tmp_path):
+        """The hidden copy's name used to be the file's plus 14 bytes, so any
+        name of 242 bytes or more ran past the 255-byte limit."""
+        name = "a" * 245 + ".flac"
+        src = _file(tmp_path / "in" / name, b"music")
+        dest = str(tmp_path / "RB" / name)
+        assert handoff.send_file(src, dest) == handoff.COPIED
+        assert open(dest, "rb").read() == b"music"
+
+    def test_quitting_mid_copy_stops_and_leaves_nothing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(handoff, "CHUNK", 4)
+        src = _file(tmp_path / "in" / "01.flac", b"x" * 64)
+        dest = str(tmp_path / "RB" / "Album" / "01.flac")
+        asked = []
+        assert handoff.send_file(src, dest, lambda: asked.append(1) or len(asked) > 3) == handoff.STOPPED
+        assert not (tmp_path / "RB").exists()
 
 
 class TestAFlushedCopy:
@@ -87,7 +118,8 @@ class TestAFlushedCopy:
         monkeypatch.setattr(handoff.os, "replace", lambda a, b: (order.append(("rename", os.path.basename(b))), real_replace(a, b)))
         src = _file(tmp_path / "in" / "01.flac", b"music")
         assert handoff.send_file(src, str(tmp_path / "RB" / "01.flac")) == handoff.COPIED
-        assert order == [("flush", ".01.flac.seek-partial"), ("rename", "01.flac"), ("flush", "RB")]
+        partial = os.path.basename(handoff.partial_name(str(tmp_path / "RB" / "01.flac")))
+        assert order == [("flush", partial), ("rename", "01.flac"), ("flush", "RB")]
 
 
 class ImmediatePool:
@@ -139,12 +171,39 @@ class TestTheCommand:
             host._cmd_handoff_send({"transferIds": []})
 
     def test_refuses_a_folder_that_has_gone(self, tmp_path, monkeypatch):
-        """An unplugged USB stick fails; it is not recreated on the internal disk."""
-        host, _ = _host(tmp_path, monkeypatch, {})
+        """An unplugged USB stick fails; it is not recreated on the internal
+        disk. Looked at on the worker: a sleeping drive takes seconds."""
+        good = _file(tmp_path / "Downloads" / "Release" / "01.flac")
+        host, _ = _host(tmp_path, monkeypatch, {"a1": good})
         host._save_state(rekordbox_folder=str(tmp_path / "Volumes" / "USB" / "RB"))
-        with pytest.raises(CommandError, match="does not exist"):
-            host._cmd_handoff_send({"transferIds": []})
+        queued = []
+        host._post_pool = types.SimpleNamespace(submit=lambda fn, *a: queued.append((fn, a)))
+        assert host._cmd_handoff_send({"transferIds": ["a1"]}) == {}
+        assert host.bridge.events == []            # nothing looked at yet
+        fn, args = queued[0]
+        fn(*args)
+        assert host.bridge.events[0][1]["results"][0]["outcome"] == "folder_unavailable"
         assert not (tmp_path / "Volumes").exists()
+
+    def test_quitting_stops_the_rest_and_keeps_what_landed(self, tmp_path, monkeypatch):
+        rb = tmp_path / "RB"
+        rb.mkdir()
+        one = _file(tmp_path / "Downloads" / "Release" / "01.flac")
+        two = _file(tmp_path / "Downloads" / "Release" / "02.flac")
+        host, _ = _host(tmp_path, monkeypatch, {"a1": one, "b2": two})
+        host._save_state(rekordbox_folder=str(rb))
+        real = handoff.send_file
+
+        def then_quit(source, dest, stopping):
+            outcome = real(source, dest, stopping)
+            host._quitting = True
+            return outcome
+
+        monkeypatch.setattr(handoff, "send_file", then_quit)
+        host._cmd_handoff_send({"transferIds": ["a1", "b2"]})
+        results = host.bridge.events[0][1]["results"]
+        assert [r["outcome"] for r in results] == ["copied", "stopped"]
+        assert [row["transferId"] for row in host._handoff_sent()] == ["a1"]
 
     def test_copies_records_and_refuses_file_by_file(self, tmp_path, monkeypatch):
         rb = tmp_path / "RB"

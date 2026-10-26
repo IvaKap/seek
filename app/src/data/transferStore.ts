@@ -26,10 +26,11 @@
  * whole list per packet is exactly the jitter the brief forbids.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FolderContentsEvent, TransferFolderParams } from '../../../shared/protocol.ts';
 import type { SidecarClient } from './sidecarClient.ts';
 import { readUntilAnswered, reportFailure, showNotice } from './failures.ts';
+import { spanWords } from '../domain/format.ts';
 
 export type TransferState =
   | 'queued' | 'rejected' | 'getting_status' | 'transferring' | 'paused' | 'cancelled'
@@ -289,7 +290,8 @@ export function group(transfers: Transfer[], quietSeconds = 0, now = Date.now())
  * The previous objects wherever nothing changed, so React can skip them. A
  * group is the same when its files are the very same objects (the store
  * replaces a transfer's object on every update) and its time-dependent bits
- * agree. Without this every one of 700 finished releases was a new object on
+ * agree as shown: `quietFor` is only ever read out in minutes, and comparing
+ * the seconds replaced every queued or paused release on every tick. Without this every one of 700 finished releases was a new object on
  * every progress tick, and the whole list redrew 2.5 times a second.
  */
 export function keepUnchanged(prev: TransferGroup[], next: TransferGroup[]): TransferGroup[] {
@@ -297,7 +299,7 @@ export function keepUnchanged(prev: TransferGroup[], next: TransferGroup[]): Tra
   let same = prev.length === next.length;
   const out = next.map((n, i) => {
     const p = before.get(n.key);
-    const kept = p && p.state === n.state && p.quietFor === n.quietFor
+    const kept = p && p.state === n.state && spanWords(p.quietFor) === spanWords(n.quietFor)
       && sameItems(p.transfers, n.transfers) ? p : n;
     if (kept !== prev[i]) same = false;
     return kept;
@@ -503,7 +505,7 @@ export function useTransfers(
     /* Uploads are never reclassified. A peer who stops taking a file from you
      * is their problem, not a download of yours that needs cleaning up, and
      * `uploads.py` has no paused or stalled state to reason about anyway. */
-    setUploadGroups(group(uploads, 0, now));
+    setUploadGroups((prev) => keepUnchanged(prev, group(uploads, 0, now)));
   }, []);
 
   useEffect(() => {
@@ -779,7 +781,15 @@ export function useTransfers(
       .catch((e) => reportFailure('Open the file', e));
   }, [client]);
 
-  return {
+  const pause = useCallback((ids: string[]) => cmd('transfer.pause', { transferIds: ids }), [cmd]);
+  const resume = useCallback((ids: string[]) => cmd('transfer.resume', { transferIds: ids }), [cmd]);
+  const retry = useCallback((ids: string[]) => cmd('transfer.retry', { transferIds: ids }), [cmd]);
+  const clear = useCallback((ids: string[]) => cmd('transfer.clear', { transferIds: ids }), [cmd]);
+
+  /* One object per change, not per render: App's keyboard handler, the
+     auto-download planner and every menu builder key on it, and a fresh one
+     each render re-ran all of them on every unrelated state change. */
+  return useMemo(() => ({
     groups, all,
     activeCount: all.filter((t) => isActive(t.state)).length,
     uploadGroups,
@@ -788,16 +798,13 @@ export function useTransfers(
     uploadCount: uploadGroups.reduce((n, g) => n + g.active, 0),
     enqueue, enqueueFolder,
     pendingFolder, confirmFolder, dismissFolder, forgetMissing,
-    pause: (ids) => cmd('transfer.pause', { transferIds: ids }),
-    resume: (ids) => cmd('transfer.resume', { transferIds: ids }),
-    cancel,
-    retry: (ids) => cmd('transfer.retry', { transferIds: ids }),
-    clear: (ids) => cmd('transfer.clear', { transferIds: ids }),
+    pause, resume, cancel, retry, clear,
     error,
     note,
     cancelled,
     undoCancel,
     reveal,
     open,
-  };
+  }), [groups, all, uploadGroups, enqueue, enqueueFolder, pendingFolder, confirmFolder, dismissFolder,
+    forgetMissing, pause, resume, cancel, retry, clear, error, note, cancelled, undoCancel, reveal, open]);
 }

@@ -21,6 +21,7 @@ Three rules, because these are a person's files:
 """
 
 import fcntl
+import hashlib
 import os
 import shutil
 
@@ -28,7 +29,28 @@ import shutil
 COPIED = "copied"
 ALREADY_THERE = "already_there"
 EXISTS_DIFFERENT = "exists_different"
+FILE_MISSING = "file_missing"
 IO_ERROR = "io_error"
+#: Seek quit mid-copy. Nothing was left behind; sending again starts over.
+STOPPED = "stopped"
+#: The Rekordbox folder is not there, or cannot be written (`folder_problem`).
+FOLDER_UNAVAILABLE = "folder_unavailable"
+
+#: Read and written this much at a time, so a quit is heard between chunks.
+CHUNK = 1024 * 1024
+
+
+def folder_problem(folder):
+    """FOLDER_UNAVAILABLE when `folder` is not a folder Seek can write into.
+
+    Asked on the copy's worker, never the engine's main thread: on a USB drive
+    that has gone to sleep the first look waits for it to spin up, and on the
+    main thread that froze every transfer and search for the seconds it took.
+    An unplugged stick fails here; it is never recreated on the internal disk.
+    """
+    if os.path.isdir(folder) and os.access(folder, os.W_OK):
+        return None
+    return FOLDER_UNAVAILABLE
 
 
 def destination(folder, source, download_root=None):
@@ -67,17 +89,64 @@ def _flush(path):
         os.close(fd)
 
 
-def send_file(source, dest):
-    """Copy one file to `dest`. Returns an outcome code; never raises OSError."""
+def partial_name(dest):
+    """The hidden name a copy is written under. Short and fixed-length: the
+    file's own name plus a suffix ran past the 255-byte limit for any name of
+    242 bytes or more, and such a file could never be sent."""
+    digest = hashlib.sha1(os.path.basename(dest).encode("utf-8", "surrogateescape")).hexdigest()
+    return os.path.join(os.path.dirname(dest), f".seek-partial-{digest[:16]}")
+
+
+def _missing_parents(folder):
+    """The folders `os.makedirs(folder)` would create, deepest first."""
+    missing = []
+    while folder and not os.path.isdir(folder):
+        missing.append(folder)
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    return missing
+
+
+def _copy(source, partial, stopping):
+    """Copy bytes and times; STOPPED if asked to stop between chunks."""
+    with open(source, "rb") as reader, open(partial, "wb") as writer:
+        while chunk := reader.read(CHUNK):
+            if stopping():
+                return STOPPED
+            writer.write(chunk)
+    shutil.copystat(source, partial)
+    return None
+
+
+def send_file(source, dest, stopping=lambda: False):
+    """Copy one file to `dest`. Returns an outcome code; never raises OSError.
+
+    `stopping` is asked between chunks; when it says yes the copy is abandoned
+    and cleaned up, so quitting Seek mid-copy neither waits for a whole album
+    nor leaves a hidden partial on the stick.
+    """
+    if not os.path.isfile(source):
+        # Gone since it was found: moved or deleted, not a failing drive.
+        return FILE_MISSING
     try:
         if os.path.lexists(dest):
             if os.path.isfile(dest) and os.path.getsize(dest) == os.path.getsize(source):
                 return ALREADY_THERE
             return EXISTS_DIFFERENT
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        partial = os.path.join(os.path.dirname(dest), f".{os.path.basename(dest)}.seek-partial")
+        made = _missing_parents(os.path.dirname(dest))
+        partial = partial_name(dest)
         try:
-            shutil.copy2(source, partial)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            try:
+                stopped = _copy(source, partial, stopping)
+            except FileNotFoundError:
+                if not os.path.isfile(source):
+                    return FILE_MISSING
+                raise
+            if stopped:
+                return stopped
             _flush(partial)
             # ponytail: check-then-rename leaves a microsecond window for another
             # program writing this exact name; os.link would close it but fails
@@ -92,6 +161,15 @@ def send_file(source, dest):
         finally:
             if os.path.lexists(partial):
                 os.unlink(partial)
+            if not os.path.lexists(dest):
+                # Folders made for a copy that did not land would sit empty
+                # in the Rekordbox folder; only ones this call made, and only
+                # while empty.
+                for folder in made:
+                    try:
+                        os.rmdir(folder)
+                    except OSError:
+                        break
     except OSError:
         return IO_ERROR
     return COPIED

@@ -1979,6 +1979,15 @@
   .dls[data-density='table'][data-filter='finished'] .dl__thead {
     grid-template-columns: minmax(8rem, 1fr) 5rem 8rem;
   }
+  /* failed: name | size | reason | actions. It had no template here, so its
+     five remaining cells wrapped onto four tracks and Retry landed under the
+     name. The reason stays: it is why the row is in this list. */
+  .dls[data-density='table'][data-filter='failed'] .dl__row,
+  .dls[data-density='table'][data-filter='failed'] .dl__thead {
+    grid-template-columns: minmax(8rem, 1fr) 5rem minmax(6rem, 1fr) 8rem;
+  }
+  .dls[data-filter='failed'] .dl__row > :nth-child(5),
+  .dls[data-filter='failed'] .dl__thead > :nth-child(5),
   .dls:not([data-filter='active']) .dl__row > :nth-child(2),
   .dls:not([data-filter='active']) .dl__thead > :nth-child(2),
   .dls[data-filter='active'] .dl__row > :is(:nth-child(4), :nth-child(9)),
@@ -2014,7 +2023,12 @@
 /* Downloads · Collector, at table density: the release a row was chosen for,
    beneath the list as the pane grid's third row, so the table above keeps its
    height. It scrolls inside itself past 45% of the window. */
-.dls[data-inspecting='true'] .dl__row[data-open='true'] { background: var(--bg-selected); }
+/* After the hover rule and as specific, so the chosen row stays blue under
+   the pointer; its hover actions sit on the same blue, not a grey box. */
+.dls[data-density='table'][data-inspecting='true'] .dl__row[data-open='true'] { background: var(--bg-selected); }
+.dls[data-density='table'][data-inspecting='true'] .dl__row[data-open='true'] .dl__rowactions {
+  background: linear-gradient(var(--bg-selected), var(--bg-selected)), var(--bg-content);
+}
 .inspector {
   display: flex; flex-direction: column; min-height: 0; max-height: 45vh;
   border-top: 0.5px solid var(--separator-strong);

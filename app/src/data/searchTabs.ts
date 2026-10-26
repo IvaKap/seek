@@ -55,7 +55,8 @@ export interface SearchTabs {
    *
    * `scope` defaults to everyone: only the search field has a scope picker.
    */
-  openWith(query: string, scope?: SearchScope): void;
+  /** Returns the tab the search runs in; undefined for empty text. */
+  openWith(query: string, scope?: SearchScope): string | undefined;
   /**
    * Show results that were ALREADY found — a wish's — in a tab, without
    * searching again. Same tab rules as `openWith`.
@@ -236,6 +237,7 @@ export function useSearchTabs(session: SearchSession): SearchTabs {
     ranQuery.current.set(id, text);
     ranScope.current.set(id, where);
     session.run(text, scope);
+    return id;
   }, [open, session]);
 
   const showResults = useCallback((query: string, files: SourceFile[]) => {

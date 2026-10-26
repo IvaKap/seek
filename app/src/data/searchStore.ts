@@ -195,7 +195,7 @@ export interface SearchSessionOptions {
 /** The bridge fields (phase, isMock, serverState, client, startupError) come
  * straight from the connection. */
 export interface SearchSession
-  extends Pick<SidecarConnection, 'phase' | 'isMock' | 'serverState' | 'client' | 'startupError'> {
+  extends Pick<SidecarConnection, 'phase' | 'isMock' | 'serverState' | 'serverError' | 'client' | 'startupError'> {
   query: string;
   setQuery(q: string): void;
   /** Where the next search goes. Kept with the tab, like the query. */
@@ -260,7 +260,7 @@ export function useSearchSession(
 ): SearchSession {
   const grouper = useMemo(() => createGrouper(), []);
 
-  const { client, sidecar, phase, serverState, startupError } = conn;
+  const { client, sidecar, phase, serverState, serverError, startupError } = conn;
 
   /* Empty. This used to open with a demo query already typed in, which is
    * convenient exactly once — while building the fixture — and thereafter is
@@ -641,6 +641,6 @@ export function useSearchSession(
     expanded, toggleExpanded,
     availableFormats,
     pickPool,
-    phase, isMock: client === null, serverState, client, startupError,
+    phase, isMock: client === null, serverState, serverError, client, startupError,
   };
 }

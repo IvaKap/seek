@@ -173,7 +173,7 @@ function connection(): SidecarConnection {
     stop() { live = false; },
   } as unknown as Sidecar;
   return {
-    phase: 'open', isMock: true, serverState: 'online', client: null, sidecar, startupError: null,
+    phase: 'open', isMock: true, serverState: 'online', serverError: null, client: null, sidecar, startupError: null,
   } as unknown as SidecarConnection;
 }
 

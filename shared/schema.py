@@ -3100,7 +3100,9 @@ STRUCTS = {
                 "str",
                 "copied | already_there (the same-sized file was there; counted "
                 "as sent) | not_finished | file_missing | exists_different (a "
-                "different file holds the name; never overwritten) | io_error.",
+                "different file holds the name; never overwritten) | io_error | "
+                "folder_unavailable (the Rekordbox folder is gone or read-only: an "
+                "unplugged stick) | stopped (Seek quit mid-copy; nothing left behind).",
             ),
             ("dest", "str?", "Absolute path of the copy. Null unless copied or already there."),
         ],

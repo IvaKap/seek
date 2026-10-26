@@ -151,6 +151,9 @@ class CoreHost:
     #: defaults, so a test host built without __init__ has them too.
     _relogged = False      # the server said the account signed in elsewhere
     _signing_out = False   # Seek asked for this disconnect itself
+    #: Set when Seek is quitting, so a long copy to a USB stick stops between
+    #: chunks instead of holding the exit for the whole album.
+    _quitting = False
 
     def __init__(self, bridge, config_folder, data_folder, upstream_path=None,
                  enable_shares=False, log_file=""):
@@ -414,6 +417,7 @@ class CoreHost:
         if self._shutdown_done:
             return
         self._shutdown_done = True
+        self._quitting = True
 
         try:
             self.core.quit()
@@ -4577,12 +4581,12 @@ class CoreHost:
         return {"sent": self._handoff_present()}
 
     def _cmd_handoff_send(self, params):
-        """Check the folder and find the files here; copy on the post worker.
+        """Find the files here; check the folder and copy on the post worker.
 
         The files are found on THIS thread because finding one asks the core,
-        and the core is not to be read from a worker. The folder must already
-        exist: an unplugged USB stick should fail, not be recreated as an empty
-        folder on the internal disk under /Volumes.
+        and the core is not to be read from a worker. The folder is looked at
+        on the worker (`handoff.folder_problem`): a sleeping USB drive takes
+        seconds to answer, and this thread runs every transfer and search.
 
         The post worker, not a pool of its own, because Organise moves files
         there: one queue means a copy never races a move of the same file.
@@ -4592,7 +4596,6 @@ class CoreHost:
         folder = self._resolve_path(self._load_state().get("rekordbox_folder"))
         if not folder:
             raise CommandError("bad_request", "no Rekordbox folder is set")
-        folder = self._require_writable_dir("the Rekordbox folder", folder)
 
         jobs = []
         for transfer_id in params["transferIds"]:
@@ -4629,28 +4632,35 @@ class CoreHost:
 
     def _handoff_copy(self, folder, root, jobs):
         now = time.time()
-        results, sent = [], []
+        results, ledger = [], None
+        unavailable = handoff.folder_problem(folder)
+        quitting = lambda: self._quitting  # noqa: E731
         for job in jobs:
             outcome, dest = job["outcome"], None
+            if outcome is None:
+                outcome = unavailable or (handoff.STOPPED if quitting() else None)
             if outcome is None:
                 # Organise may have moved it while this job waited its turn.
                 source = self._follow_move(job["source"])
                 dest = handoff.destination(folder, source, root)
-                outcome = handoff.send_file(source, dest)
+                outcome = handoff.send_file(source, dest, quitting)
                 if outcome in (handoff.COPIED, handoff.ALREADY_THERE):
-                    sent.append({"transferId": job["transferId"], "user": job["user"],
-                                 "path": job["path"], "dest": dest, "sentAt": now})
+                    # Recorded file by file: a quit, or a kill after the
+                    # shell's grace period, keeps every copy that landed.
+                    ledger = self._record_handoff({
+                        "transferId": job["transferId"], "user": job["user"],
+                        "path": job["path"], "dest": dest, "sentAt": now})
                 else:
                     dest = None
             results.append({"transferId": job["transferId"], "outcome": outcome, "dest": dest})
-        if sent:
-            ids = {row["transferId"] for row in sent}
-            with _STATE_LOCK:
-                kept = [row for row in self._handoff_sent() if row["transferId"] not in ids]
-                ledger = (kept + sent)[-self.HANDOFF_CAP:]
-                self._save_handoff(ledger)
-            return results, ledger
-        return results, None
+        return results, ledger
+
+    def _record_handoff(self, row):
+        with _STATE_LOCK:
+            kept = [r for r in self._handoff_sent() if r["transferId"] != row["transferId"]]
+            ledger = (kept + [row])[-self.HANDOFF_CAP:]
+            self._save_handoff(ledger)
+        return ledger
 
     # -- chat --------------------------------------------------------------
     #
