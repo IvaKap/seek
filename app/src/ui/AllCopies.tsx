@@ -45,7 +45,7 @@ export function Answered({ running, people, closedReason }: {
   const who = `${integer(people)} ${people === 1 ? 'person' : 'people'}`;
   if (running) {
     return (
-      <p className="answered" data-live="true">
+      <p className="answered tnum" data-live="true">
         {people === 0
           ? 'Asking the network…'
           : `${who} ${people === 1 ? 'has' : 'have'} answered so far. Seek keeps listening for more.`}
@@ -54,11 +54,11 @@ export function Answered({ running, people, closedReason }: {
   }
   if (!closedReason) return null;
   if (closedReason === WISHLIST_REASON) {
-    return <p className="answered">What your wishlist found when it last ran. Press Return to search again now.</p>;
+    return <p className="answered tnum">What your wishlist found when it last ran. Press Return to search again now.</p>;
   }
   const closed = closedLabel(closedReason);
   return (
-    <p className="answered" title={closed.title}>
+    <p className="answered tnum" title={closed.title}>
       {people > 0 && `${who} answered. `}
       {closedReason === 'disconnected' ? 'Signed out.' : `Seek ${closed.text}.`}
     </p>

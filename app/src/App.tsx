@@ -139,7 +139,7 @@ function remember(key: string, value: string): void {
  * when a search would return `not_connected` is exactly the confidently-wrong
  * behaviour this app exists to avoid.
  */
-function connectionStatus(session: SearchSession): ConnectionStatus {
+function connectionStatus(session: Pick<SearchSession, 'startupError' | 'isMock' | 'phase' | 'serverState' | 'serverError'>): ConnectionStatus {
   /* The shell could not start the engine, or gave up restarting it. First,
      because in that state there may be no client at all, and "mock data" or
      "unreachable" would hide the reason the shell already knows. */
@@ -315,6 +315,21 @@ export default function App() {
   /** Back/forward through visited sections, for ⌘[ and ⌘]. */
   const history = useRef<Section[]>(['search']);
   const cursor = useRef(0);
+
+  const rooms = useMemo(
+    () => chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target),
+    [chat.conversations],
+  );
+
+  /* One object per change of the five things it reads, so the sidebar can
+     skip the redraws a streaming search would otherwise give it. */
+  const status = useMemo(
+    () => connectionStatus({
+      startupError: session.startupError, isMock: session.isMock, phase: session.phase,
+      serverState: session.serverState, serverError: session.serverError,
+    }),
+    [session.startupError, session.isMock, session.phase, session.serverState, session.serverError],
+  );
 
   const go = useCallback((next: Section) => {
     setSection((cur) => {
@@ -858,6 +873,11 @@ export default function App() {
     return list;
   }, [go, session, transfers, browse, onDensity, mode, switchMode, labels.labels.length, addWish, saveSearch, enterMini]);
 
+  /* Stable, so the search rows (memoised) are not all redrawn by every App render. */
+  const { browse: browseUser } = browse;
+  const openBrowse = useCallback((who: string) => { browseUser(who); go('browsing'); }, [browseUser, go]);
+  const peerOf = useCallback((u: string) => prefs.peers.get(u), [prefs.peers]);
+
   const userActions = useMemo<UserMenuActions>(() => ({
     browse: (who) => { browse.browse(who); go('browsing'); },
     message: (who) => { chat.openPrivate(who); go('messages'); },
@@ -998,7 +1018,7 @@ export default function App() {
         onSelect={go}
         downloadCount={downloading}
         browsingUser={browse.current?.username ?? null}
-        status={connectionStatus(session)}
+        status={status}
         client={session.client}
         roomUnread={roomUnread}
         privateUnread={privateUnread}
@@ -1030,9 +1050,9 @@ export default function App() {
             transfers={transfers}
             artwork={artwork}
             library={library}
-            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
+            onBrowse={openBrowse}
             prefs={prefs.settings}
-            peers={(username) => prefs.peers.get(username)}
+            peers={peerOf}
             discover={discover.enabled ? discover : undefined}
             onOpenSettings={() => go('settings')}
             onWant={want.enabled ? addPreviewToWant : undefined}
@@ -1041,7 +1061,7 @@ export default function App() {
             onWantTracklist={want.enabled ? addTracklistToWant : undefined}
             onWantPlaylist={want.enabled ? addPlaylistToWant : undefined}
             onContext={openMenu}
-            rooms={chat.conversations.filter((c) => c.scope === 'room').map((c) => c.target)}
+            rooms={rooms}
             onWish={() => addWish(session.query)}
             onSave={saveSearch}
           />
@@ -1075,7 +1095,7 @@ export default function App() {
           <FollowedView
             client={session.client}
             signedIn={isSignedIn(session.serverState)}
-            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
+            onBrowse={openBrowse}
           />
         ) : section === 'collections' ? (
           <LibraryView
@@ -1134,7 +1154,7 @@ export default function App() {
         ) : section === 'uploads' ? (
           <UploadsView
             session={transfers}
-            peers={(u) => prefs.peers.get(u)}
+            peers={peerOf}
             onUserMenu={openUserMenu}
             // null when the engine has not reported yet — NOT false. See the
             // prop's own note: the two are different claims.
@@ -1166,7 +1186,7 @@ export default function App() {
             browse={browse}
             transfers={transfers}
             signedIn={isSignedIn(session.serverState)}
-            peers={(u) => prefs.peers.get(u)}
+            peers={peerOf}
             rules={prefs.settings}
             onUserMenu={openUserMenu}
           />
@@ -1188,8 +1208,8 @@ export default function App() {
             discovery={downloadsDiscovery}
             simple={mode === 'simple'}
             onFindAnother={(q) => { go('search'); searchTabs.openWith(q); }}
-            peers={(u) => prefs.peers.get(u)}
-            onBrowse={(who) => { browse.browse(who); go('browsing'); }}
+            peers={peerOf}
+            onBrowse={openBrowse}
             onShowCompleted={() => go('completed')}
             onMini={enterMini}
             handoff={handoff}

@@ -11,7 +11,7 @@
  * popover to the thing that opened it is what makes the relationship legible.
  */
 
-import { useId, useRef, useState } from 'react';
+import { memo, useId, useRef, useState } from 'react';
 import { useDismiss } from './useDismiss.ts';
 import { IconCheck, IconFilters, IconMinus, IconPlus } from '../icons/index.tsx';
 import { SORT_LABELS, naturallyDescending } from '../domain/transferOrder.ts';
@@ -48,7 +48,7 @@ const DEFAULT_DENSITIES: Density[] = ['comfortable', 'compact', 'table'];
  * exists to remove.
  *
  * Optional, because Search uses this menu too and has its own ordering. */
-export function ViewMenu<Id extends string = ColumnId>({
+function ViewMenuView<Id extends string = ColumnId>({
   density, onDensity, densities = DEFAULT_DENSITIES,
   sort, onSort, descending, onDescending, columns, onColumns, columnSet,
   sortLabels = SORT_LABELS,
@@ -203,3 +203,5 @@ export function ViewMenu<Id extends string = ColumnId>({
     </div>
   );
 }
+/* Memoised: Search redraws on every burst of results, and this shows none of them. */
+export const ViewMenu = memo(ViewMenuView) as typeof ViewMenuView;

@@ -96,6 +96,7 @@
 .quick__caret[data-open='true'] { transform: rotate(180deg); }
 
 .chip {
+  font-variant-numeric: tabular-nums;
   display: inline-flex; align-items: center; gap: var(--sp-1);
   height: 1.625rem; padding: 0 var(--sp-3);
   border-radius: var(--radius-pill);
@@ -849,6 +850,7 @@
   display: flex; justify-content: center; pointer-events: none;
 }
 .pill {
+  font-variant-numeric: tabular-nums;
   pointer-events: auto;
   display: inline-flex; align-items: center; gap: var(--sp-2);
   height: 1.875rem; padding: 0 var(--sp-4);
@@ -4541,10 +4543,12 @@
   flex: 1 1 12rem; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden;
   font-size: var(--fs-secondary); color: var(--text-secondary);
 }
-/* Only the last crumb gives way, and with an ellipsis: every crumb shrinking
-   at once cut a long path into fragments that named nothing. */
-.dlf__crumb { display: inline-flex; gap: 6px; flex: none; white-space: nowrap; }
-.dlf__crumb[aria-current] { flex: 0 1 auto; min-width: 0; }
+/* The last crumb gives way first, and with an ellipsis: every crumb shrinking
+   at once cut a long path into fragments that named nothing. It keeps a few
+   words; past that the others shrink too, each ending in "…" rather than
+   pushing the rest out of the bar uncut, and none takes more than 12rem. */
+.dlf__crumb { display: inline-flex; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 12rem; white-space: nowrap; }
+.dlf__crumb[aria-current] { flex-shrink: 1000; min-width: min(8rem, 40%); max-width: none; }
 .dlf__crumbtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dlf__crumb[aria-current] { color: var(--text-primary); font-weight: var(--fw-medium); }
 .dlf__sep { color: var(--text-quaternary); }
@@ -4564,11 +4568,15 @@
   .dlf__head, .dlf__row { grid-template-columns: minmax(0, 3fr) minmax(8rem, 2fr); }
   .dlf__files, .dlf__size { display: none; }
 }
+/* No side padding on the grid itself: rows have none, and padding here put
+   every header on a different track from its column. Only Name is indented,
+   to where a row's label starts (chevron, icon and their two gaps). */
 .dlf__head {
-  padding: var(--sp-1) var(--sp-2) var(--sp-1) calc(var(--sp-2) + 30px);
+  padding: var(--sp-1) 0;
   font-size: var(--fs-micro); font-weight: var(--fw-semibold); color: var(--text-tertiary);
   border-bottom: 0.5px solid var(--separator);
 }
+.dlf__head > :first-child { padding-left: calc(var(--sp-2) + 12px + 14px + 2 * 6px); }
 .dlf__rows { list-style: none; margin: 0; padding: 0; }
 .dlf__row { min-height: 28px; border-radius: var(--radius-sm); }
 .dlf__row[data-current] { background: var(--bg-selected); }

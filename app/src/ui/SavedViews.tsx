@@ -7,7 +7,7 @@
  * preference about this window, not something the sidecar has any use for.
  */
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { Filters, GroupBy } from '../domain/types.ts';
 import type { SavedView } from '../domain/savedViews.ts';
 import { BUILT_IN_VIEWS, currentView, parseViews, storeViews, withView } from '../domain/savedViews.ts';
@@ -22,7 +22,7 @@ function stored(): SavedView[] {
   }
 }
 
-export function SavedViews({ filters, groupBy, onApply }: {
+export const SavedViews = memo(function SavedViews({ filters, groupBy, onApply }: {
   filters: Filters;
   groupBy: GroupBy;
   onApply(view: SavedView): void;
@@ -100,4 +100,4 @@ export function SavedViews({ filters, groupBy, onApply }: {
       )}
     </div>
   );
-}
+});

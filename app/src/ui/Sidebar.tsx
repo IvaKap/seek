@@ -13,7 +13,7 @@
  * one click away behind More; Collector shows every group (ui/viewMode.ts).
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import {
   IconChat, IconChevronDown, IconDownload, IconLibrary, IconRelease, IconSearch,
   IconArrowUp, IconSettings, IconTransfers, IconUser,
@@ -93,7 +93,9 @@ function Rate({ direction, bytesPerSec }: { direction: 'down' | 'up'; bytesPerSe
   );
 }
 
-export function Sidebar({
+/* Memoised: App redraws on every burst of search results, and the sidebar
+   shows none of them. */
+export const Sidebar = memo(function Sidebar({
   active, onSelect, downloadCount, browsingUser, status, client,
   roomUnread = 0, privateUnread = 0, wantPending = 0, hasSessions = false,
   hasLabels = false, uploadCount = 0, wishFound = 0, mode, onMode,
@@ -308,7 +310,7 @@ export function Sidebar({
       </div>
     </nav>
   );
-}
+});
 
 function NavButton({ item, active, onSelect }: {
   item: Item;

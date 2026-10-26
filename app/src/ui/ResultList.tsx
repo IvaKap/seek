@@ -22,7 +22,7 @@
  * property for the length of the reflow. That is a FLIP with no measurement code.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Row } from '../data/searchStore.ts';
 import type { Release } from '../domain/types.ts';
@@ -149,12 +149,19 @@ export function ResultList({
   }, [columns, widths.style]);
 
   /* ---- [rows lag the store so removals can animate out] ---- */
-  const [display, setDisplay] = useState<Row[]>(rows);
-  const [exiting, setExiting] = useState<Set<string>>(() => new Set());
+  /* The store's rows are drawn as they come. Only while removals animate out
+     are the previous rows HELD on screen. Copying every update into state
+     drew the whole table twice per burst of results: once with the old rows,
+     then again from the effect with the new ones. */
+  const [held, setHeld] = useState<Row[] | null>(null);
+  const display = held ?? rows;
+  const [exiting, setExiting] = useState<ReadonlySet<string>>(() => new Set());
   const [reflowing, setReflowing] = useState(false);
   const prevRows = useRef<Row[]>(rows);
 
-  useEffect(() => {
+  // Layout, not passive: a removal must be held before the browser paints the
+  // frame without it, or the outgoing rows would blink out and back.
+  useLayoutEffect(() => {
     const prev = prevRows.current;
     prevRows.current = rows;
 
@@ -162,16 +169,18 @@ export function ResultList({
     const removed = prev.filter((r) => !nextIds.has(r.id)).map((r) => r.id);
 
     // Additions and reorders commit straight away; only removals need the
-    // outgoing phase, and reduced motion skips it entirely.
+    // outgoing phase, and reduced motion skips it entirely. Both setters
+    // bail out when nothing changes, so the common case costs no render.
     if (removed.length === 0 || reduced) {
-      setExiting(new Set());
-      setDisplay(rows);
+      setExiting((e) => (e.size ? new Set() : e));
+      setHeld(null);
       return;
     }
 
+    setHeld((h) => h ?? prev);
     setExiting(new Set(removed));
     const t1 = window.setTimeout(() => {
-      setDisplay(rows);
+      setHeld(null);
       setExiting(new Set());
       setReflowing(true);
     }, EXIT_MS);
@@ -327,99 +336,9 @@ export function ResultList({
     springToTop();
   }, [onFoldIn, springToTop]);
 
-  const renderRow = (row: Row) => {
-    if (simple && row.kind === 'track') {
-      return (
-        <SimpleTrackRow
-          track={row.track}
-          folder={row.folder}
-          art={row.folder ? artwork?.get(row.folder.id) : undefined}
-          expanded={expanded.has(row.id)}
-          onToggle={() => onToggle(row.id)}
-          // The copy the row shows, by name: never a pick made at press time.
-          onQueue={(copy) => onQueue({ kind: 'file', id: copy.id, source: copy, tick: copy.tick })}
-          queueStates={queueStates}
-        />
-      );
-    }
-    if (simple && row.kind === 'release') {
-      const group = row.copies ?? [row.release];
-      const badges = group.map((r) => folderStates?.get(folderKey(r.peer.username, r.folderPath)) ?? 'idle');
-      return (
-        <SimpleReleaseRow
-          copies={group}
-          art={artwork?.get(row.release.id)}
-          expanded={expanded.has(row.id)}
-          onToggle={() => onToggle(row.id)}
-          onQueue={(copy) => onQueue({ kind: 'release', id: copy.id, release: copy, tick: copy.tick })}
-          // The record is what you took, so a copy queued from the comparison counts too.
-          badge={badges.find((b) => b !== 'idle') ?? 'idle'}
-          onCompare={onCompare}
-        />
-      );
-    }
-    switch (row.kind) {
-      case 'track':
-        return (
-          <TrackRow
-            track={row.track}
-            expanded={expanded.has(row.id)}
-            onToggle={() => onToggle(row.id)}
-            onQueue={() => onQueue(row)}
-              queueStates={queueStates}
-          />
-        );
-      case 'release': {
-        // A lone copy has nothing to compare against, so the card offers nothing.
-        const group = row.copies ?? (copies ? copiesOf(row.release, copies) : [row.release]);
-        return (
-          <ReleaseCard
-            art={artwork?.get(row.release.id)}
-            owned={library?.hasRelease(row.release.artist, row.release.title)}
-            release={row.release}
-            expanded={expanded.has(row.id)}
-            onToggle={() => onToggle(row.id)}
-            onQueue={() => onQueue(row)}
-            // 'grid' renders as GridCard, never here — narrow it away for the card.
-            density={density === 'grid' ? 'comfortable' : density}
-            peers={peers}
-            copyCount={group.length}
-            onCompare={onCompare ? () => onCompare(row.release) : undefined}
-            queueBadge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
-          />
-        );
-      }
-      case 'user':
-        return (
-          <UserRow
-            group={row.group}
-            expanded={expanded.has(row.id)}
-            onToggle={() => onToggle(row.id)}
-              onBrowse={onBrowse}
-          />
-        );
-      case 'source':
-        return (
-          <SourceRow
-            source={row.source}
-            last={row.last}
-            context={row.context}
-            onQueue={() => onQueue(row)}
-            peers={peers}
-            queueStates={queueStates}
-            plain={simple}
-          />
-        );
-      case 'file':
-        return (
-          <FileRow
-            source={row.source}
-            onQueue={() => onQueue(row)}
-            queueStates={queueStates}
-          />
-        );
-    }
-  };
+  const ctx = useMemo<RowCtx>(() => ({
+    simple, density, artwork, library, peers, queueStates, folderStates, onToggle, onQueue, onCompare, onBrowse,
+  }), [simple, density, artwork, library, peers, queueStates, folderStates, onToggle, onQueue, onCompare, onBrowse]);
 
   return (
     <div className="results" ref={resultsRef} style={columnStyle}>
@@ -509,7 +428,15 @@ export function ResultList({
                     animationDelay: delay ? `${delay}ms` : undefined,
                   }}
                 >
-                  {renderRow(row)}
+                  <RowBody
+                    row={row}
+                    expanded={expanded.has(row.id)}
+                    // A lone copy has nothing to compare against, so the card offers nothing.
+                    copyCount={row.kind === 'release' && !simple
+                      ? (row.copies ?? (copies ? copiesOf(row.release, copies) : [row.release])).length
+                      : 0}
+                    ctx={ctx}
+                  />
                 </div>
               );
             })}
@@ -521,6 +448,128 @@ export function ResultList({
 }
 
 /** An element's height while `on`, kept current as it resizes. 0 otherwise. */
+/** What every row shares, as one memoised object. */
+interface RowCtx {
+  simple: boolean;
+  density: SearchDensity;
+  artwork?: ArtworkSession;
+  library?: LibrarySession;
+  peers?: PeerLookup;
+  queueStates?: Map<string, TransferState>;
+  folderStates?: Map<string, QueueBadge>;
+  onToggle(id: string): void;
+  onQueue(row: Row): void;
+  onCompare?(release: Release): void;
+  onBrowse?(username: string): void;
+}
+
+/**
+ * One row's content. Memoised, and fed rows that keep their identity while
+ * nothing in them changed (searchStore's `steady`), so a burst of results draws
+ * the rows it touched rather than every row on screen.
+ */
+const RowBody = memo(function RowBody({ row, expanded, copyCount, ctx }: {
+  row: Row;
+  expanded: boolean;
+  /** Copies of this record in the results, for a Collector release card. */
+  copyCount: number;
+  ctx: RowCtx;
+}) {
+  const {
+    simple, density, artwork, library, peers, queueStates, folderStates,
+    onToggle, onQueue, onCompare, onBrowse,
+  } = ctx;
+  if (simple && row.kind === 'track') {
+    return (
+      <SimpleTrackRow
+        track={row.track}
+        folder={row.folder}
+        art={row.folder ? artwork?.get(row.folder.id) : undefined}
+        expanded={expanded}
+        onToggle={() => onToggle(row.id)}
+        // The copy the row shows, by name: never a pick made at press time.
+        onQueue={(copy) => onQueue({ kind: 'file', id: copy.id, source: copy, tick: copy.tick })}
+        queueStates={queueStates}
+      />
+    );
+  }
+  if (simple && row.kind === 'release') {
+    const group = row.copies ?? [row.release];
+    const badges = group.map((r) => folderStates?.get(folderKey(r.peer.username, r.folderPath)) ?? 'idle');
+    return (
+      <SimpleReleaseRow
+        copies={group}
+        art={artwork?.get(row.release.id)}
+        expanded={expanded}
+        onToggle={() => onToggle(row.id)}
+        onQueue={(copy) => onQueue({ kind: 'release', id: copy.id, release: copy, tick: copy.tick })}
+        // The record is what you took, so a copy queued from the comparison counts too.
+        badge={badges.find((b) => b !== 'idle') ?? 'idle'}
+        onCompare={onCompare}
+      />
+    );
+  }
+  switch (row.kind) {
+    case 'track':
+      return (
+        <TrackRow
+          track={row.track}
+          expanded={expanded}
+          onToggle={() => onToggle(row.id)}
+          onQueue={() => onQueue(row)}
+            queueStates={queueStates}
+        />
+      );
+    case 'release': {
+      return (
+        <ReleaseCard
+          art={artwork?.get(row.release.id)}
+          owned={library?.hasRelease(row.release.artist, row.release.title)}
+          release={row.release}
+          expanded={expanded}
+          onToggle={() => onToggle(row.id)}
+          onQueue={() => onQueue(row)}
+          // 'grid' renders as GridCard, never here — narrow it away for the card.
+          density={density === 'grid' ? 'comfortable' : density}
+          peers={peers}
+          copyCount={copyCount}
+          onCompare={onCompare ? () => onCompare(row.release) : undefined}
+          queueBadge={folderStates?.get(folderKey(row.release.peer.username, row.release.folderPath)) ?? 'idle'}
+        />
+      );
+    }
+    case 'user':
+      return (
+        <UserRow
+          group={row.group}
+          expanded={expanded}
+          onToggle={() => onToggle(row.id)}
+            onBrowse={onBrowse}
+        />
+      );
+    case 'source':
+      return (
+        <SourceRow
+          source={row.source}
+          last={row.last}
+          context={row.context}
+          onQueue={() => onQueue(row)}
+          peers={peers}
+          queueStates={queueStates}
+          plain={simple}
+        />
+      );
+    case 'file':
+      return (
+        <FileRow
+          source={row.source}
+          onQueue={() => onQueue(row)}
+          queueStates={queueStates}
+        />
+      );
+  }
+});
+
 function useHeight(ref: React.RefObject<HTMLElement | null>, on: boolean): number {
   const [h, setH] = useState(0);
   useLayoutEffect(() => {

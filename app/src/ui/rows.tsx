@@ -200,7 +200,7 @@ export function QueueButton({
     >
       {children}
       {QBTN_ICON[shown]}
-      {withText && <span>{texts?.[shown] ?? QBTN_TEXT[shown]}</span>}
+      {withText && <span className="tnum">{texts?.[shown] ?? QBTN_TEXT[shown]}</span>}
     </button>
   );
 }

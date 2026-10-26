@@ -7,7 +7,7 @@
  * down from the pill row rather than opening a modal.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Filters, GroupBy, Release, SortKey } from '../domain/types.ts';
 import { filtersActive } from '../domain/types.ts';
 import { integer } from '../domain/format.ts';
@@ -77,7 +77,7 @@ const FLAG_PILLS = [
  * user's shares. Upstream's four modes; Nicotine+ shows the same choice beside
  * its search field.
  */
-function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
+const ScopePicker = memo(function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
   scope: SearchScope;
   rooms: string[];
   userRef: React.RefObject<HTMLInputElement | null>;
@@ -127,7 +127,7 @@ function ScopePicker({ scope, rooms, userRef, onChange, onSubmit }: {
       </label>
     </>
   );
-}
+});
 
 /** A version row's copies, when the release being compared heads one. */
 function versionCopies(rows: Row[], release: Release): Release[] | undefined {
@@ -251,18 +251,21 @@ export function SearchView({
    * chips. The pool reuses whichever grouping the rows already built. */
   const pool = useMemo(() => session.pickPool(), [session.pickPool]);
 
+  /* Not `tabs`: that object is new on every render, and a callback that
+     depends on it would redraw every result row with it. */
+  const markUsed = tabs?.markUsed;
   const queueRelease = useCallback((release: Release) => {
     const verdict = judgeRelease(release.files, rules);
     if (!verdict.allowed) { setRefused(verdict.reason ?? null); return; }
     setRefused(null);
     /* This tab has done its job. Stamped rather than closed — you often take a
        second record from the same results — and swept 45 minutes later. */
-    tabs?.markUsed();
+    markUsed?.();
     void transfers.enqueueFolder(release.user, release.folderPath, false, { count: release.files.length });
-  }, [transfers, tabs, rules]);
+  }, [transfers, markUsed, rules]);
 
   const onQueue = useCallback((row: Row) => {
-    tabs?.markUsed();
+    markUsed?.();
     switch (row.kind) {
       case 'track': {
         // Which source to take is a preference, not a fixed rule: the default
@@ -300,7 +303,7 @@ export function SearchView({
         // A user header is a grouping, not a thing to download.
         break;
     }
-  }, [transfers, rules, queueRelease, tabs]);
+  }, [transfers, rules, queueRelease, markUsed]);
 
   const active = filtersActive(session.filters);
   const available = new Set(session.availableFormats);
@@ -381,6 +384,17 @@ export function SearchView({
     if (tabs) tabs.openWith(session.query, session.scope);
     else session.run();
   }, [discover, runFromPreview, session, onWant, onBrowseCatalog, tabs]);
+
+  /* Stable, for the memoised controls in the header: an inline arrow here
+     redrew them on every burst of results. */
+  const submitScope = useCallback(() => submit(), [submit]);
+  const searchTrack = useCallback((q: string) => runQuery(q, true), [runQuery]);
+  const { setGroupBy } = session;
+  const changeDensity = useCallback((d: Density) => {
+    onDensity(d);
+    // Grid is a wall of covers, and only releases have covers.
+    if (d === 'grid') setGroupBy('release');
+  }, [onDensity, setGroupBy]);
 
   const onSearchKey = useCallback((event: React.KeyboardEvent) => {
     if (event.key === 'Escape' && discover?.preview) {
@@ -504,7 +518,7 @@ export function SearchView({
             rooms={rooms}
             userRef={userRef}
             onChange={session.setScope}
-            onSubmit={() => submit()}
+            onSubmit={submitScope}
           />
           <kbd className="search__kbd" aria-hidden>⌘↵</kbd>
         </div>
@@ -522,7 +536,7 @@ export function SearchView({
             tracklist={discover.tracklist}
             onFindTracklist={discover.findTracklist}
             onWantTracklist={onWantTracklist}
-            onSearchTrack={(q) => runQuery(q, true)}
+            onSearchTrack={searchTrack}
             onWantPlaylist={onWantPlaylist}
             playlist={discover?.playlist}
             playlistId={discover?.playlistId}
@@ -687,10 +701,7 @@ export function SearchView({
                 /* Grid is a wall of covers, and only releases have covers, so
                    choosing it groups by release too (the inverse guard is on the
                    grouping control below). */
-                onDensity={(d) => {
-                  onDensity(d);
-                  if (d === 'grid') session.setGroupBy('release');
-                }}
+                onDensity={changeDensity}
                 densities={['comfortable', 'compact', 'table', 'grid']}
                 columns={columns}
                 onColumns={onColumns}
@@ -735,6 +746,7 @@ export function SearchView({
               artwork={artwork}
               onQueue={onQueue}
             />
+            
             {simple && <CopiesHeading rows={session.rows} sort={session.sort} onSort={session.setSort} />}
           </>
         )}

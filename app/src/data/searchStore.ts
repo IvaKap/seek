@@ -95,6 +95,41 @@ export type Row =
       context: 'peers' | 'files';
     };
 
+/* ---------------------------------------------------------------- reuse */
+
+/** Same fields, arrays compared item by item. Sources are never mutated, only
+ *  appended, so equal members mean an equal group. */
+function shallowSame(a: object, b: object): boolean {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every((k) => {
+    const x = (a as Record<string, unknown>)[k];
+    const y = (b as Record<string, unknown>)[k];
+    return x === y || (Array.isArray(x) && Array.isArray(y)
+      && x.length === y.length && x.every((v, i) => v === y[i]));
+  });
+}
+
+/**
+ * Last tick's object wherever nothing in it changed.
+ *
+ * Every burst regroups from scratch, so without this every row is a new object
+ * and the memoised rows in ResultList all draw again — the freeze on each
+ * burst. Keyed by id; the map holds only what the latest pass returned.
+ */
+function steady<T extends { id: string }>(cache: { current: Map<string, T> }, next: T[]): T[] {
+  const prev = cache.current;
+  const map = new Map<string, T>();
+  const out = next.map((n) => {
+    const p = prev.get(n.id);
+    const keep = p && shallowSame(p, n) ? p : n;
+    map.set(n.id, keep);
+    return keep;
+  });
+  cache.current = map;
+  return out;
+}
+
 /* ------------------------------------------------------------- comparators */
 
 function trackValue(t: TrackCluster, key: SortKey): number | string {
@@ -394,6 +429,19 @@ export function useSearchSession(
     resortAll.current = true;
   }
 
+  /* The same list while the formats are the same, so the filter bar is not
+     redrawn by every burst of results that brings no new format. */
+  const formatsSeen = useRef<string[]>([]);
+  const sameClusters = useRef(new Map<string, TrackCluster>());
+  const sameReleases = useRef(new Map<string, Release>());
+  const sameRows = useRef(new Map<string, Row>());
+  const sameChildren = useRef(new Map<string, Row>());
+  const sameFormats = (next: string[]) => {
+    const prev = formatsSeen.current;
+    if (prev.length !== next.length || prev.some((f, i) => f !== next[i])) formatsSeen.current = next;
+    return formatsSeen.current;
+  };
+
   const { rows: nextRows, kept, tracks, folders, matchedFiles, availableFormats } = useMemo(() => {
     void tick;
     const all = grouper.all;
@@ -413,9 +461,9 @@ export function useSearchSession(
     let tracks: TrackCluster[] | null = null;
     let folders: Release[] | null = null;
     if (group === 'version') {
-      folders = grouper.releases(kept);
+      folders = steady(sameReleases, grouper.releases(kept));
       const folderOf = new Map(folders.map((r) => [r.files[0].releaseKey, r]));
-      for (const t of grouper.versions(kept)) {
+      for (const t of steady(sameClusters, grouper.versions(kept))) {
         out.push({ kind: 'track', id: t.id, track: t, tick: t.tick, folder: folderOf.get(t.best.releaseKey) ?? null });
       }
       for (const v of releaseVersions(folders)) {
@@ -423,10 +471,10 @@ export function useSearchSession(
         out.push({ kind: 'release', id: v.id, release: v.copies[0], copies: v.copies, tick });
       }
     } else if (group === 'track') {
-      tracks = grouper.tracks(kept);
+      tracks = steady(sameClusters, grouper.tracks(kept));
       for (const t of tracks) out.push({ kind: 'track', id: t.id, track: t, tick: t.tick });
     } else if (group === 'release') {
-      folders = grouper.releases(kept);
+      folders = steady(sameReleases, grouper.releases(kept));
       for (const r of folders) out.push({ kind: 'release', id: r.id, release: r, tick: r.tick });
     } else if (group === 'file') {
       // No grouper method — one row per kept file, already the filtered list.
@@ -438,12 +486,12 @@ export function useSearchSession(
     }
 
     return {
-      rows: out,
+      rows: steady(sameRows, out),
       kept,
       tracks,
       folders,
       matchedFiles: kept.length,
-      availableFormats: [...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })),
+      availableFormats: sameFormats([...formats].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))),
     };
   }, [grouper, filters, group, tick]);
 
@@ -454,7 +502,11 @@ export function useSearchSession(
 
   /* ---- order: frozen prefix + free suffix + queued ---- */
 
-  const ordered = useMemo(() => {
+  /* Rows that would land above the first visible one are only REPORTED here;
+     the effect below queues them. Queuing them from inside this memo set
+     state mid-render, which made React throw the render away and draw the
+     whole search again on every burst of results. */
+  const ordering = useMemo((): { rows: Row[]; queued: Row[]; resorted: boolean } => {
     const byId = new Map<string, Row>();
     for (const r of nextRows) byId.set(r.id, r);
 
@@ -464,8 +516,7 @@ export function useSearchSession(
       resortAll.current = false;
       const sorted = [...nextRows].sort((a, b) => compare(a, b, sort));
       order.current = sorted.map((r) => r.id);
-      if (pending.length) setPending([]);
-      return sorted;
+      return { rows: sorted, queued: [], resorted: true };
     }
 
     const anchor = Math.max(0, Math.min(viewport.current.first, order.current.length));
@@ -504,15 +555,22 @@ export function useSearchSession(
     const result = [...prefix, ...suffixExisting];
     order.current = result.map((r) => r.id);
 
-    if (queued.length) {
+    return { rows: result, queued, resorted: false };
+  }, [nextRows, sort]);
+  const ordered = ordering.rows;
+
+  useEffect(() => {
+    const { queued, resorted } = ordering;
+    if (resorted) {
+      setPending((prev) => (prev.length ? [] : prev));
+    } else if (queued.length) {
       setPending((prev) => {
         const ids = new Set(prev.map((p) => p.id));
         const add = queued.filter((q) => !ids.has(q.id));
         return add.length ? [...prev, ...add] : prev;
       });
     }
-    return result;
-  }, [nextRows, sort]);
+  }, [ordering]);
 
   /* ---- expansion: source rows are flattened in, so one virtualiser sees all ---- */
 
@@ -534,7 +592,7 @@ export function useSearchSession(
         }),
       );
     }
-    return out;
+    return steady(sameChildren, out);
   }, [ordered, expanded]);
 
   /* ---- controls ---- */

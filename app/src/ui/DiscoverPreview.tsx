@@ -19,7 +19,7 @@
  * animated; the exit runs before unmount so the card does not vanish mid-slide.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import type { DiscoverPreview as Preview, TracklistState } from '../data/discoverStore.ts';
 import { trackQuery } from '../data/discoverStore.ts';
 import { PROVIDER_LABEL } from '../domain/discoverUrl.ts';
@@ -88,7 +88,7 @@ function provenance(preview: Preview): string {
   return how[preview.parsedFrom];
 }
 
-export function DiscoverPreviewCard({
+export const DiscoverPreviewCard = memo(function DiscoverPreviewCard({
   preview, onSearch, onDismiss, onEdit, onOpenSettings, onWant, wanted, onBrowse,
   tracklist, onFindTracklist, onWantTracklist, onSearchTrack,
   playlist, playlistId, onImportPlaylist, onWantPlaylist,
@@ -451,4 +451,4 @@ export function DiscoverPreviewCard({
       </div>
     </div>
   );
-}
+});
