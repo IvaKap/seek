@@ -33,6 +33,9 @@ import { reportFailure } from '../data/failures.ts';
 const MAX_SENT = 8;
 
 export interface Columns {
+  /** Refused, stalled or failed: shown as a lane at the top of Queued, not
+   *  among the releases waiting for a slot, because they are not waiting. */
+  trouble: TransferGroup[];
   queued: TransferGroup[];
   downloading: TransferGroup[];
   checking: TransferGroup[];
@@ -60,7 +63,7 @@ export function boardColumns(
   handoff: HandoffBits['session'],
   held: ReadonlySet<string>,
 ): Columns {
-  const out: Columns = { queued: [], downloading: [], checking: [], ready: [], sent: [] };
+  const out: Columns = { trouble: [], queued: [], downloading: [], checking: [], ready: [], sent: [] };
   const sentAt = new Map<TransferGroup, number>();
   for (const g of groups) {
     if (g.state === 'finished') {
@@ -82,7 +85,8 @@ export function boardColumns(
     }
     const kind = downloadsKind(g, now);
     if (kind === 'moving') out.downloading.push(g);
-    else if (kind === 'waiting' || kind === 'trouble') (g.bytesDone > 0 ? out.downloading : out.queued).push(g);
+    else if (kind === 'trouble') out.trouble.push(g);
+    else if (kind === 'waiting') (g.bytesDone > 0 ? out.downloading : out.queued).push(g);
   }
   out.ready.sort((a, b) => finishedAt(b) - finishedAt(a));
   out.sent.sort((a, b) => sentAt.get(b)! - sentAt.get(a)!);
@@ -118,6 +122,8 @@ export function say(g: TransferGroup, column: Column, ctx: SayContext): Said {
   const trouble = downloadsKind(g, ctx.now) === 'trouble';
   const tone = troubleTone(g);
   switch (column) {
+    case 'trouble':
+      return { line: troubleLine(g), tone, bar: g.bytesDone > 0 ? 'trouble' : undefined };
     case 'queued':
       return trouble ? { line: troubleLine(g), tone } : { line: queueLine(g) };
     case 'downloading':
@@ -169,8 +175,11 @@ function Card({ g, artwork, said: { line, tone, check, bar }, chip, children }: 
   );
 }
 
-function Column({ id, title, note, count, children }: {
-  id: string; title: string; note: string; count: number; children: ReactNode;
+function Column({ id, title, note, count, lane, children }: {
+  id: string; title: string; note: string; count: number;
+  /** Cards above the column's own, under a heading of their own. */
+  lane?: { title: string; cards: ReactNode[] };
+  children: ReactNode;
 }) {
   return (
     <section className="board__col" aria-labelledby={`board-${id}`}>
@@ -180,6 +189,12 @@ function Column({ id, title, note, count, children }: {
         </h2>
         <span className="board__note">{note}</span>
       </header>
+      {lane && lane.cards.length > 0 && (
+        <div className="board__lane">
+          <h3 className="board__laneh">{lane.title} <span className="board__n tnum">{integer(lane.cards.length)}</span></h3>
+          <ul className="board__cards">{lane.cards}</ul>
+        </div>
+      )}
       {count > 0 ? <ul className="board__cards">{children}</ul> : <p className="board__empty">Nothing here</p>}
     </section>
   );
@@ -219,7 +234,10 @@ export function DownloadsBoard({
       <div className="pane__scroll board__scroll">
         {notices}
         <div className="board">
-          <Column id="queued" title="Queued by peer" note="Waiting for a slot on their side" count={cols.queued.length}>
+          <Column
+            id="queued" title="Queued by peer" note="Waiting for a slot on their side" count={cols.queued.length}
+            lane={{ title: 'Needs attention', cards: cols.trouble.map((g) => card(g, 'trouble', rescue(g))) }}
+          >
             {cols.queued.map((g) => card(g, 'queued', rescue(g)))}
           </Column>
 

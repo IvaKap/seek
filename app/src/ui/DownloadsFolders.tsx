@@ -26,7 +26,7 @@ import { count, fileSize, integer, since, speed } from '../domain/format.ts';
 import { IconChevronRight, IconRelease, IconTrack } from '../icons/index.tsx';
 import { Bar } from './transferBits.tsx';
 import { boardColumns, say } from './DownloadsBoard.tsx';
-import { LayoutHeader, downloadsKind, homeShort } from './DownloadsSimple.tsx';
+import { LayoutHeader, homeShort } from './DownloadsSimple.tsx';
 import type { Column } from './DownloadsBoard.tsx';
 import type { HandoffBits } from './HandoffButton.tsx';
 
@@ -103,19 +103,20 @@ export function folderTree({ groups, now, checks, handoff, review, downloadFolde
     };
   };
   const incoming = [
+    ...cols.trouble.map((g) => release(g, 'trouble')),
     ...cols.downloading.map((g) => release(g, 'downloading')),
     ...cols.checking.map((g) => release(g, 'checking')),
     ...cols.queued.map((g) => release(g, 'queued')),
     ...cols.ready.map((g) => release(g, 'ready')),
   ];
-  const troubled = [...cols.queued, ...cols.downloading].filter((g) => downloadsKind(g, now) === 'trouble').length;
-  const onTheWay = cols.queued.length + cols.downloading.length - troubled;
+  const troubled = cols.trouble.length;
+  const onTheWay = cols.queued.length + cols.downloading.length;
   const ready = cols.checking.length + cols.ready.length;
   const roots: TreeNode[] = [{
     key: 'downloads',
     name: downloadFolder ? leaf(downloadFolder) : 'Downloads',
     files: incoming.reduce((n, r) => n + (r.files ?? 0), 0),
-    size: fileSize([...cols.queued, ...cols.downloading, ...cols.checking, ...cols.ready].reduce((n, g) => n + g.size, 0)),
+    size: fileSize([...cols.trouble, ...cols.queued, ...cols.downloading, ...cols.checking, ...cols.ready].reduce((n, g) => n + g.size, 0)),
     status: [
       onTheWay > 0 && `${integer(onTheWay)} on the way`,
       ready > 0 && `${integer(ready)} ready`,

@@ -61,9 +61,12 @@ describe('the columns', () => {
   const checks = new Map([[checking.id, { state: 'running' as const }]]);
   const cols = boardColumns(groups, NOW, checks, handoffOf([sentRow(gone)]), new Set([review.id]));
 
-  it('keeps a refusal waiting in Queued and a stall with bytes in Downloading', () => {
-    expect(titles(cols.queued).sort()).toEqual(['Actress - Hazyville', 'Drexciya - Neptune']);
-    expect(titles(cols.downloading).sort()).toEqual(['Burial - Untrue', 'Objekt - Flatland', 'Shed - The Traveller']);
+  /* A refusal filed under "Queued by peer — waiting for a slot" said it was
+     waiting when it never would be; List and Collector call it trouble. */
+  it('puts a refusal and a stall in Needs attention, apart from what is only waiting', () => {
+    expect(titles(cols.trouble).sort()).toEqual(['Drexciya - Neptune', 'Shed - The Traveller']);
+    expect(titles(cols.queued)).toEqual(['Actress - Hazyville']);
+    expect(titles(cols.downloading).sort()).toEqual(['Burial - Untrue', 'Objekt - Flatland']);
   });
 
   it('checks while a check runs, holds review whatever its age, and leaves older finishes to Completed', () => {
@@ -129,6 +132,8 @@ describe('the board', () => {
     const timeout = file('Objekt - Flatland', { state: 'connection_timeout' });
     const p = show([timeout, file('Drexciya - Neptune', { state: 'rejected', error: 'File not shared.' })]);
     const queued = within(column('Queued by peer'));
+    expect(column('Queued by peer').querySelector('.board__laneh')!.textContent).toBe('Needs attention 2');
+    expect(column('Queued by peer').querySelector('h2')!.textContent).toBe('Queued by peer 0');
     fireEvent.click(queued.getByRole('button', { name: 'Retry' }));
     expect(p.session.retry).toHaveBeenCalledWith([timeout.id]);
     fireEvent.click(queued.getByRole('button', { name: 'Find another copy' }));

@@ -375,8 +375,10 @@ List / Board / Folders switch in the header. Collector keeps its densities.
 
 - **Board.** The columns are Queued by peer / Downloading / Checking / Ready /
   Sent to Rekordbox. They sort by Simple's own `downloadsKind`, so no release
-  sits in one column here and another section in the list. A refusal waits
-  in Queued; a stall that has bytes stays in Downloading. *Checking* is a
+  sits in one column here and another section in the list. Refused, stalled
+  and failed releases sit in a *Needs attention* lane at the top of Queued,
+  apart from the ones only waiting for a slot, with Retry or *Find another
+  copy*. Refused is red and stalled amber, on every screen. *Checking* is a
   checksum check running, and *Sent* is the hand-off's record. Both are facts,
   not guesses.
 - **Ready.** It holds the last hour's finishes, which is Downloads' Just

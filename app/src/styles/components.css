@@ -952,8 +952,11 @@
   font-size: var(--fs-micro); color: var(--text-secondary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 22rem;
 }
-.dl__status[data-tone='refused'] { background: var(--warn-soft); color: var(--warn); }
-.dl__status[data-tone='broken'] { color: var(--danger); }
+/* Refused is red and stalled amber on every screen: Simple, Board, Folders,
+   Mini Seek and Collector once disagreed, and a colour that changes meaning
+   between two views of one list means nothing. */
+.dl__status[data-tone='refused'] { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.dl__status[data-tone='broken'] { color: var(--warn); }
 .dl__status[data-tone='waiting'] { color: var(--text-tertiary); }
 .dl__status[data-tone='done'] { color: var(--success); }
 
@@ -2062,8 +2065,8 @@
 }
 .facts dt { color: var(--text-tertiary); }
 .facts dd { margin: 0; min-width: 0; color: var(--text-primary); }
-.facts dd[data-tone='refused'] { color: var(--warn); }
-.facts dd[data-tone='broken'] { color: var(--danger); }
+.facts dd[data-tone='refused'] { color: var(--danger); }
+.facts dd[data-tone='broken'] { color: var(--warn); }
 .facts dd[data-tone='done'] { color: var(--success); }
 .facts__who { display: flex; align-items: center; gap: var(--sp-2); }
 .facts__path { overflow-wrap: anywhere; }
@@ -2277,8 +2280,8 @@
 /* Refused is amber, not red: someone answered, and the answer was no. That is
    a different thing from a connection falling over, and the two want different
    reactions from the reader. */
-.dl__state[data-tone='refused']  { color: var(--warn); }
-.dl__state[data-tone='broken']   { color: var(--danger); }
+.dl__state[data-tone='refused']  { color: var(--danger); }
+.dl__state[data-tone='broken']   { color: var(--warn); }
 
 /* --- post-download verdict ------------------------------------------------
    The FINDING, not the search-time prediction (PRODUCT §6). Deliberately worded
@@ -4518,6 +4521,13 @@
 .board__line[data-check='bad'] { color: var(--danger); }
 .board__actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .board__more { padding: 0 2px; font-size: var(--fs-caption); color: var(--text-tertiary); }
+/* Needs attention: refused, stalled or failed, at the top of Queued and set
+   apart from the releases that are only waiting their turn. */
+.board__lane {
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  padding-bottom: var(--sp-2); border-bottom: 0.5px solid var(--separator-strong);
+}
+.board__laneh { margin: 0; padding: 0 2px; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--text-primary); }
 
 /* ----------------------------------------------------- downloads, folders */
 /* Downloads · Folders (Simple): the releases as folders, each opening to its
