@@ -1,443 +1,113 @@
-# Seek
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/hero-dark.png">
+    <img alt="Seek" src="docs/screenshots/0.4/hero-light.png" width="900">
+  </picture>
+</p>
 
-**A Mac client for [Soulseek](https://www.slsknet.org/) built for people who dig.**
-Paste a Discogs, Bandcamp or YouTube link and it becomes a search. Work through
-a label's entire back catalogue. See what a file actually is before you keep it.
+<h1 align="center">Seek</h1>
 
-Built on [Nicotine+](https://nicotine-plus.org/), which does the protocol work.
+<p align="center">
+  <b>Soulseek for the Mac, for people who dig.</b><br>
+  Find the record. Know it's the right copy. Send it to Rekordbox.
+</p>
 
-![Seek, with three searches open at once](docs/screenshots/search.png)
-
-> **About the pictures.** The interface shots on this page are rendered from
-> Seek's design file, which is built from the same tokens, type scale and icon
-> set the app ships — so they show the real layout with sample records in it.
-> The **spectrogram below is a real measurement from a real file**, and the
-> install screenshots are real macOS dialogs; neither is a mock-up, because
-> both are evidence rather than illustration.
-
-> **Unofficial.** Not affiliated with, endorsed by, or connected to Soulseek or
-> the Nicotine+ project. Seek uses Nicotine+ as a library and is grateful for it.
-
----
-
-## Why not just use Nicotine+?
-
-Nicotine+ is excellent and Seek runs on it. Seek is what happens when you point
-that engine at one question: **how do you find a specific record, and know it is
-the right one, without doing the bookkeeping yourself?**
-
-| | |
-|---|---|
-| 🔗 **Records, not filenames** | Paste a link from Discogs, Bandcamp or YouTube. Seek reads the artist, title, year and tracklist off the page and searches for *that* — no retyping, no guessing at spelling. |
-| 📚 **Whole catalogues** | Open a label's discography, see at a glance what you already own, and work down the list. Keep a watchlist of labels you're digging through. |
-| 🔍 **Proof, not badges** | A "FLAC" that came from a 192 kbps MP3 is shown as one, with the spectrogram that says so. Seek shows its working instead of stamping a verdict. |
-| 👤 **You pick the copy** | Several people have the record? You get a comparison — tracks, format, size, free slot, queue length, your own history with them. The app never quietly swaps your choice for one it prefers. |
-| 🤝 **Sharing treated as the point** | Soulseek is reciprocal. Seek shows what you're uploading, what your ratio actually is, and says plainly when a slow queue is the consequence of sharing nothing. |
-| 🚫 **It refuses to guess** | Where no one person has the whole album, Seek says so and shows what each person actually has, file by file. It won't claim one person's "track 4" is another's — that guess was measured against real data and was wrong more often than right. |
+<p align="center">
+  <a href="../../releases/latest"><b>Download</b></a> ·
+  <a href="#install">Install</a> ·
+  <a href="#build-from-source">Build</a> ·
+  <a href="../../releases/tag/v0.4.0">0.4 release notes</a>
+</p>
 
 ---
 
-## The link features
+- **Best picks.** Three copies worth taking (best overall, fastest, whole release), then every version once.
+- **Get means that copy.** The row you're pointing at holds still, so nothing better can swap in mid-click.
+- **Proof, not badges.** A size check before you download, a decoded spectrogram after, and `.ffp` and `.md5` checks when the uploader included them.
+- **Downloads in plain words.** Your place in line, how long a stall has lasted, and what a refusal said. Shown as a list, a Board or Folders, with a corner panel and **Mini Seek** (⇧⌘M) to keep them in view.
+- **Send to Rekordbox.** A finished release, copied into the folder you import from. Seek never touches the Rekordbox database.
+- **Links become searches.** Paste a Discogs, Bandcamp or YouTube link, or open a label's whole catalogue and work down it.
+- **Simple or Collector.** Cards and plain words, or the whole app as tables. Switch with ⌘\\.
 
-This is the part that changes how you use Soulseek. **Paste any of these into
-the search bar** and Seek reads it before you press Return.
+<table>
+<tr>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/downloads-simple-dark.png"><img alt="Downloads" src="docs/screenshots/0.4/downloads-simple-light.png"></picture></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/search-collector-dark.png"><img alt="Collector search" src="docs/screenshots/0.4/search-collector-light.png"></picture></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/downloads-board-dark.png"><img alt="Board" src="docs/screenshots/0.4/downloads-board-light.png"></picture></td>
+</tr>
+<tr>
+<td align="center"><sub>Downloads</sub></td>
+<td align="center"><sub>Collector search</sub></td>
+<td align="center"><sub>Board, ending at Rekordbox</sub></td>
+</tr>
+<tr>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/downloads-folders-dark.png"><img alt="Folders" src="docs/screenshots/0.4/downloads-folders-light.png"></picture></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/mini-front-dark.png"><img alt="Mini Seek" src="docs/screenshots/0.4/mini-front-light.png"></picture></td>
+<td width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/0.4/downloads-collector-dark.png"><img alt="Collector downloads" src="docs/screenshots/0.4/downloads-collector-light.png"></picture></td>
+</tr>
+<tr>
+<td align="center"><sub>Folders, beside Rekordbox</sub></td>
+<td align="center"><sub>Mini Seek, kept on top</sub></td>
+<td align="center"><sub>Collector downloads</sub></td>
+</tr>
+</table>
 
-### A label link → the whole roster
-
-![Pasting a Discogs label link into Seek](docs/screenshots/link-discogs-label.png)
-
-Drop in a Discogs label URL and Seek identifies the label, then offers to browse
-its entire catalogue, start watching it, or add the lot to your want list.
-
-> 🔑 **Discogs links need a free Discogs token.** [Set one up in 3 steps →](#discogs-token)
-> Bandcamp label links work with **no key at all**.
-
-### An album link → an exact search
-
-![Pasting a Discogs album link into Seek](docs/screenshots/link-discogs-album.png)
-
-Paste a release or master URL and Seek pulls the artist, title, year and track
-count straight off the page — then searches Soulseek for that record, correctly
-spelled, first time.
-
-> 🔑 **Discogs** links need a [token](#discogs-token). **Bandcamp** album links and
-> **YouTube** video links need **nothing** — they work the moment you install Seek.
-
-### Browsing a catalogue
-
-![Browsing the Apollo label catalogue](docs/screenshots/catalogue.png)
-
-Seek already knows which ones are in your library. Filter down to
-**"Not in my library"** and every row has a **Search** and a **Want** button.
-On a label with a few hundred releases this is a whole afternoon of digging in
-one screen.
-
-> 🔑 **Discogs catalogues need a [token](#discogs-token). Bandcamp catalogues do not.**
-
-### A watchlist of labels *and artists*
-
-![The label and artist watchlist](docs/screenshots/watchlist.png)
-
-The catalogues you're working through, with your progress on each — how many
-releases, how many are on your want list, how many you've dealt with. Add a
-note to yourself ("the 12″ singles first, skip the CD comps"). Sources are mixed
-freely: Bandcamp and Discogs sit side by side.
-
-**Artists count as catalogues too.** They always did — the engine accepted
-either — but everything on screen said "labels", so half of what this screen
-does was invisible unless you happened to try it. Filter to one or the other, or
-read them together.
-
-Each row carries the catalogue's own logo, pulled from Discogs or off the
-Bandcamp page and stored inside Seek, never hot-linked. Switch to **Grid** and
-the screen becomes a shelf of them.
-
-**Check for new** looks for releases added since the last time you looked, and
-badges the row with a count — *four new* is worth crossing the room for and
-*one new* is worth knowing about later, which is why it is a number and not a
-dot. It clears when you open the catalogue.
-
-Nothing here refreshes itself, and the button is the reason. A Discogs
-catalogue is several rate-limited requests, so a dozen watched entries checked
-automatically would spend a minute and a half of someone else's API budget
-without being asked. You press it.
-
-> ⚠️ A brand-new release is, by definition, the one thing Soulseek is least
-> likely to have yet. Some of these notifications will lead to an empty search.
-> That is worth knowing before you turn it on rather than after.
-
-> 🔑 Watching a **Discogs** catalogue needs a [token](#discogs-token). Watching a
-> **Bandcamp** one needs nothing.
-
----
-
-## Several searches at once
-
-Every search opens its own **tab**. Going back to one restores it exactly — its
-results, its filters, its grouping, what you had expanded. **⌘T** for a new one,
-**⌘W** to close it, or the **+** above the field.
-
-A tab is a search *put away*, not a second engine. Soulseek allows one search at
-a time, so leaving a tab whose search is still streaming stops it — that tab
-keeps the results it had and says it was stopped, rather than quietly losing the
-rest. Tabs you queued a download from tidy themselves up after 45 minutes; the
-one you're reading never disappears under you.
-
----
-
-## Your collection, four ways
-
-![The library as a grid of covers](docs/screenshots/library.png)
-
-Point Seek at the folders you already have and it builds a library from them —
-then shows it **comfortable, compact, as a table, or as a grid**. Covers are how
-you pick through a shelf; the table gives you release, artist, tracks, size,
-format and year in aligned columns for auditing what you own.
-
-Artwork is fetched only for what's on screen, so a collection of thousands
-doesn't queue thousands of lookups to draw twenty. Where no artwork exists — and
-for most underground releases none ever will — you get a mark derived from the
-release name, the same one every time, so the shelf stays readable instead of
-turning into rows of identical grey squares.
-
-Everything you own is cross-referenced against every catalogue you browse, which
-is what makes **"not in my library"** a one-click filter.
-
----
-
-## Know what you actually downloaded
-
-![Track analysis showing a lowpass at 16.6 kHz](docs/screenshots/analysis.png)
-
-A file can claim any quality it likes. Seek looks at the **sound itself** —
-frequency against time, loudness as colour — and tells you what it found.
-
-That flat cliff at 16.6 kHz is an encoder ceiling: everything above it was thrown
-away, which is what a lossy encoder does. Seek reads it as *"typical of a source
-around 192 kbps"* and, crucially, labels its own confidence — here
-**Inconclusive, 15%**. It reports what it saw, not what to think.
-
-> ✅ **No key needed.** This runs entirely on your Mac. Nothing is uploaded, and
-> it works offline.
-
-Also here: **Preview** before you commit, **Fix tags**, and **Organise** to file
-the release where it belongs.
-
----
-
-## Sharing, shown honestly
-
-![Uploads, with filters and sorting](docs/screenshots/uploads.png)
-
-Soulseek is reciprocal, and Seek treats that as the point rather than an
-afterthought. You can see what you're uploading, to whom, and what your ratio
-actually is — filtered and sorted the same way your downloads are, because it is
-the same list going the other way.
-
-It will also tell you plainly when a slow queue is the consequence of sharing
-nothing. That is usually the answer, and no other client says it.
-
----
+Built on [Nicotine+](https://nicotine-plus.org/), which does the protocol work. Unofficial, and not affiliated with Soulseek or the Nicotine+ project.
 
 ## Install
 
-Download the `.zip` from [**Releases**](../../releases), unzip it, and drag
-`Seek.app` to your Applications folder.
-
-macOS will block it the first time. Seek isn't signed with a paid Apple
-Developer certificate ($99/year), so macOS quarantines it like anything else off
-the internet. **Three clicks, once, and then it opens normally forever.**
-
-### 1. Open Seek — macOS refuses. Click **Done**.
-
-![macOS blocking Seek on first open](docs/screenshots/install-1-blocked.png)
-
-Do *not* click Move to Trash. Just Done.
-
-### 2. Open **System Settings → Privacy & Security**, and click **Open Anyway**
-
-![Open Anyway in Privacy and Security](docs/screenshots/install-2-privacy.png)
-
-Scroll to the **Security** section. You'll see *"Seek.app was blocked to protect
-your Mac"* with an **Open Anyway** button beside it. That message only appears
-after step 1, so don't go looking for it first.
-
-### 3. Confirm with **Open Anyway**
-
-![Confirming Open Anyway](docs/screenshots/install-3-open-anyway.png)
-
-That's it. Seek opens by double-click from now on.
-
-<details>
-<summary><b>Prefer one Terminal command instead?</b></summary>
+Download the `.zip` from [Releases](../../releases/latest) and drag **Seek.app** to Applications. Seek isn't signed with a paid Apple certificate, so run this once:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Seek.app
 ```
 
-It prints nothing when it works, and replaces all three steps above. It removes
-the "came from the internet" tag macOS attached to the download and changes
-nothing about the app itself.
+Then sign in under **Settings → Account**. Updates install themselves from then on.
+
+<details>
+<summary><b>Rather click than type?</b></summary>
+
+Open Seek, click **Done** on the warning, then go to **System Settings → Privacy & Security** and click **Open Anyway**. The button only appears after that first attempt to open it.
 
 </details>
 
 <details>
-<summary><b>Seeing "Seek is damaged and can't be opened"?</b></summary>
+<summary><b>Optional API keys</b></summary>
 
-That means you have a build from before **26 Aug 2026**, and the build is the
-problem rather than your Mac. Its bundle was linker-signed — the signature
-covered the executable but sealed none of the resources — and Gatekeeper reads
-that as corruption rather than as an untrusted app, which is why no **Open
-Anyway** appears anywhere.
+All free, all in **Settings → External lookups**, stored only on your Mac.
 
-Download a current release. `release.sh` now refuses to produce a build that way.
+| Feature | Needs |
+|---|---|
+| Bandcamp, YouTube video links, artwork, spectrograms | Nothing |
+| Discogs links and catalogues | [Discogs personal token](https://www.discogs.com/settings/developers) |
+| YouTube playlist import | YouTube Data API v3 key (an API key, not OAuth) |
+| Identify by sound | AcoustID [application key](https://acoustid.org/new-application), not the profile key |
 
 </details>
 
-**What you need:** a Soulseek account. Seek doesn't create one — sign in under
-**Settings → Account**, or import an existing setup from Nicotine+.
+<details>
+<summary><b>Build from source</b></summary>
 
-### Updates are automatic
-
-**You only do the above once.** Seek checks for a new version on launch and
-offers to install it — one click, no Terminal, no System Settings, no dragging
-anything anywhere.
-
-The reason that works: the approval you just gave is recorded against *that
-specific copy* of the app, so replacing it by hand would mean repeating all
-three steps every time. A download the app makes itself is never quarantined,
-so an in-app update skips Gatekeeper entirely.
-
-Each update is signed with a key that never leaves the release pipeline, and
-Seek verifies that signature before writing a single byte — so a compromised
-download server still cannot push you a build. Nothing installs without you
-choosing to; if you're mid-download, "Not now" is a real answer and the offer
-comes back next launch.
-
----
-
-## Setting up the API keys
-
-Seek works out of the box. These unlock the features above, they're all **free**,
-and each one takes a couple of minutes.
-
-Everything is stored in Seek's own data folder, never in this repository, and
-only ever leaves your Mac to reach the service it belongs to.
-
-**All of them go in the same place: `Settings → External lookups`.**
-
-| What you want | What you need |
-|---|---|
-| Bandcamp links & catalogues | ✅ Nothing |
-| YouTube video links | ✅ Nothing |
-| Artwork and release data (MusicBrainz, Cover Art Archive) | ✅ Nothing |
-| Track analysis / spectrograms | ✅ Nothing — runs locally |
-| **Discogs links, catalogues, want list import** | 🔑 [Discogs token](#discogs-token) |
-| **Import a YouTube playlist** | 🔑 [YouTube Data API key](#youtube-data-api-key) |
-| **Identify a file by its sound** | 🔑 [AcoustID key](#acoustid-application-key) |
-
----
-
-### Discogs token
-
-The one most worth doing — Discogs is the database that actually knows
-underground electronic releases.
-
-1. Go to **[discogs.com](https://www.discogs.com/)** and sign in. (Free to
-   create an account if you don't have one.)
-2. Open **[discogs.com/settings/developers](https://www.discogs.com/settings/developers)**.
-3. Find the section headed **Personal access token** and press
-   **Generate new token**.
-4. **Copy the token** it shows you — a long string of letters and numbers.
-5. In Seek: **Settings → External lookups → Discogs token**, paste it, and save.
-
-That's all. A personal token is tied to your own account and needs no app
-registration or approval. Discogs allows 60 requests a minute with one; Seek
-stays well under that.
-
----
-
-### YouTube Data API key
-
-Only needed to **import a playlist**. Pasting a single YouTube video link works
-without it.
-
-1. Go to **[console.cloud.google.com](https://console.cloud.google.com/)** and
-   sign in with any Google account.
-2. **Create a project.** Click the project dropdown in the top bar → **New
-   Project** → give it any name ("Seek" is fine) → **Create**. Wait a few
-   seconds, then make sure it's the selected project.
-3. **Enable the API.** In the sidebar go to **APIs & Services → Library**,
-   search for **"YouTube Data API v3"**, click it, and press **Enable**.
-4. **Make the key.** Go to **APIs & Services → Credentials** →
-   **Create credentials** → **API key**.
-5. **Copy the key** it shows you.
-6. In Seek: **Settings → External lookups → YouTube Data API key**, paste, save.
-
-> ⚠️ Choose **API key**, not an OAuth client. OAuth is for reaching a Google
-> account's *private* data — a public playlist needs none of it. Seek holds no
-> client secret and never asks you to sign in to Google.
-
-Optionally, click your new key and restrict it to the YouTube Data API. Google's
-free tier is far more than Seek will ever use.
-
----
-
-### AcoustID application key
-
-Only needed to **identify an unlabelled file by its sound**.
-
-1. Register an account at **[acoustid.org](https://acoustid.org/login)** (you can
-   sign in with an existing account from another service).
-2. Go to **[acoustid.org/new-application](https://acoustid.org/new-application)**
-   and register an application. Any name will do — "Seek" or "personal use".
-3. Copy the **API key shown for that application**.
-4. In Seek: **Settings → External lookups → AcoustID application key**, paste,
-   save.
-
-> ⚠️ **Use the APPLICATION key, not the API key on your profile page.** They look
-> identical and the wrong one silently fails. The profile key is for *submitting*
-> fingerprints, and AcoustID rejects it for lookups — but the rejection arrives
-> as an empty result rather than an error, so it just looks like nothing matched.
-> This cost an hour to work out while building Seek; now you don't have to.
-
-The fingerprinting tool itself (`fpcalc`) ships inside Seek — you don't need to
-install anything. Only the free AcoustID key is required.
-
----
-
-## Build from source
-
-An app you build yourself is never quarantined, so this skips the install dance
-entirely.
-
-**You'll need:** macOS (Apple silicon or Intel), [Rust](https://rustup.rs/),
-[Node.js](https://nodejs.org/) 20+, and Python 3.11+.
+<a id="build-from-source"></a>Needs macOS, Rust, Node.js 20+ and Python 3.11+.
 
 ```bash
-git clone --recurse-submodules <this repo>
-cd seek
-
-# the Python engine
-cd sidecar
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cd ..
-
-# the app
-cd app
-npm install
-npm run tauri build
+git clone --recurse-submodules https://github.com/IvaKap/seek.git && cd seek
+cd sidecar && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ..
+cd app && npm install && npm run tauri build
 ```
 
-The finished app lands in
-`app/src-tauri/target/release/bundle/macos/Seek.app`.
+An app you build yourself is never quarantined. `RECON.md` covers what the protocol really provides, and `docs/PRODUCT.md` is the spec.
 
-`--recurse-submodules` matters: Nicotine+ is pinned as a submodule so a build is
-reproducible. Without it the engine has nothing to talk to.
+</details>
 
-## Development
+<details>
+<summary><b>Bugs, privacy, licence</b></summary>
 
-```bash
-cd sidecar && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../upstream:. \
-  .venv/bin/python -m seek_sidecar --print-endpoint --allow-origin http://localhost:5273
-cd app && npm run dev
-```
+- **Bugs:** [open an issue](../../issues/new/choose) with the details from **Settings → About**.
+- **Privacy:** no telemetry. The log stays on your Mac and is never uploaded.
+- **Licence:** GPL-3.0-or-later, with [Nicotine+](https://github.com/nicotine-plus/nicotine-plus) (GPL-3.0-or-later) pinned as a submodule and Chromaprint's `fpcalc` 1.6.1 shipped unmodified (LGPL-2.1-or-later).
+- **Your responsibility:** what you share and download is up to you.
 
-The engine prints a host, port and token; open
-`http://localhost:5273/?sidecar=127.0.0.1:<port>&token=<token>`.
+</details>
 
-```bash
-cd app && npm test          # 341 tests
-cd app && npm run typecheck
-cd sidecar && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=../upstream:. \
-  .venv/bin/pytest tests/ -q # 494 tests
-```
-
-`./release.sh` does a full release build, and refuses to continue if the frozen
-engine would ship stale code, a bundle without its CA certificates, or an update
-signed with a key that installed copies would reject.
-
-`RECON.md` documents what the Soulseek protocol actually provides — several
-things the obvious assumption gets wrong — and `docs/PRODUCT.md` is the product
-spec. Both are worth reading before changing anything at the seam between the
-Python engine and the TypeScript frontend.
-
-## Reporting a bug
-
-Open an [issue](../../issues/new/choose). The form asks for three things, all
-of which are on **Settings → About**: the Seek version, your macOS version, and
-the **log file** path.
-
-Seek keeps a diagnostic log on your machine. It records what Seek itself did —
-not what you searched for, and not who you exchanged files with — and your home
-folder appears as `~` rather than your real name. Nothing reads it back and
-nothing uploads it; it only ever leaves your Mac if you attach it yourself.
-
-> Two files live near it that you should **not** send: `seek-state.json` holds
-> your API keys in plain text, and the `logs/` folder is your private Soulseek
-> chat history, which has nothing to do with Seek's own logging.
-
-## Your responsibility
-
-Seek is a client. What you search for, share and download is up to you, and so
-is complying with the law where you live.
-
-## Licence
-
-GPL-3.0-or-later. See [LICENSE](LICENSE).
-
-Seek uses [Nicotine+](https://github.com/nicotine-plus/nicotine-plus)
-(GPL-3.0-or-later) as its protocol engine, pinned as a submodule. Because a
-packaged build embeds Nicotine+, the corresponding source for everything in the
-app is this repository plus that pinned submodule.
-
-A packaged build also ships **`fpcalc`** from
-[Chromaprint](https://github.com/acoustid/chromaprint) 1.6.1
-(LGPL-2.1-or-later), used to fingerprint a file for AcoustID. It is the
-official universal macOS build, shipped **unmodified** and run as a separate
-program — Seek never links against it. Its source is
-[chromaprint-1.6.1.tar.gz](https://github.com/acoustid/chromaprint/releases/tag/v1.6.1),
-and `sidecar/fetch-fpcalc.sh` records the exact artifact and its checksum. That
-binary statically links [FFmpeg](https://ffmpeg.org/), also under
-LGPL-2.1-or-later.
+<sub>Screenshots are the real app, driven with sample downloads and generated cover art.</sub>
